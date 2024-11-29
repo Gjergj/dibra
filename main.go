@@ -31,29 +31,29 @@ func main() {
 	fmt.Println(services)
 
 	// Start a long-running service
-	// serviceName := "my-service"
+	serviceName := "ssh"
 	// if err := executor.ExecuteLongRunningService(serviceName, "start"); err != nil {
 	// 	log.Fatalf("Failed to start service: %v", err)
 	// }
 
-	// // Monitor service status
-	// statusChan, errChan := executor.MonitorService(serviceName, 5*time.Second)
+	// Monitor service status
+	statusChan, errChan := executor.MonitorService(serviceName, 5*time.Second)
 
-	// // Handle status updates and errors
-	// go func() {
-	// 	for {
-	// 		select {
-	// 		case status := <-statusChan:
-	// 			fmt.Printf("Service status: %s\n", status)
-	// 		case err := <-errChan:
-	// 			fmt.Printf("Error monitoring service: %v\n", err)
-	// 			return
-	// 		}
-	// 	}
-	// }()
+	// Handle status updates and errors
+	go func() {
+		for {
+			select {
+			case status := <-statusChan:
+				fmt.Printf("Service status: %s\n", status)
+			case err := <-errChan:
+				fmt.Printf("Error monitoring service: %v\n", err)
+				return
+			}
+		}
+	}()
 
 	// // Wait for some time
-	// time.Sleep(5 * time.Minute)
+	time.Sleep(5 * time.Minute)
 
 	// // Stop the service
 	// if err := executor.ExecuteLongRunningService(serviceName, "stop"); err != nil {

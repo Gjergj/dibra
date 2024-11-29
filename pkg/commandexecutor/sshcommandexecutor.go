@@ -1,4 +1,4 @@
-package main
+package commandexecutor
 
 import (
 	"bytes"
@@ -111,15 +111,15 @@ func (e *SSHExecutor) ExecuteSudoCommand(command string) error {
 }
 
 // ExecuteSudoCommand executes a command with sudo
-func (e *SSHExecutor) Execute(command string, sudoInfo *SudoInfo, params ...string) (string, error) {
+func (e *SSHExecutor) Execute(command string, sudoInfo *SudoInfo, params ...string) (string, string, error) {
 	if e.client == nil {
-		return "", fmt.Errorf("not connected")
+		return "", "", fmt.Errorf("not connected")
 	}
 
 	// Create new session
 	session, err := e.client.NewSession()
 	if err != nil {
-		return "", fmt.Errorf("failed to create session: %w", err)
+		return "", "", fmt.Errorf("failed to create session: %w", err)
 	}
 	e.session = session
 	defer e.session.Close()
@@ -132,34 +132,42 @@ func (e *SSHExecutor) Execute(command string, sudoInfo *SudoInfo, params ...stri
 	// Get stdin pipe
 	stdin, err := session.StdinPipe()
 	if err != nil {
-		return "", fmt.Errorf("failed to get stdin pipe: %w", err)
+		return "", "", fmt.Errorf("failed to get stdin pipe: %w", err)
 	}
-	e.sudoWriter = stdin
+
+	if sudoInfo != nil {
+		e.sudoWriter = stdin
+	}
+
+	args := append([]string{command}, params...)
+	command = strings.Join(args, " ")
 
 	// Prepare sudo command
 	sudoCmd := fmt.Sprintf("sudo -S -p '' %s", command)
 
 	// Start command
 	if err := session.Start(sudoCmd); err != nil {
-		return "", fmt.Errorf("failed to start command: %w", err)
+		return "", "", fmt.Errorf("failed to start command: %w", err)
 	}
 
-	// Write sudo password
-	if _, err := fmt.Fprintf(stdin, "%s\n", e.config.SudoPassword); err != nil {
-		return "", fmt.Errorf("failed to write sudo password: %w", err)
+	if sudoInfo != nil {
+		// Write sudo password
+		if _, err := fmt.Fprintf(stdin, "%s\n", sudoInfo.Password); err != nil {
+			return "", "", fmt.Errorf("failed to write sudo password: %w", err)
+		}
 	}
 
 	// Wait for command completion
 	if err := session.Wait(); err != nil {
 		exitErr, ok := err.(*ssh.ExitError)
 		if ok {
-			return "", fmt.Errorf("command failed with exit code %d: %s",
+			return "", "", fmt.Errorf("command failed with exit code %d: %s",
 				exitErr.ExitStatus(), stderrBuf.String())
 		}
-		return "", fmt.Errorf("failed to wait for command: %w", err)
+		return "", "", fmt.Errorf("failed to wait for command: %w", err)
 	}
 
-	return stdoutBuf.String(), nil
+	return stdoutBuf.String(), stderrBuf.String(), nil
 }
 
 // Close closes the SSH connection
