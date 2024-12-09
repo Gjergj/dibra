@@ -111,7 +111,7 @@ func (e *SSHExecutor) ExecuteSudoCommand(command string) error {
 }
 
 // ExecuteSudoCommand executes a command with sudo
-func (e *SSHExecutor) Execute(command string, sudoInfo *SudoInfo, params ...string) (string, string, error) {
+func (e *SSHExecutor) Execute(command string, env []string, sudoInfo *SudoInfo, params ...string) (string, string, error) {
 	if e.client == nil {
 		return "", "", fmt.Errorf("not connected")
 	}
@@ -122,6 +122,16 @@ func (e *SSHExecutor) Execute(command string, sudoInfo *SudoInfo, params ...stri
 		return "", "", fmt.Errorf("failed to create session: %w", err)
 	}
 	e.session = session
+
+	// Set session env vars
+	var ev []string
+	for _, value := range env {
+		ev = strings.Split(value, "=")
+		if err = session.Setenv(ev[0], strings.Join(ev[1:], "=")); err != nil {
+			return "", "", fmt.Errorf("failed to set env var: %w", err)
+		}
+	}
+
 	defer e.session.Close()
 
 	// Setup I/O
@@ -137,16 +147,14 @@ func (e *SSHExecutor) Execute(command string, sudoInfo *SudoInfo, params ...stri
 
 	if sudoInfo != nil {
 		e.sudoWriter = stdin
+		command = fmt.Sprintf("sudo -S -p '' %s", command)
 	}
 
 	args := append([]string{command}, params...)
 	command = strings.Join(args, " ")
 
-	// Prepare sudo command
-	sudoCmd := fmt.Sprintf("sudo -S -p '' %s", command)
-
 	// Start command
-	if err := session.Start(sudoCmd); err != nil {
+	if err := session.Start(command); err != nil {
 		return "", "", fmt.Errorf("failed to start command: %w", err)
 	}
 
@@ -156,6 +164,18 @@ func (e *SSHExecutor) Execute(command string, sudoInfo *SudoInfo, params ...stri
 			return "", "", fmt.Errorf("failed to write sudo password: %w", err)
 		}
 	}
+	// stdin.Close()
+	// if keyPress != "" {
+
+	// 	// _, err := stdin.Write([]byte(keyPress))
+	// 	// if err != nil {
+	// 	// 	return "", "", fmt.Errorf("failed to write key press: %w", err)
+	// 	// }
+	// 	// Write key press
+	// 	// if _, err := fmt.Fprintf(stdin, "%s", keyPress); err != nil {
+	// 	// 	return "", "", fmt.Errorf("failed to write key press: %w", err)
+	// 	// }
+	// }
 
 	// Wait for command completion
 	if err := session.Wait(); err != nil {
@@ -236,111 +256,4 @@ func (e *SSHExecutor) ExecuteLongRunningService(serviceName, action string) erro
 	}
 
 	return nil
-}
-
-// MonitorService monitors a service status via SSH
-func (e *SSHExecutor) MonitorService(serviceName string, interval time.Duration) (<-chan string, <-chan error) {
-	statusChan := make(chan string)
-	errChan := make(chan error, 1)
-
-	go func() {
-		defer close(statusChan)
-		defer close(errChan)
-
-		for {
-			status, err := e.getServiceStatus(serviceName)
-			if err != nil {
-				errChan <- err
-				return
-			}
-
-			select {
-			case statusChan <- status:
-			default:
-				// Channel is full, skip this update
-			}
-
-			time.Sleep(interval)
-		}
-	}()
-
-	return statusChan, errChan
-}
-
-// getServiceStatus gets the current status of a service
-func (e *SSHExecutor) getServiceStatus(serviceName string) (string, error) {
-	session, err := e.client.NewSession()
-	if err != nil {
-		return "", fmt.Errorf("failed to create session: %w", err)
-	}
-	defer session.Close()
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	session.Stdout = &stdoutBuf
-	session.Stderr = &stderrBuf
-
-	command := fmt.Sprintf("systemctl status %s", serviceName)
-	if err := session.Run(fmt.Sprintf("sudo -S -p '' %s", command)); err != nil {
-		// Don't return error if service is just inactive
-		if strings.Contains(stderrBuf.String(), "could not be found") {
-			return "not-found", nil
-		}
-		if exitErr, ok := err.(*ssh.ExitError); ok && exitErr.ExitStatus() == 3 {
-			return "inactive", nil
-		}
-		return "", fmt.Errorf("failed to get status: %w", err)
-	}
-
-	return parseServiceStatus(stdoutBuf.String()), nil
-}
-
-// parseServiceStatus parses the systemctl status output
-func parseServiceStatus(output string) string {
-	if strings.Contains(output, "Active: active (running)") {
-		return "running"
-	}
-	if strings.Contains(output, "Active: inactive") {
-		return "stopped"
-	}
-	if strings.Contains(output, "Active: failed") {
-		return "failed"
-	}
-	return "unknown"
-}
-
-// ListServices returns a list of all systemd services
-func (e *SSHExecutor) ListServices() ([]string, error) {
-	// Create new session
-	session, err := e.client.NewSession()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
-	}
-	defer session.Close()
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	session.Stdout = &stdoutBuf
-	session.Stderr = &stderrBuf
-
-	// List all services using systemctl command
-	command := "systemctl list-units --type=service --all --no-pager --plain"
-	if err := session.Run(fmt.Sprintf("sudo -S -p '' %s", command)); err != nil {
-		return nil, fmt.Errorf("failed to list services: %w", err)
-	}
-
-	// Parse the output
-	services := []string{}
-	for _, line := range strings.Split(stdoutBuf.String(), "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		// Each line has format: "unit-name.service loaded active running Description"
-		fields := strings.Fields(line)
-		if len(fields) >= 1 && strings.HasSuffix(fields[0], ".service") {
-			// Remove the .service suffix
-			serviceName := strings.TrimSuffix(fields[0], ".service")
-			services = append(services, serviceName)
-		}
-	}
-
-	return services, nil
 }
