@@ -20,18 +20,23 @@ type User struct {
 
 // UserService handles Linux user operations
 type UserService struct {
-	exec commandexecutor.CommandExecutor
+	exec     *commandexecutor.CommandRunner
+	sudoInfo *commandexecutor.SudoInfo
 }
 
 // NewUserService creates a new UserService instance
-func NewUserService(exec commandexecutor.CommandExecutor) *UserService {
-	return &UserService{exec: exec}
+func NewUserService(exec *commandexecutor.CommandRunner, sudoInfo *commandexecutor.SudoInfo) *UserService {
+	return &UserService{exec: exec, sudoInfo: sudoInfo}
 }
 
 // Exists checks if a user exists
 func (s *UserService) Exists(username string) (bool, error) {
-	// cmd := exec.Command("id", username)
-	_, stderr, err := s.exec.Execute("id", "", nil, username)
+	cmd := commandexecutor.Command{
+		Command:  "id",
+		Args:     []string{username},
+		SudoInfo: s.sudoInfo,
+	}
+	_, stderr, err := s.exec.Execute(cmd)
 	// if err := cmd.Run(); err != nil {
 	// 	// User doesn't exist or other error
 	// 	return false, nil
@@ -74,6 +79,7 @@ func (s *UserService) Create(user User) error {
 		args = append(args, "--create-home")
 	}
 	if user.HomeDir != "" {
+		args = append(args, "--create-home")
 		args = append(args, "--home", user.HomeDir)
 	}
 	if user.Shell != "" {
@@ -88,7 +94,12 @@ func (s *UserService) Create(user User) error {
 	// if output, err := cmd.CombinedOutput(); err != nil {
 	// 	return fmt.Errorf("error creating user: %w, output: %s", err, output)
 	// }
-	output, stderr, err := s.exec.Execute(args[0], "", nil, args[1:]...)
+	cmd := commandexecutor.Command{
+		Command:  args[0],
+		Args:     args[1:],
+		SudoInfo: s.sudoInfo,
+	}
+	output, stderr, err := s.exec.Execute(cmd)
 	if err != nil {
 		return fmt.Errorf("error creating user: %w", err)
 	}
@@ -136,14 +147,19 @@ func (s *UserService) GetUserInfo(username string) (User, error) {
 	// Get user shell
 	// shellCmd := exec.Command("getent", "passwd", username)
 	// output, err := shellCmd.Output()
-	output, stderr, err := s.exec.Execute("getent", "", nil, "passwd", username)
+	cmd := commandexecutor.Command{
+		Command:  "getent",
+		Args:     []string{"passwd", username},
+		SudoInfo: s.sudoInfo,
+	}
+	output, stderr, err := s.exec.Execute(cmd)
 	if err != nil {
 		return user, fmt.Errorf("error getting user info: %w", err)
 	}
 	if stderr != "" {
 		return user, fmt.Errorf("error getting user info: %s", stderr)
 	}
-
+	output = strings.TrimSuffix(output, "\n")
 	fields := strings.Split(string(output), ":")
 	if len(fields) >= 7 {
 		user.Username = fields[0]
@@ -154,7 +170,12 @@ func (s *UserService) GetUserInfo(username string) (User, error) {
 	// Get user groups
 	// groupCmd := exec.Command("groups", username)
 	// output, err = groupCmd.Output()
-	output, stderr, err = s.exec.Execute("groups", "", nil, username)
+	cmd = commandexecutor.Command{
+		Command:  "id",
+		Args:     []string{"-Gn", username},
+		SudoInfo: s.sudoInfo,
+	}
+	output, stderr, err = s.exec.Execute(cmd)
 	if err != nil {
 		return user, fmt.Errorf("error getting user groups: %w", err)
 	}
@@ -162,10 +183,9 @@ func (s *UserService) GetUserInfo(username string) (User, error) {
 		return user, fmt.Errorf("error getting user groups: %s", stderr)
 	}
 
-	groups := strings.Fields(string(output))
-	if len(groups) > 1 {
-		user.Groups = groups[1:] // Skip first element (username)
-	}
+	output = strings.TrimSuffix(output, "\n")
+	groups := strings.Split(string(output), " ")
+	user.Groups = groups
 
 	return user, nil
 }
@@ -208,7 +228,12 @@ func (s *UserService) Update(user User) error {
 	// if output, err := cmd.CombinedOutput(); err != nil {
 	// 	return fmt.Errorf("error updating user: %w, output: %s", err, output)
 	// }
-	_, stderr, err := s.exec.Execute(args[0], "", nil, args[1:]...)
+	cmd := commandexecutor.Command{
+		Command:  args[0],
+		Args:     args[1:],
+		SudoInfo: s.sudoInfo,
+	}
+	_, stderr, err := s.exec.Execute(cmd)
 	if err != nil {
 		return fmt.Errorf("error updating user: %w", err)
 	}
@@ -246,7 +271,12 @@ func (s *UserService) Delete(username string) error {
 	// if output, err := cmd.CombinedOutput(); err != nil {
 	// 	return fmt.Errorf("error deleting user: %w, output: %s", err, output)
 	// }
-	_, stderr, err := s.exec.Execute("userdel", "", nil, username)
+	cmd := commandexecutor.Command{
+		Command:  "userdel",
+		Args:     []string{username},
+		SudoInfo: s.sudoInfo,
+	}
+	_, stderr, err := s.exec.Execute(cmd)
 	if err != nil {
 		return fmt.Errorf("error deleting user: %w", err)
 	}
@@ -260,7 +290,12 @@ func (s *UserService) Delete(username string) error {
 func (s *UserService) isUserLoggedIn(username string) (bool, error) {
 	// cmd := exec.Command("who")
 	// output, err := cmd.Output()
-	output, stderr, err := s.exec.Execute("who", "", nil)
+	cmd := commandexecutor.Command{
+		Command:  "who",
+		Args:     []string{},
+		SudoInfo: s.sudoInfo,
+	}
+	output, stderr, err := s.exec.Execute(cmd)
 	if err != nil {
 		return false, fmt.Errorf("error checking logged-in users: %w", err)
 	}
@@ -274,8 +309,12 @@ func (s *UserService) isUserLoggedIn(username string) (bool, error) {
 // List returns all Linux users
 func (s *UserService) List() ([]string, error) {
 	// cmd := exec.Command("cut", "-d:", "-f1", "/etc/passwd")
-
-	output, stderr, err := s.exec.Execute("cut", "", nil, "-d:", "-f1", "/etc/passwd")
+	cmd := commandexecutor.Command{
+		Command:  "cut",
+		Args:     []string{"-d:", "-f1", "/etc/passwd"},
+		SudoInfo: s.sudoInfo,
+	}
+	output, stderr, err := s.exec.Execute(cmd)
 	// output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("error listing users: %w", err)
@@ -299,7 +338,13 @@ func (s *UserService) setPassword(username, password string) error {
 	if len(password) < 8 {
 		return fmt.Errorf("password must be at least 8 characters long")
 	}
-	_, stderr, err := s.exec.Execute("chpasswd", commandexecutor.EOF, nil, fmt.Sprintf("%s:%s", username, password))
+	cmd := commandexecutor.Command{
+		Command: "chpasswd\n",
+		// Args:     []string{fmt.Sprintf("%s:%s", username, password)},
+		SudoInfo: s.sudoInfo,
+		Input:    fmt.Sprintf("%s:%s", username, password),
+	}
+	_, stderr, err := s.exec.Execute(cmd)
 	if err != nil {
 		return fmt.Errorf("error setting password: %w", err)
 	}

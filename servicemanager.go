@@ -10,12 +10,24 @@ import (
 )
 
 type ServiceManager struct {
-	exec     commandexecutor.CommandExecutor
+	exec     *commandexecutor.CommandRunner
 	sudoInfo *commandexecutor.SudoInfo
 }
 
+type ServiceUnit struct {
+	Name        string
+	Description string
+	ExecStart   string
+	WorkingDir  string
+	User        string
+	// Additional systemd unit options
+	Environment []string
+	Restart     string // e.g., "always", "on-failure"
+	WantedBy    string // e.g., "multi-user.target"
+}
+
 // NewServiceManager creates a new ServiceManager instance
-func NewServiceManager(exec commandexecutor.CommandExecutor, sudoInfo *commandexecutor.SudoInfo) *ServiceManager {
+func NewServiceManager(exec *commandexecutor.CommandRunner, sudoInfo *commandexecutor.SudoInfo) *ServiceManager {
 	return &ServiceManager{exec: exec, sudoInfo: sudoInfo}
 }
 
@@ -53,7 +65,11 @@ func (s *ServiceManager) getServiceStatus(serviceName string) (string, error) {
 
 	// command := fmt.Sprintf("systemctl status %s", serviceName)
 	// err := session.Run(fmt.Sprintf("sudo -S -p '' %s", command));
-	output, stderr, err := s.exec.Execute("systemctl", "", s.sudoInfo, "status", serviceName)
+	output, stderr, err := s.exec.Execute(commandexecutor.Command{
+		Command:  "systemctl",
+		Args:     []string{"status", serviceName},
+		SudoInfo: s.sudoInfo,
+	})
 	if err != nil {
 		// Don't return error if service is just inactive
 		if strings.Contains(stderr, "could not be found") {
@@ -100,7 +116,14 @@ func (s *ServiceManager) ListServices() ([]string, error) {
 	// if err := session.Run(fmt.Sprintf("sudo -S -p '' %s", command)); err != nil {
 	// 	return nil, fmt.Errorf("failed to list services: %w", err)
 	// }
-	output, _, err := s.exec.Execute("systemctl", "", s.sudoInfo, "list-units", "--type=service", "--all", "--no-pager", "--plain")
+
+	cmd := commandexecutor.Command{
+		Command:  "systemctl",
+		Args:     []string{"list-units", "--type=service", "--all", "--no-pager", "--plain"},
+		SudoInfo: s.sudoInfo,
+	}
+
+	output, _, err := s.exec.Execute(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list services: %w", err)
 	}
@@ -121,4 +144,232 @@ func (s *ServiceManager) ListServices() ([]string, error) {
 	}
 
 	return services, nil
+}
+
+// CreateServiceUnit creates a new systemd service unit file
+func (s *ServiceManager) CreateServiceUnit(unit ServiceUnit) error {
+	if unit.Name == "" || unit.ExecStart == "" {
+		return fmt.Errorf("service name and ExecStart are required")
+	}
+
+	// Create unit file content
+	unitContent := fmt.Sprintf(`[Unit]
+Description=%s
+
+[Service]
+ExecStart=%s
+`, unit.Description, unit.ExecStart)
+
+	if unit.WorkingDir != "" {
+		unitContent += fmt.Sprintf("WorkingDirectory=%s\n", unit.WorkingDir)
+	}
+	if unit.User != "" {
+		unitContent += fmt.Sprintf("User=%s\n", unit.User)
+	}
+	if len(unit.Environment) > 0 {
+		for _, env := range unit.Environment {
+			unitContent += fmt.Sprintf("Environment=%s\n", env)
+		}
+	}
+	if unit.Restart != "" {
+		unitContent += fmt.Sprintf("Restart=%s\n", unit.Restart)
+	}
+
+	unitContent += "\n[Install]\n"
+	if unit.WantedBy != "" {
+		unitContent += fmt.Sprintf("WantedBy=%s\n", unit.WantedBy)
+	} else {
+		unitContent += "WantedBy=multi-user.target\n"
+	}
+
+	// Write unit file to /etc/systemd/system/
+	fileName := fmt.Sprintf("%s.service", unit.Name)
+	cmd := commandexecutor.Command{
+		Command:  "tee",
+		Args:     []string{fmt.Sprintf("/etc/systemd/system/%s", fileName)},
+		Input:    unitContent,
+		SudoInfo: s.sudoInfo,
+	}
+
+	_, stderr, err := s.exec.Execute(cmd)
+	if err != nil {
+		return fmt.Errorf("failed to create service unit file: %w", err)
+	}
+	if stderr != "" {
+		return fmt.Errorf("error creating service unit file: %s", stderr)
+	}
+
+	return s.reloadDaemon()
+}
+
+// InstallService installs and enables a service
+func (s *ServiceManager) InstallService(serviceName string) error {
+	// Reload systemd daemon first
+	if err := s.reloadDaemon(); err != nil {
+		return fmt.Errorf("failed to reload daemon: %w", err)
+	}
+
+	// Enable the service
+	cmd := commandexecutor.Command{
+		Command:  "systemctl",
+		Args:     []string{"enable", serviceName},
+		SudoInfo: s.sudoInfo,
+	}
+
+	_, stderr, err := s.exec.Execute(cmd)
+	if err != nil {
+		return fmt.Errorf("failed to enable service: %w", err)
+	}
+	if stderr != "" {
+		return fmt.Errorf("error enabling service: %s", stderr)
+	}
+
+	return nil
+}
+
+// StartService starts a systemd service
+func (s *ServiceManager) StartService(serviceName string) error {
+	cmd := commandexecutor.Command{
+		Command:  "systemctl",
+		Args:     []string{"start", serviceName},
+		SudoInfo: s.sudoInfo,
+	}
+
+	_, stderr, err := s.exec.Execute(cmd)
+	if err != nil {
+		return fmt.Errorf("failed to start service: %w", err)
+	}
+	if stderr != "" {
+		return fmt.Errorf("error starting service: %s", stderr)
+	}
+
+	return nil
+}
+
+// StopService stops a systemd service
+func (s *ServiceManager) StopService(serviceName string) error {
+	cmd := commandexecutor.Command{
+		Command:  "systemctl",
+		Args:     []string{"stop", serviceName},
+		SudoInfo: s.sudoInfo,
+	}
+
+	_, stderr, err := s.exec.Execute(cmd)
+	if err != nil {
+		return fmt.Errorf("failed to stop service: %w", err)
+	}
+	if stderr != "" {
+		return fmt.Errorf("error stopping service: %s", stderr)
+	}
+
+	return nil
+}
+
+// reloadDaemon reloads the systemd daemon
+func (s *ServiceManager) reloadDaemon() error {
+	cmd := commandexecutor.Command{
+		Command:  "systemctl",
+		Args:     []string{"daemon-reload"},
+		SudoInfo: s.sudoInfo,
+	}
+
+	_, stderr, err := s.exec.Execute(cmd)
+	if err != nil {
+		return fmt.Errorf("failed to reload daemon: %w", err)
+	}
+	if stderr != "" {
+		return fmt.Errorf("error reloading daemon: %s", stderr)
+	}
+
+	return nil
+}
+
+// GetServiceUnit reads and parses an existing systemd service unit file
+func (s *ServiceManager) GetServiceUnit(serviceName string) (*ServiceUnit, error) {
+	fileName := fmt.Sprintf("%s.service", serviceName)
+	filePath := fmt.Sprintf("/etc/systemd/system/%s", fileName)
+
+	// Check if service file exists
+	checkCmd := commandexecutor.Command{
+		Command:  "test",
+		Args:     []string{"-f", filePath},
+		SudoInfo: s.sudoInfo,
+	}
+
+	_, _, err := s.exec.Execute(checkCmd)
+	if err != nil {
+		return nil, fmt.Errorf("service unit file %s does not exist", fileName)
+	}
+
+	// Read the service file
+	cmd := commandexecutor.Command{
+		Command:  "cat",
+		Args:     []string{filePath},
+		SudoInfo: s.sudoInfo,
+	}
+
+	output, stderr, err := s.exec.Execute(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read service unit file: %w", err)
+	}
+	if stderr != "" {
+		return nil, fmt.Errorf("error reading service unit file: %s", stderr)
+	}
+
+	// Parse the service file content
+	unit := &ServiceUnit{
+		Name: serviceName,
+	}
+
+	var currentSection string
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Check for section headers [Unit], [Service], [Install]
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			currentSection = strings.Trim(line, "[]")
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		switch currentSection {
+		case "Unit":
+			if key == "Description" {
+				unit.Description = value
+			}
+		case "Service":
+			switch key {
+			case "ExecStart":
+				unit.ExecStart = value
+			case "WorkingDirectory":
+				unit.WorkingDir = value
+			case "User":
+				unit.User = value
+			case "Environment":
+				unit.Environment = append(unit.Environment, value)
+			case "Restart":
+				unit.Restart = value
+			}
+		case "Install":
+			if key == "WantedBy" {
+				unit.WantedBy = value
+			}
+		}
+	}
+
+	// Validate required fields
+	if unit.ExecStart == "" {
+		return nil, fmt.Errorf("invalid service unit file: missing ExecStart")
+	}
+
+	return unit, nil
 }

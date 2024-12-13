@@ -6,70 +6,93 @@ import (
 	"time"
 
 	"github.com/Gjergj/dibra/pkg/commandexecutor"
+	"github.com/Gjergj/dibra/pkg/commandexecutor/cmdrunner"
 )
 
 func main() {
-	// config := &commandexecutor.SSHConfig{
-	// 	Host:         "89.233.108.20",
-	// 	Port:         22,
-	// 	User:         "root",
-	// 	Password:     "heS63uazKT",
-	// 	SudoPassword: "heS63uazKT",
-	// 	Timeout:      30 * time.Second,
-	// }
 
-	config := &commandexecutor.SSHConfig{
-		Host:         "89.233.108.20",
-		Port:         22,
-		User:         "root",
-		Password:     "heS63uazKt",
-		SudoPassword: "heS63uazKt",
-		Timeout:      30 * time.Second,
+	config := &cmdrunner.SSHConfig{
+		Host:       "localhost",
+		Port:       32222,
+		User:       "default",
+		PrivateKey: "/Users/gjergjiramku/.orbstack/ssh/id_ed25519",
+		// KeyPassphrase: "optional-passphrase", // Leave empty if key is not encrypted
+		Timeout: 30 * time.Second,
+		// KnownHosts:    "/Users/gjergjiramku/.orbstack/ssh/authorized_keys",
+		AllowInsecure: true,
 	}
 
-	executor := commandexecutor.NewSSHExecutor(config)
-	defer executor.Close()
+	sshConnection := cmdrunner.NewSSHConnection(config)
+	defer sshConnection.Close()
 
 	// Connect to remote server
-	if err := executor.Connect(); err != nil {
+	if err := sshConnection.Connect(); err != nil {
 		log.Fatalf("Failed to connect: %v", err)
 	}
 
-	userService := NewUserService(executor)
-	users, err := userService.List()
-	if err != nil {
-		log.Fatalf("Failed to list users: %v", err)
-	}
-	for _, user := range users {
-		userInfo, err := userService.GetUserInfo(user)
-		if err != nil {
-			// log.Fatalf("Failed to get user info: %v", err)
-			fmt.Println(user)
-		}
-		fmt.Println(userInfo)
-	}
+	commandExecutor := commandexecutor.NewCommandRunner(sshConnection)
+	// userService := NewUserService(commandExecutor, nil)
+
+	// users, err := userService.List()
+	// if err != nil {
+	// 	log.Fatalf("Failed to list users: %v", err)
+	// }
+	// for _, user := range users {
+	// 	userInfo, err := userService.GetUserInfo(user)
+	// 	if err != nil {
+	// 		// log.Fatalf("Failed to get user info: %v", err)
+	// 		fmt.Println(user)
+	// 	}
+	// 	fmt.Println(userInfo)
+	// }
 
 	// err = userService.Create(User{
-	// 	Username: "test1",
-	// 	Password: "HeS63uazKT",
+	// 	Username: "test2",
+	// 	Password: "heS63uazKz",
 	// 	Groups:   []string{"sudo"},
-	// 	HomeDir:  "/home/test",
+	// 	HomeDir:  "/home/tes2t",
 	// 	Shell:    "/bin/bash",
 	// })
 	// if err != nil {
 	// 	log.Fatalf("Failed to create user: %v", err)
 	// }
 
-	serviceManager := NewServiceManager(executor, nil)
+	serviceManager := NewServiceManager(commandExecutor, &commandexecutor.SudoInfo{Password: "heS63uazKT"})
 	services, err := serviceManager.ListServices()
 	if err != nil {
 		log.Fatalf("Failed to list services: %v", err)
 	}
 	fmt.Println(services)
 
-	err = userService.setPassword("test1", "heS63uazKT")
-	if err != nil {
-		log.Fatalf("Failed to set password: %v", err)
+	// Create a new service unit
+	unit := ServiceUnit{
+		Name:        "myapp",
+		Description: "My Custom Application Service",
+		ExecStart:   "/usr/local/bin/myapp",
+		WorkingDir:  "/opt/myapp",
+		User:        "myappuser",
+		Environment: []string{"PORT=8080", "ENV=production"},
+		Restart:     "always",
+		WantedBy:    "multi-user.target",
+	}
+
+	// Create and install the service
+	if err := serviceManager.CreateServiceUnit(unit); err != nil {
+		log.Fatalf("Failed to create service unit: %v", err)
+	}
+
+	if err := serviceManager.InstallService("myapp"); err != nil {
+		log.Fatalf("Failed to install service: %v", err)
+	}
+
+	// Start the service
+	if err := serviceManager.StartService("myapp"); err != nil {
+		log.Fatalf("Failed to start service: %v", err)
+	}
+
+	// ... later, if you need to stop the service ...
+	if err := serviceManager.StopService("myapp"); err != nil {
+		log.Fatalf("Failed to stop service: %v", err)
 	}
 
 	// // Start a long-running service

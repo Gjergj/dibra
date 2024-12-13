@@ -1,3 +1,17 @@
+gigawatt.io/concurrency v0.0.0-20180903230007-33d4501a150c h1:2UC0ne0FgTX85R9mwtWnPIst/m255M2xG8RB6cJnaAI=
+gigawatt.io/concurrency v0.0.0-20180903230007-33d4501a150c/go.mod h1:5X1K3+J174iDC/aghiEU9U0Q6L9X5EECZumO4o/2r8k=
+gigawatt.io/errorlib v0.0.0-20180317211126-1db943df2ebb h1:XTNgkwvGVgIgk3TyUPQ3VXasw2+TSYpKUsrXRN9ba5M=
+gigawatt.io/errorlib v0.0.0-20180317211126-1db943df2ebb/go.mod h1:sk98pbs2ehAmJ/1cK8YAOruIdd0GMntzThy13UHBDqI=
+gigawatt.io/knownhosts v0.0.0-20190109213945-e328a8cef8c7 h1:QyrVqfe+QpUyJdbasfuialNdq/gI6FrY5ir2sdIKIyE=
+gigawatt.io/knownhosts v0.0.0-20190109213945-e328a8cef8c7/go.mod h1:9mVIcI3e5ntzChbPleeeRjO+RZrJHLJeyH1LWR4D8qk=
+gigawatt.io/oslib v0.0.0-20180422010626-b6fe9120eace h1:5eOhBYoAx/0c8G14A7ZokaJ0m7jw9zsE+oTVEc34jo0=
+gigawatt.io/oslib v0.0.0-20180422010626-b6fe9120eace/go.mod h1:uQOXIpr/gSt+6pjVx2ueVRsKgIcRdKDfaqZy5dps+dE=
+github.com/Eun/sshkeys v1.13.8 h1:UXMhKfZzexWLV8hnRQXKSuEm+tT0pCYu5B5HGv3I0bM=
+github.com/Eun/sshkeys v1.13.8/go.mod h1:jtq2NquNBJ5PadPIpqlm2v6F0bKNxI9ikLE5Uz1TVUw=
+github.com/google/uuid v1.3.0 h1:t6JiXgmwXMjEs8VusXIJk2BXHsn+wx8BZdTaoZ5fu7I=
+github.com/google/uuid v1.3.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
+github.com/skeema/knownhosts v1.3.0 h1:AM+y0rI04VksttfwjkSTNQorvGqmwATnvnAHpSgc0LY=
+github.com/skeema/knownhosts v1.3.0/go.mod h1:sPINvnADmT/qYH1kfv+ePMmOBTH6Tbl7b5LvTDjFK7M=
 golang.org/x/crypto v0.29.0 h1:L5SG1JTTXupVV3n6sUqMTeWbjAyfPwoda2DLX8J8FrQ=
 golang.org/x/crypto v0.29.0/go.mod h1:+F4F4N5hv6v38hfeYwTdx20oUvLLc+QfrE9Ax9HtgRg=
 golang.org/x/sys v0.27.0 h1:wBqf8DvsY9Y/2P8gAfPDEYNuS30J4lPHJxXSb/nJZ+s=
