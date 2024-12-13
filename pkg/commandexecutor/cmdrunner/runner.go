@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Gjergj/dibra/pkg/commandexecutor/cmdrunner/cmdsession"
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
 	// "golang.org/x/crypto/ssh/knownhosts"
@@ -28,6 +29,10 @@ type RunnerSession interface {
 	Close() error
 }
 
+type FSController interface {
+	Upload(localPath string, remotePath string) error
+}
+
 type Command struct {
 	Command  string
 	Args     []string
@@ -37,6 +42,7 @@ type Command struct {
 
 type Runner interface {
 	NewRunnerSession(cmd Command) (RunnerSession, error)
+	NewFSOPerations() (FSController, error)
 }
 
 // SSHConfig holds SSH connection configuration
@@ -165,6 +171,43 @@ func (e *SSHConnection) NewRunnerSession(cmd Command) (RunnerSession, error) {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 	return cmdsession.NewSShRunnerSession(sess, cmd.Command, cmd.Args, cmd.Env, cmd.SudoInfo), nil
+}
+
+type SftpFSOperations struct {
+	sftpClient *sftp.Client
+}
+
+func (e *SSHConnection) NewFSOPerations() (FSController, error) {
+	cl, err := sftp.NewClient(e.client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sftp client: %w", err)
+	}
+	return &SftpFSOperations{
+		sftpClient: cl,
+	}, nil
+}
+
+func (e *SftpFSOperations) Upload(localPath string, remotePath string) error {
+
+	local, err := os.Open(localPath)
+	if err != nil {
+		return err
+	}
+	defer local.Close()
+
+	defer e.sftpClient.Close()
+	err = e.sftpClient.MkdirAll(filepath.Dir(remotePath))
+	if err != nil {
+		return err
+	}
+	remote, err := e.sftpClient.Create(remotePath)
+	if err != nil {
+		return err
+	}
+	defer remote.Close()
+
+	_, err = io.Copy(remote, local)
+	return err
 }
 
 // // ExecuteSudoCommand executes a command with sudo
