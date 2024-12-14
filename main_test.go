@@ -61,7 +61,7 @@ func TestCLICommands(t *testing.T) {
 			}
 
 			// Reinitialize commands
-			init()
+			initCmd()
 
 			// Execute the command
 			err := rootCmd.Execute()

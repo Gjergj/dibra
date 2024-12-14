@@ -37,9 +37,7 @@ across remote machines via SSH.`,
 )
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to the configuration file (default: dibra.yaml or dibra.yml in current directory)")
-	rootCmd.AddCommand(applyCmd)
-	rootCmd.AddCommand(validateCmd)
+
 }
 
 func findConfigFile() (string, error) {
@@ -83,7 +81,15 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func initCmd() {
+	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to the configuration file (default: dibra.yaml or dibra.yml in current directory)")
+	rootCmd.AddCommand(applyCmd)
+	rootCmd.AddCommand(validateCmd)
+}
+
 func cmd() {
+	initCmd()
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

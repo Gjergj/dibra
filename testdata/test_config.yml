@@ -1,0 +1,24 @@
+machine_name: testmachine
+ssh:
+  host: localhost
+  user: testuser
+  port: 32222
+  key_path: /Users/gjergjiramku/.orbstack/ssh/id_ed25519 #~/.ssh/id_rsa
+  password: 1234
+  timeout: 30
+  allow_insecure: true
+
+service:
+  type: systemd
+  systemd
+    name: myapp
+    description: My Custom Application Service
+    bin_path: /home/testuser
+    user: testuser
+    working_dir: /home/testuser
+  artifact:
+    type: localbinary
+    path: /home/testuser/myapp
+    env:
+      - name: MY_ENV_VAR
+        value: my_value
