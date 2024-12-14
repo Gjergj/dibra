@@ -10,46 +10,23 @@ import (
 
 	"github.com/Gjergj/dibra/pkg/commandexecutor"
 	"github.com/Gjergj/dibra/pkg/commandexecutor/cmdrunner"
-	yaml "gopkg.in/yaml.v2"
 )
 
 func TestServiceManager(t *testing.T) {
 
-	testYML := `service:
-  type: systemd
-  name: myapp
-  description: My Custom Application Service
-  bin_path: /home/testuser
-  user: testuser
-  working_dir: /home/testuser
-  `
-	type Config struct {
-		Service struct {
-			Type        string `yaml:"type"`
-			Name        string `yaml:"name"`
-			Description string `yaml:"description"`
-			BinPath     string `yaml:"bin_path"`
-			User        string `yaml:"user"`
-			WorkingDir  string `yaml:"working_dir"`
-		} `yaml:"service"`
-	}
-
-	var config Config
-	err := yaml.Unmarshal([]byte(testYML), &config)
+	config, err := LoadConfig("testdata/test_config.yml")
 	if err != nil {
-		t.Fatalf("Failed to unmarshal YAML: %v", err)
+		t.Fatalf("Failed to load config: %v", err)
 	}
 
 	sshConfig := &cmdrunner.SSHConfig{
-		Host:       "localhost",
-		Port:       32222,
-		User:       "default",
-		PrivateKey: "/Users/gjergjiramku/.orbstack/ssh/id_ed25519",
-		Password:   "1234",
-		// KeyPassphrase: "optional-passphrase", // Leave empty if key is not encrypted
-		Timeout: 30 * time.Second,
-		// KnownHosts:    "/Users/gjergjiramku/.orbstack/ssh/authorized_keys",
-		AllowInsecure: true,
+		Host:          config.SSH.Host,
+		Port:          config.SSH.Port,
+		User:          config.SSH.User,
+		PrivateKey:    config.SSH.KeyPath,
+		Password:      config.SSH.Password,
+		Timeout:       time.Duration(config.SSH.Timeout) * time.Second,
+		AllowInsecure: config.SSH.AllowInsecure,
 	}
 
 	sshConnection := cmdrunner.NewSSHConnection(sshConfig)
@@ -67,33 +44,33 @@ func TestServiceManager(t *testing.T) {
 		t.Fatalf("Failed to create FSOperations: %v", err)
 	}
 
-	err = fsOperations.MkdirAll(config.Service.BinPath)
+	err = fsOperations.MkdirAll(config.Service.Systemd.BinPath)
 	if err != nil {
 		t.Fatalf("Failed to create bin path: %v", err)
 	}
 
-	err = fsOperations.Upload("/Users/gjergjiramku/projekte/social_posts/bin/social_posts", filepath.Join(config.Service.BinPath, config.Service.Name))
+	err = fsOperations.Upload("/Users/gjergjiramku/projekte/social_posts/bin/social_posts", filepath.Join(config.Service.Systemd.BinPath, config.Service.Systemd.Name))
 	if err != nil {
 		t.Fatalf("Failed to copy file: %v", err)
 	}
 
-	if config.Service.WorkingDir == "" {
-		config.Service.WorkingDir = config.Service.BinPath
+	if config.Service.Systemd.WorkingDir == "" {
+		config.Service.Systemd.WorkingDir = config.Service.Systemd.BinPath
 	}
 	// make sure workdir exists
-	err = fsOperations.MkdirAll(config.Service.WorkingDir)
+	err = fsOperations.MkdirAll(config.Service.Systemd.WorkingDir)
 	if err != nil {
 		t.Fatalf("Failed to create WorkingDir path: %v", err)
 	}
 
 	// Create a new service unit
 	unit := ServiceUnit{
-		Name:        config.Service.Name,
-		Description: config.Service.Description,
-		ExecStart:   filepath.Join(config.Service.BinPath, config.Service.Name),
-		WorkingDir:  config.Service.WorkingDir,
-		User:        config.Service.User,
-		Environment: []string{"PORT=8080", "ENV=production"},
+		Name:        config.Service.Systemd.Name,
+		Description: config.Service.Systemd.Description,
+		ExecStart:   filepath.Join(config.Service.Systemd.BinPath, config.Service.Systemd.Name),
+		WorkingDir:  config.Service.Systemd.WorkingDir,
+		User:        config.Service.Systemd.User,
+		Environment: config.Service.Systemd.Env,
 		RestartSec:  10,
 		Restart:     "always",
 		WantedBy:    "multi-user.target",
@@ -112,16 +89,16 @@ func TestServiceManager(t *testing.T) {
 			log.Fatalf("Failed to create service unit: %v", err)
 		}
 	}
-	if err := serviceManager.InstallService(config.Service.Name); err != nil {
+	if err := serviceManager.InstallService(config.Service.Systemd.Name); err != nil {
 		log.Fatalf("Failed to install service: %v", err)
 	}
 
 	// Start the service
-	if err := serviceManager.StartService(config.Service.Name); err != nil {
+	if err := serviceManager.StartService(config.Service.Systemd.Name); err != nil {
 		log.Fatalf("Failed to start service: %v", err)
 	}
 	// Monitor service status
-	statusChan, errChan := serviceManager.MonitorService(config.Service.Name, 5*time.Second)
+	statusChan, errChan := serviceManager.MonitorService(config.Service.Systemd.Name, 5*time.Second)
 
 	// Handle status updates and errors
 	go func() {
@@ -140,7 +117,7 @@ func TestServiceManager(t *testing.T) {
 	// time.Sleep(5 * time.Minute)
 
 	// Get logs with custom options
-	logs, err := serviceManager.GetServiceLogs(config.Service.Name, LogOptions{
+	logs, err := serviceManager.GetServiceLogs(config.Service.Systemd.Name, LogOptions{
 		// Since:  time.Now().Add(-24 * time.Hour), // Last 24 hours
 		Lines: 50, // Maximum 1000 lines
 		// Follow: true, // Follow new logs
@@ -153,7 +130,7 @@ func TestServiceManager(t *testing.T) {
 	time.Sleep(5 * time.Minute)
 
 	// ... later, if you need to stop the service ...
-	if err := serviceManager.StopService(config.Service.Name); err != nil {
+	if err := serviceManager.StopService(config.Service.Systemd.Name); err != nil {
 		log.Fatalf("Failed to stop service: %v", err)
 	}
 }

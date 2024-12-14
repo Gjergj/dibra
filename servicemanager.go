@@ -22,7 +22,7 @@ type ServiceUnit struct {
 	User        string
 	RestartSec  int
 	// Additional systemd unit options
-	Environment []string
+	Environment map[string]string
 	Restart     string // e.g., "always", "on-failure"
 	WantedBy    string // e.g., "multi-user.target"
 }
@@ -396,7 +396,12 @@ func (s *ServiceManager) GetServiceUnit(serviceName string) (*ServiceUnit, error
 			case "User":
 				unit.User = value
 			case "Environment":
-				unit.Environment = append(unit.Environment, value)
+				envs := strings.Split(value, "=")
+				if len(envs) > 1 {
+					envs[0] = strings.TrimSpace(envs[0])
+					envs[1] = strings.TrimSpace(envs[1])
+					unit.Environment[envs[0]] = envs[1]
+				}
 			case "Restart":
 				unit.Restart = value
 			}

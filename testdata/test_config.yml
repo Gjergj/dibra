@@ -10,15 +10,16 @@ ssh:
 
 service:
   type: systemd
-  systemd
+  systemd:
     name: myapp
     description: My Custom Application Service
     bin_path: /home/testuser
     user: testuser
     working_dir: /home/testuser
+    env:
+      port: 8080
+      env: production
   artifact:
     type: localbinary
     path: /home/testuser/myapp
-    env:
-      - name: MY_ENV_VAR
-        value: my_value
+
