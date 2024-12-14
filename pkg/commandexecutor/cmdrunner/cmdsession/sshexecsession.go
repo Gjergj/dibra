@@ -8,25 +8,22 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-type SudoInfo struct {
-	Password string
-}
 type SShRunnerSession struct {
 	command  string
 	args     []string
 	env      map[string]string
-	sudoInfo *SudoInfo
+	withSudo bool
 	session  *ssh.Session
 }
 
-func NewSShRunnerSession(session *ssh.Session, command string, args []string, env map[string]string, sudoInfo *SudoInfo) *SShRunnerSession {
-	return &SShRunnerSession{session: session, command: command, args: args, env: env, sudoInfo: sudoInfo}
+func NewSShRunnerSession(session *ssh.Session, command string, args []string, env map[string]string, withSudo bool) *SShRunnerSession {
+	return &SShRunnerSession{session: session, command: command, args: args, env: env, withSudo: withSudo}
 }
 
 func (c *SShRunnerSession) String() string {
 	b := new(strings.Builder)
-	if c.sudoInfo != nil {
-		b.WriteString("sudo -S -p '' ")
+	if c.withSudo {
+		b.WriteString("sudo -S ")
 	}
 	b.WriteString(c.command)
 	for _, a := range c.args {

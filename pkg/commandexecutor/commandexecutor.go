@@ -1,12 +1,14 @@
 package commandexecutor
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
+	"strings"
+	"time"
 
 	"github.com/Gjergj/dibra/pkg/commandexecutor/cmdrunner"
-	"github.com/Gjergj/dibra/pkg/commandexecutor/cmdrunner/cmdsession"
 )
 
 // type CommandExecutor interface {
@@ -21,7 +23,7 @@ type Command struct {
 	Command  string
 	Args     []string
 	Env      map[string]string
-	SudoInfo *SudoInfo
+	WithSudo bool
 	Input    string
 }
 
@@ -39,18 +41,26 @@ func NewCommandRunner(runner cmdrunner.Runner) *CommandRunner {
 
 func (e *CommandRunner) Execute(cmd Command) (string, string, error) {
 	c := cmdrunner.Command{
-		Command: cmd.Command,
-		Args:    cmd.Args,
-		Env:     cmd.Env,
+		Command:  cmd.Command,
+		Args:     cmd.Args,
+		Env:      cmd.Env,
+		WithSudo: cmd.WithSudo,
+		// Input:    cmd.Input,
 	}
-	if cmd.SudoInfo != nil {
-		c.SudoInfo = &cmdsession.SudoInfo{Password: cmd.SudoInfo.Password}
-	}
+
 	session, err := e.runner.NewRunnerSession(c)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create session: %w", err)
 	}
 	defer session.Close()
+
+	sudoPassword := ""
+	if cmd.WithSudo {
+		sudoPassword = e.runner.SudoPassword()
+		if sudoPassword == "" {
+			return "", "", fmt.Errorf("sudo password is empty")
+		}
+	}
 
 	// Setup I/O
 	var stdoutBuf, stderrBuf bytes.Buffer
@@ -75,8 +85,34 @@ func (e *CommandRunner) Execute(cmd Command) (string, string, error) {
 	}
 	defer stdin.Close()
 
+	go func(in io.Writer, output io.ReadCloser) {
+		var (
+			line string
+			r    = bufio.NewReader(output)
+		)
+		for {
+			line, err = r.ReadString(':')
+			if err != nil {
+				break
+			}
+			if strings.Contains(line, "[sudo] password for ") {
+				_, err = in.Write([]byte(sudoPassword + "\n"))
+				if err != nil {
+					fmt.Println("failed to write password: %w", err)
+					break
+				}
+				fmt.Println("put the password ---  end .")
+				break
+			}
+		}
+	}(stdin, errPipe)
+
 	if err := session.Start(); err != nil {
 		return "", "", fmt.Errorf("command failed to start: %w", err)
+	}
+
+	if cmd.WithSudo {
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	if cmd.Input != "" {

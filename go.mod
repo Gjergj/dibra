@@ -18,4 +18,5 @@ require (
 	github.com/pkg/sftp v1.13.7
 	github.com/skeema/knownhosts v1.3.0
 	golang.org/x/sys v0.27.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0
 )

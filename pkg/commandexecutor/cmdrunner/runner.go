@@ -38,11 +38,13 @@ type Command struct {
 	Command  string
 	Args     []string
 	Env      map[string]string
-	SudoInfo *cmdsession.SudoInfo
+	WithSudo bool
+	// Input    string
 }
 
 type Runner interface {
 	NewRunnerSession(cmd Command) (RunnerSession, error)
+	SudoPassword() string
 	NewFSOPerations() (FSController, error)
 }
 
@@ -125,6 +127,10 @@ func (e *SSHConnection) Connect() error {
 	return nil
 }
 
+func (e *SSHConnection) SudoPassword() string {
+	return e.config.Password
+}
+
 func (e *SSHConnection) getPrivateKeyAuth() (ssh.AuthMethod, error) {
 	keyBytes, err := os.ReadFile(e.config.PrivateKey)
 	if err != nil {
@@ -171,7 +177,7 @@ func (e *SSHConnection) NewRunnerSession(cmd Command) (RunnerSession, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
-	return cmdsession.NewSShRunnerSession(sess, cmd.Command, cmd.Args, cmd.Env, cmd.SudoInfo), nil
+	return cmdsession.NewSShRunnerSession(sess, cmd.Command, cmd.Args, cmd.Env, cmd.WithSudo), nil
 }
 
 type SftpFSOperations struct {
@@ -196,7 +202,7 @@ func (e *SftpFSOperations) Upload(localPath string, remotePath string) error {
 	}
 	defer local.Close()
 
-	defer e.sftpClient.Close()
+	// defer e.sftpClient.Close()
 	err = e.sftpClient.MkdirAll(filepath.Dir(remotePath))
 	if err != nil {
 		return err

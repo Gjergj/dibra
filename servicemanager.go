@@ -11,7 +11,7 @@ import (
 
 type ServiceManager struct {
 	exec     *commandexecutor.CommandRunner
-	sudoInfo *commandexecutor.SudoInfo
+	WithSudo bool
 }
 
 type ServiceUnit struct {
@@ -20,6 +20,7 @@ type ServiceUnit struct {
 	ExecStart   string
 	WorkingDir  string
 	User        string
+	RestartSec  int
 	// Additional systemd unit options
 	Environment []string
 	Restart     string // e.g., "always", "on-failure"
@@ -27,8 +28,8 @@ type ServiceUnit struct {
 }
 
 // NewServiceManager creates a new ServiceManager instance
-func NewServiceManager(exec *commandexecutor.CommandRunner, sudoInfo *commandexecutor.SudoInfo) *ServiceManager {
-	return &ServiceManager{exec: exec, sudoInfo: sudoInfo}
+func NewServiceManager(exec *commandexecutor.CommandRunner, withSudo bool) *ServiceManager {
+	return &ServiceManager{exec: exec, WithSudo: withSudo}
 }
 
 // MonitorService monitors a service status via SSH
@@ -68,7 +69,7 @@ func (s *ServiceManager) getServiceStatus(serviceName string) (string, error) {
 	output, stderr, err := s.exec.Execute(commandexecutor.Command{
 		Command:  "systemctl",
 		Args:     []string{"status", serviceName},
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	})
 	if err != nil {
 		// Don't return error if service is just inactive
@@ -120,7 +121,7 @@ func (s *ServiceManager) ListServices() ([]string, error) {
 	cmd := commandexecutor.Command{
 		Command:  "systemctl",
 		Args:     []string{"list-units", "--type=service", "--all", "--no-pager", "--plain"},
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 
 	output, _, err := s.exec.Execute(cmd)
@@ -147,9 +148,24 @@ func (s *ServiceManager) ListServices() ([]string, error) {
 }
 
 // CreateServiceUnit creates a new systemd service unit file
-func (s *ServiceManager) CreateServiceUnit(unit ServiceUnit) error {
+func (s *ServiceManager) CreateServiceUnit(unit ServiceUnit, force bool) error {
 	if unit.Name == "" || unit.ExecStart == "" {
 		return fmt.Errorf("service name and ExecStart are required")
+	}
+
+	fileName := fmt.Sprintf("%s.service", unit.Name)
+	filePath := fmt.Sprintf("/etc/systemd/system/%s", fileName)
+
+	// Check if service file already exists
+	checkCmd := commandexecutor.Command{
+		Command:  "test",
+		Args:     []string{"-f", filePath},
+		WithSudo: s.WithSudo,
+	}
+
+	_, _, err := s.exec.Execute(checkCmd)
+	if err == nil && !force {
+		return fmt.Errorf("service unit file %s already exists. Use force=true to overwrite", fileName)
 	}
 
 	// Create unit file content
@@ -174,6 +190,9 @@ ExecStart=%s
 	if unit.Restart != "" {
 		unitContent += fmt.Sprintf("Restart=%s\n", unit.Restart)
 	}
+	if unit.RestartSec != 0 {
+		unitContent += fmt.Sprintf("RestartSec=%d\n", unit.RestartSec)
+	}
 
 	unitContent += "\n[Install]\n"
 	if unit.WantedBy != "" {
@@ -183,20 +202,23 @@ ExecStart=%s
 	}
 
 	// Write unit file to /etc/systemd/system/
-	fileName := fmt.Sprintf("%s.service", unit.Name)
 	cmd := commandexecutor.Command{
 		Command:  "tee",
-		Args:     []string{fmt.Sprintf("/etc/systemd/system/%s", fileName)},
+		Args:     []string{filePath},
 		Input:    unitContent,
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 
-	_, stderr, err := s.exec.Execute(cmd)
+	stdOut, stderr, err := s.exec.Execute(cmd)
 	if err != nil {
-		return fmt.Errorf("failed to create service unit file: %w", err)
+		return fmt.Errorf("failed to create service unit file: %w %s %s", err, stdOut, stderr)
 	}
 	if stderr != "" {
 		return fmt.Errorf("error creating service unit file: %s", stderr)
+	}
+
+	if err := s.makeExecutable(unit.ExecStart); err != nil {
+		return fmt.Errorf("failed to make executable: %w", err)
 	}
 
 	return s.reloadDaemon()
@@ -213,7 +235,7 @@ func (s *ServiceManager) InstallService(serviceName string) error {
 	cmd := commandexecutor.Command{
 		Command:  "systemctl",
 		Args:     []string{"enable", serviceName},
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 
 	_, stderr, err := s.exec.Execute(cmd)
@@ -228,11 +250,30 @@ func (s *ServiceManager) InstallService(serviceName string) error {
 }
 
 // StartService starts a systemd service
+func (s *ServiceManager) makeExecutable(path string) error {
+	cmd := commandexecutor.Command{
+		Command:  "chmod",
+		Args:     []string{"+x", path},
+		WithSudo: s.WithSudo,
+	}
+
+	_, stderr, err := s.exec.Execute(cmd)
+	if err != nil {
+		return fmt.Errorf("failed to make executable: %w", err)
+	}
+	if stderr != "" {
+		return fmt.Errorf("error making executable: %s", stderr)
+	}
+
+	return nil
+}
+
+// StartService starts a systemd service
 func (s *ServiceManager) StartService(serviceName string) error {
 	cmd := commandexecutor.Command{
 		Command:  "systemctl",
 		Args:     []string{"start", serviceName},
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 
 	_, stderr, err := s.exec.Execute(cmd)
@@ -251,7 +292,7 @@ func (s *ServiceManager) StopService(serviceName string) error {
 	cmd := commandexecutor.Command{
 		Command:  "systemctl",
 		Args:     []string{"stop", serviceName},
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 
 	_, stderr, err := s.exec.Execute(cmd)
@@ -270,7 +311,7 @@ func (s *ServiceManager) reloadDaemon() error {
 	cmd := commandexecutor.Command{
 		Command:  "systemctl",
 		Args:     []string{"daemon-reload"},
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 
 	_, stderr, err := s.exec.Execute(cmd)
@@ -293,7 +334,7 @@ func (s *ServiceManager) GetServiceUnit(serviceName string) (*ServiceUnit, error
 	checkCmd := commandexecutor.Command{
 		Command:  "test",
 		Args:     []string{"-f", filePath},
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 
 	_, _, err := s.exec.Execute(checkCmd)
@@ -305,7 +346,7 @@ func (s *ServiceManager) GetServiceUnit(serviceName string) (*ServiceUnit, error
 	cmd := commandexecutor.Command{
 		Command:  "cat",
 		Args:     []string{filePath},
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 
 	output, stderr, err := s.exec.Execute(cmd)
@@ -373,3 +414,69 @@ func (s *ServiceManager) GetServiceUnit(serviceName string) (*ServiceUnit, error
 
 	return unit, nil
 }
+
+// LogOptions represents options for retrieving service logs
+type LogOptions struct {
+	Since time.Time // Show logs since this time
+	Until time.Time // Show logs until this time
+	Lines int       // Number of lines to show (tail)
+	// Follow bool      // Follow log output
+}
+
+// GetServiceLogs retrieves logs for a service with the specified options
+func (s *ServiceManager) GetServiceLogs(serviceName string, options LogOptions) (string, error) {
+	args := []string{"-u", serviceName}
+
+	// Add time range filters if specified
+	if !options.Since.IsZero() {
+		args = append(args, fmt.Sprintf("--since=%s", options.Since.Format("2006-01-02 15:04:05")))
+	}
+	if !options.Until.IsZero() {
+		args = append(args, fmt.Sprintf("--until=%s", options.Until.Format("2006-01-02 15:04:05")))
+	}
+
+	// Add line limit if specified
+	if options.Lines > 0 {
+		args = append(args, fmt.Sprintf("-n%d", options.Lines))
+	}
+
+	// Add follow flag if specified
+	// if options.Follow {
+	// 	args = append(args, "-f")
+	// }
+
+	cmd := commandexecutor.Command{
+		Command: "journalctl",
+		Args:    args,
+		// WithSudo: s.WithSudo,
+	}
+
+	output, stderr, err := s.exec.Execute(cmd)
+	if err != nil {
+		return "", fmt.Errorf("failed to get service logs: %w: %s", err, stderr)
+	}
+
+	return output, nil
+}
+
+// GetRecentLogs is a convenience method to get the last n lines of logs
+func (s *ServiceManager) GetRecentLogs(serviceName string, lines int) (string, error) {
+	return s.GetServiceLogs(serviceName, LogOptions{
+		Lines: lines,
+	})
+}
+
+// GetLogsInTimeRange is a convenience method to get logs within a time range
+func (s *ServiceManager) GetLogsInTimeRange(serviceName string, since, until time.Time) (string, error) {
+	return s.GetServiceLogs(serviceName, LogOptions{
+		Since: since,
+		Until: until,
+	})
+}
+
+// // FollowLogs is a convenience method to follow service logs in real-time
+// func (s *ServiceManager) FollowLogs(serviceName string) (string, error) {
+// 	return s.GetServiceLogs(serviceName, LogOptions{
+// 		Follow: true,
+// 	})
+// }

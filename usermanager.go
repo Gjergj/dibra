@@ -21,12 +21,12 @@ type User struct {
 // UserService handles Linux user operations
 type UserService struct {
 	exec     *commandexecutor.CommandRunner
-	sudoInfo *commandexecutor.SudoInfo
+	WithSudo bool
 }
 
 // NewUserService creates a new UserService instance
-func NewUserService(exec *commandexecutor.CommandRunner, sudoInfo *commandexecutor.SudoInfo) *UserService {
-	return &UserService{exec: exec, sudoInfo: sudoInfo}
+func NewUserService(exec *commandexecutor.CommandRunner, withSudo bool) *UserService {
+	return &UserService{exec: exec, WithSudo: withSudo}
 }
 
 // Exists checks if a user exists
@@ -34,7 +34,7 @@ func (s *UserService) Exists(username string) (bool, error) {
 	cmd := commandexecutor.Command{
 		Command:  "id",
 		Args:     []string{username},
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 	_, stderr, err := s.exec.Execute(cmd)
 	// if err := cmd.Run(); err != nil {
@@ -97,7 +97,7 @@ func (s *UserService) Create(user User) error {
 	cmd := commandexecutor.Command{
 		Command:  args[0],
 		Args:     args[1:],
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 	output, stderr, err := s.exec.Execute(cmd)
 	if err != nil {
@@ -150,7 +150,7 @@ func (s *UserService) GetUserInfo(username string) (User, error) {
 	cmd := commandexecutor.Command{
 		Command:  "getent",
 		Args:     []string{"passwd", username},
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 	output, stderr, err := s.exec.Execute(cmd)
 	if err != nil {
@@ -173,7 +173,7 @@ func (s *UserService) GetUserInfo(username string) (User, error) {
 	cmd = commandexecutor.Command{
 		Command:  "id",
 		Args:     []string{"-Gn", username},
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 	output, stderr, err = s.exec.Execute(cmd)
 	if err != nil {
@@ -231,7 +231,7 @@ func (s *UserService) Update(user User) error {
 	cmd := commandexecutor.Command{
 		Command:  args[0],
 		Args:     args[1:],
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 	_, stderr, err := s.exec.Execute(cmd)
 	if err != nil {
@@ -274,7 +274,7 @@ func (s *UserService) Delete(username string) error {
 	cmd := commandexecutor.Command{
 		Command:  "userdel",
 		Args:     []string{username},
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 	_, stderr, err := s.exec.Execute(cmd)
 	if err != nil {
@@ -293,7 +293,7 @@ func (s *UserService) isUserLoggedIn(username string) (bool, error) {
 	cmd := commandexecutor.Command{
 		Command:  "who",
 		Args:     []string{},
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 	output, stderr, err := s.exec.Execute(cmd)
 	if err != nil {
@@ -312,7 +312,7 @@ func (s *UserService) List() ([]string, error) {
 	cmd := commandexecutor.Command{
 		Command:  "cut",
 		Args:     []string{"-d:", "-f1", "/etc/passwd"},
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 	}
 	output, stderr, err := s.exec.Execute(cmd)
 	// output, err := cmd.Output()
@@ -341,7 +341,7 @@ func (s *UserService) setPassword(username, password string) error {
 	cmd := commandexecutor.Command{
 		Command: "chpasswd\n",
 		// Args:     []string{fmt.Sprintf("%s:%s", username, password)},
-		SudoInfo: s.sudoInfo,
+		WithSudo: s.WithSudo,
 		Input:    fmt.Sprintf("%s:%s", username, password),
 	}
 	_, stderr, err := s.exec.Execute(cmd)
