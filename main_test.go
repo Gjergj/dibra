@@ -83,5 +83,4 @@ func TestValidateConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to validate config: %v", err)
 	}
-
 }

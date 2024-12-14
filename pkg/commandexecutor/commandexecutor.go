@@ -96,12 +96,12 @@ func (e *CommandRunner) Execute(cmd Command) (string, string, error) {
 				break
 			}
 			if strings.Contains(line, "[sudo] password for ") {
+				fmt.Println("entering sudo password")
 				_, err = in.Write([]byte(sudoPassword + "\n"))
 				if err != nil {
 					fmt.Println("failed to write password: %w", err)
 					break
 				}
-				fmt.Println("put the password ---  end .")
 				break
 			}
 		}

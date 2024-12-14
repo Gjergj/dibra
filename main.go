@@ -36,10 +36,6 @@ across remote machines via SSH.`,
 	}
 )
 
-func init() {
-
-}
-
 func findConfigFile() (string, error) {
 	// If config path is provided, use it
 	if configPath != "" {
@@ -57,17 +53,6 @@ func findConfigFile() (string, error) {
 	}
 
 	return "", fmt.Errorf("no configuration file found in current directory. Expected one of: %v", defaultConfigPaths)
-}
-
-func runApply(cmd *cobra.Command, args []string) error {
-	config, err := findConfigFile()
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Applying configuration from: %s\n", config)
-	// Your apply logic here
-	return nil
 }
 
 func runValidate(cmd *cobra.Command, args []string) error {
