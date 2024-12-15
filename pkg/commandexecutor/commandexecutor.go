@@ -135,3 +135,22 @@ func (e *CommandRunner) Execute(cmd Command) (string, string, error) {
 
 	return stdoutBuf.String(), stderrBuf.String(), nil
 }
+
+func (e *CommandRunner) ExecuteCombinedOutput(cmd Command) (string, error) {
+	c := cmdrunner.Command{
+		Command:  cmd.Command,
+		Args:     cmd.Args,
+		Env:      cmd.Env,
+		WithSudo: cmd.WithSudo,
+		// Input:    cmd.Input,
+	}
+
+	session, err := e.runner.NewRunnerSession(c)
+	if err != nil {
+		return "", fmt.Errorf("failed to create session: %w", err)
+	}
+	defer session.Close()
+
+	combinedOutput, err := session.CombinedOutput()
+	return string(combinedOutput), err
+}

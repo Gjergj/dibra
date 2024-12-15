@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/Gjergj/dibra/pkg/commandexecutor"
@@ -70,9 +72,13 @@ func applyStopOperation(config *Config, serviceManager *ServiceManager) error {
 		for {
 			select {
 			case status := <-statusChan:
-				fmt.Printf("Service %s status: %s\n", config.Service.Systemd.Name, status)
+				if status != "" {
+					fmt.Printf("Service %s status: %s\n", config.Service.Systemd.Name, status)
+				}
 			case err := <-errChan:
-				fmt.Printf("Error monitoring service %s: %v\n", config.Service.Systemd.Name, err)
+				if err != nil {
+					fmt.Printf("Error monitoring service %s: %v\n", config.Service.Systemd.Name, err)
+				}
 				return
 			}
 		}
@@ -119,6 +125,18 @@ func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnectio
 		WantedBy:    "multi-user.target",
 	}
 
+	// check if service already exists, if so, stop it
+	status, err := serviceManager.getServiceStatus(config.Service.Systemd.Name)
+	if err != nil {
+		return err
+	}
+	if status == "running" {
+		err = serviceManager.StopService(config.Service.Systemd.Name)
+		if err != nil {
+			return err
+		}
+	}
+
 	// Try to create without force
 	err = serviceManager.CreateServiceUnit(unit, true)
 	if err != nil {
@@ -148,9 +166,13 @@ func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnectio
 		for {
 			select {
 			case status := <-statusChan:
-				fmt.Printf("Service %s status: %s\n", config.Service.Systemd.Name, status)
+				if status != "" {
+					fmt.Printf("Service %s status: %s\n", config.Service.Systemd.Name, status)
+				}
 			case err := <-errChan:
-				fmt.Printf("Error monitoring service: %v\n", err)
+				if err != nil {
+					fmt.Printf("Error monitoring service: %v\n", err)
+				}
 				return
 			}
 		}
@@ -187,6 +209,34 @@ func uploadArtifacts(config *Config, sshConnection *cmdrunner.SSHConnection, ser
 	}
 
 	for _, artifact := range config.Service.Artifacts {
+		upload := true
+		//check constraints
+		for key, value := range artifact.Constraints {
+			switch key {
+			case "if_remote_not_exists":
+				upload = false
+
+				tmpl, err := template.New("path").Option().Parse(value)
+				if err != nil {
+					return err
+				}
+				var remotePath bytes.Buffer
+				err = tmpl.Execute(&remotePath, map[string]string{"remote_path": artifact.RemotePath})
+				if err != nil {
+					return err
+				}
+
+				_, err = fsOperations.Stat(remotePath.String())
+				if err != nil {
+					upload = true
+				}
+				// if remoteFileInfo.IsDir() {
+				// 	fmt.Printf("remote file %s is a directory, expected a file\n", remotePath.String())
+				// 	upload = true
+				// }
+			}
+		}
+
 		//check if local file exists and is a file and not directory
 		fileInfo, err := os.Stat(artifact.Path)
 		if err != nil {
@@ -200,9 +250,11 @@ func uploadArtifacts(config *Config, sshConnection *cmdrunner.SSHConnection, ser
 		if err != nil {
 			return err
 		}
-		err = fsOperations.Upload(artifact.Path, artifact.RemotePath)
-		if err != nil {
-			return err
+		if upload {
+			err = fsOperations.Upload(artifact.Path, artifact.RemotePath)
+			if err != nil {
+				return err
+			}
 		}
 		if artifact.Type == "localbinary" {
 			err = serviceManager.MakeExecutable(artifact.RemotePath)

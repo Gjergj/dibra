@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -61,6 +62,10 @@ func (s *ServiceManager) MonitorService(serviceName string, interval time.Durati
 
 			iterations--
 			if iterations == 0 {
+				if len(statusChan) > 0 || len(errChan) > 0 {
+					// wait for the channel to be empty before returning
+					time.Sleep(1 * time.Millisecond)
+				}
 				return
 			}
 
@@ -86,7 +91,9 @@ func (s *ServiceManager) getServiceStatus(serviceName string) (string, error) {
 		if strings.Contains(stderr, "could not be found") {
 			return "not-found", nil
 		}
-		if exitErr, ok := err.(*ssh.ExitError); ok && exitErr.ExitStatus() == 3 {
+		// replace the following with errors.As(err, &exitErr)
+		var exitErr *ssh.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitStatus() == 3 {
 			return "inactive", nil
 		}
 		return "", fmt.Errorf("failed to get status: %w", err)

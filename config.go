@@ -31,9 +31,10 @@ type Systemd struct {
 }
 
 type Artifact struct {
-	Type       string `yaml:"type"`
-	Path       string `yaml:"path"`
-	RemotePath string `yaml:"remote_path"`
+	Type        string            `yaml:"type"`
+	Path        string            `yaml:"path"`
+	RemotePath  string            `yaml:"remote_path"`
+	Constraints map[string]string `yaml:"constraints"`
 }
 
 type SSH struct {

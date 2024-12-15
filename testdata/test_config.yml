@@ -27,4 +27,5 @@ service:
     - type: localbinary
       path: /Users/gjergjiramku/projekte/social_posts/bin/yt-dlp_linux
       remote_path: /home/testuser/yt-dlp
-
+      constraints:
+        if_remote_not_exists: "{{.remote_path}}"

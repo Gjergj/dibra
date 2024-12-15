@@ -32,6 +32,7 @@ type RunnerSession interface {
 type FSController interface {
 	Upload(localPath string, remotePath string) error
 	MkdirAll(remotePath string) error
+	Stat(remotePath string) (os.FileInfo, error)
 }
 
 type Command struct {
@@ -224,6 +225,10 @@ func (e *SftpFSOperations) Upload(localPath string, remotePath string) error {
 
 func (e *SftpFSOperations) MkdirAll(remotePath string) error {
 	return e.sftpClient.MkdirAll(remotePath)
+}
+
+func (e *SftpFSOperations) Stat(remotePath string) (os.FileInfo, error) {
+	return e.sftpClient.Stat(remotePath)
 }
 
 // // ExecuteSudoCommand executes a command with sudo
