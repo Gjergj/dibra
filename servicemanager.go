@@ -164,11 +164,13 @@ func (s *ServiceManager) ListServices() ([]string, error) {
 	return services, nil
 }
 
-// CreateServiceUnit creates a new systemd service unit file
+// CreateServiceUnit only creates a new systemd service unit file if it doesn't exist, doesn't install it
 func (s *ServiceManager) CreateServiceUnit(unit ServiceUnit, force bool) error {
 	if unit.Name == "" || unit.ExecStart == "" {
 		return fmt.Errorf("service name and ExecStart are required")
 	}
+
+	existingUnitFile, _ := s.getServiceUnitFile(unit.Name)
 
 	fileName := fmt.Sprintf("%s.service", unit.Name)
 	filePath := fmt.Sprintf("/etc/systemd/system/%s", fileName)
@@ -218,30 +220,29 @@ ExecStart=%s
 		unitContent += "WantedBy=multi-user.target\n"
 	}
 
-	// Write unit file to /etc/systemd/system/
-	cmd := commandexecutor.Command{
-		Command:  "tee",
-		Args:     []string{filePath},
-		Input:    unitContent,
-		WithSudo: s.WithSudo,
+	if existingUnitFile != unitContent {
+		// Write unit file to /etc/systemd/system/
+		fmt.Printf("Writing unit file to %s\n", filePath)
+		cmd := commandexecutor.Command{
+			Command:  "tee",
+			Args:     []string{filePath},
+			Input:    unitContent,
+			WithSudo: s.WithSudo,
+		}
+
+		stdOut, stderr, err := s.exec.Execute(cmd)
+		if err != nil {
+			return fmt.Errorf("failed to create service unit file: %w %s %s", err, stdOut, stderr)
+		}
+		if stderr != "" {
+			return fmt.Errorf("error creating service unit file: %s", stderr)
+		}
 	}
 
-	stdOut, stderr, err := s.exec.Execute(cmd)
-	if err != nil {
-		return fmt.Errorf("failed to create service unit file: %w %s %s", err, stdOut, stderr)
-	}
-	if stderr != "" {
-		return fmt.Errorf("error creating service unit file: %s", stderr)
-	}
-
-	if err := s.MakeExecutable(unit.ExecStart); err != nil {
-		return fmt.Errorf("failed to make executable: %w", err)
-	}
-
-	return s.reloadDaemon()
+	return nil
 }
 
-// InstallService installs and enables a service
+// InstallService installs and enables a service, but doesn't create the unit file
 func (s *ServiceManager) InstallService(serviceName string) error {
 	// Reload systemd daemon first
 	if err := s.reloadDaemon(); err != nil {
@@ -325,6 +326,7 @@ func (s *ServiceManager) StopService(serviceName string) error {
 
 // reloadDaemon reloads the systemd daemon
 func (s *ServiceManager) reloadDaemon() error {
+	fmt.Println("Reloading systemd daemon")
 	cmd := commandexecutor.Command{
 		Command:  "systemctl",
 		Args:     []string{"daemon-reload"},
@@ -342,8 +344,8 @@ func (s *ServiceManager) reloadDaemon() error {
 	return nil
 }
 
-// GetServiceUnit reads and parses an existing systemd service unit file
-func (s *ServiceManager) GetServiceUnit(serviceName string) (*ServiceUnit, error) {
+func (s *ServiceManager) getServiceUnitFile(serviceName string) (string, error) {
+
 	fileName := fmt.Sprintf("%s.service", serviceName)
 	filePath := fmt.Sprintf("/etc/systemd/system/%s", fileName)
 
@@ -356,7 +358,7 @@ func (s *ServiceManager) GetServiceUnit(serviceName string) (*ServiceUnit, error
 
 	_, _, err := s.exec.Execute(checkCmd)
 	if err != nil {
-		return nil, fmt.Errorf("service unit file %s does not exist", fileName)
+		return "", fmt.Errorf("service unit file %s does not exist", filePath)
 	}
 
 	// Read the service file
@@ -368,10 +370,21 @@ func (s *ServiceManager) GetServiceUnit(serviceName string) (*ServiceUnit, error
 
 	output, stderr, err := s.exec.Execute(cmd)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read service unit file: %w", err)
+		return "", fmt.Errorf("failed to read service unit file: %w", err)
 	}
 	if stderr != "" {
-		return nil, fmt.Errorf("error reading service unit file: %s", stderr)
+		return "", fmt.Errorf("error reading service unit file: %s", stderr)
+	}
+
+	return output, nil
+}
+
+// GetServiceUnit reads and parses an existing systemd service unit file
+func (s *ServiceManager) GetServiceUnit(serviceName string) (*ServiceUnit, error) {
+
+	output, err := s.getServiceUnitFile(serviceName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read service unit file: %w", err)
 	}
 
 	// Parse the service file content

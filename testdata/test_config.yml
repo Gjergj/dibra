@@ -10,7 +10,7 @@ ssh:
 
 service:
   type: systemd
-  operation: stop
+  operation: install
   systemd:
     name: myapp
     description: My Custom Application Service
@@ -21,11 +21,14 @@ service:
       port: 8080
       env: production
   artifacts:
-    - type: localbinary
+    - type: local
       path: /Users/gjergjiramku/projekte/social_posts/bin/social_posts
       remote_path: /home/testuser/myapp
-    - type: localbinary
+      constraints:
+        executable: true
+    - type: local
       path: /Users/gjergjiramku/projekte/social_posts/bin/yt-dlp_linux
       remote_path: /home/testuser/yt-dlp
       constraints:
         if_remote_not_exists: "{{.remote_path}}"
+        executable: true

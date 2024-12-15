@@ -210,6 +210,7 @@ func uploadArtifacts(config *Config, sshConnection *cmdrunner.SSHConnection, ser
 
 	for _, artifact := range config.Service.Artifacts {
 		upload := true
+		executable := false
 		//check constraints
 		for key, value := range artifact.Constraints {
 			switch key {
@@ -234,6 +235,8 @@ func uploadArtifacts(config *Config, sshConnection *cmdrunner.SSHConnection, ser
 				// 	fmt.Printf("remote file %s is a directory, expected a file\n", remotePath.String())
 				// 	upload = true
 				// }
+			case "executable":
+				executable = true
 			}
 		}
 
@@ -251,12 +254,14 @@ func uploadArtifacts(config *Config, sshConnection *cmdrunner.SSHConnection, ser
 			return err
 		}
 		if upload {
+			fmt.Printf("Uploading artifact %s to %s\n", artifact.Path, artifact.RemotePath)
 			err = fsOperations.Upload(artifact.Path, artifact.RemotePath)
 			if err != nil {
 				return err
 			}
 		}
-		if artifact.Type == "localbinary" {
+		if executable {
+			fmt.Printf("Making executable %s\n", artifact.RemotePath)
 			err = serviceManager.MakeExecutable(artifact.RemotePath)
 			if err != nil {
 				return err
