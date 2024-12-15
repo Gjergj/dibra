@@ -10,7 +10,7 @@ ssh:
 
 service:
   type: systemd
-  operation: install
+  operation: stop
   systemd:
     name: myapp
     description: My Custom Application Service

@@ -52,8 +52,9 @@ func runApply(cmd *cobra.Command, args []string) error {
 		return applyInstallOperation(config, sshConnection, serviceManager)
 	case "stop":
 		return applyStopOperation(config, serviceManager)
+	default:
+		return fmt.Errorf("invalid operation: %s", config.Service.Operation)
 	}
-	return nil
 }
 
 func applyStopOperation(config *Config, serviceManager *ServiceManager) error {
