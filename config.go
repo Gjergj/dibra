@@ -13,8 +13,12 @@ type Config struct {
 }
 
 type Service struct {
-	Type    string   `yaml:"type"`
-	Systemd *Systemd `yaml:"systemd"`
+	Type        string     `yaml:"type"`
+	Name        string     `yaml:"name"`
+	Description string     `yaml:"description"`
+	Operation   string     `yaml:"operation"`
+	Systemd     *Systemd   `yaml:"systemd"`
+	Artifacts   []Artifact `yaml:"artifacts"`
 }
 
 type Systemd struct {
@@ -24,12 +28,12 @@ type Systemd struct {
 	User        string            `yaml:"user"`
 	WorkingDir  string            `yaml:"working_dir"`
 	Env         map[string]string `yaml:"env"`
-	Artifact    *Artifact         `yaml:"artifact"`
 }
 
 type Artifact struct {
-	Type string `yaml:"type"`
-	Path string `yaml:"path"`
+	Type       string `yaml:"type"`
+	Path       string `yaml:"path"`
+	RemotePath string `yaml:"remote_path"`
 }
 
 type SSH struct {

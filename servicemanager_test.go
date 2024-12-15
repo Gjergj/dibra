@@ -98,7 +98,7 @@ func TestServiceManager(t *testing.T) {
 		log.Fatalf("Failed to start service: %v", err)
 	}
 	// Monitor service status
-	statusChan, errChan := serviceManager.MonitorService(config.Service.Systemd.Name, 5*time.Second)
+	statusChan, errChan := serviceManager.MonitorService(config.Service.Systemd.Name, 5*time.Second, 1)
 
 	// Handle status updates and errors
 	go func() {

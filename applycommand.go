@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -44,6 +45,43 @@ func runApply(cmd *cobra.Command, args []string) error {
 	commandExecutor := commandexecutor.NewCommandRunner(sshConnection)
 	serviceManager := NewServiceManager(commandExecutor, true)
 
+	switch config.Service.Operation {
+	case "install", "":
+		return applyInstallOperation(config, sshConnection, serviceManager)
+	case "stop":
+		return applyStopOperation(config, serviceManager)
+	}
+	return nil
+}
+
+func applyStopOperation(config *Config, serviceManager *ServiceManager) error {
+	fmt.Printf("Stopping service %s\n", config.Service.Systemd.Name)
+	err := serviceManager.StopService(config.Service.Systemd.Name)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Monitoring service %s\n", config.Service.Systemd.Name)
+	// Monitor service status
+	statusChan, errChan := serviceManager.MonitorService(config.Service.Systemd.Name, 5*time.Second, 1)
+
+	// Handle status updates and errors
+	go func() {
+		for {
+			select {
+			case status := <-statusChan:
+				fmt.Printf("Service %s status: %s\n", config.Service.Systemd.Name, status)
+			case err := <-errChan:
+				fmt.Printf("Error monitoring service %s: %v\n", config.Service.Systemd.Name, err)
+				return
+			}
+		}
+	}()
+	time.Sleep(5 * time.Second)
+	return nil
+}
+
+func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager) error {
 	fsOperations, err := sshConnection.NewFSOPerations()
 	if err != nil {
 		return err
@@ -54,7 +92,7 @@ func runApply(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	err = fsOperations.Upload("/Users/gjergjiramku/projekte/social_posts/bin/social_posts", filepath.Join(config.Service.Systemd.BinPath, config.Service.Systemd.Name))
+	err = uploadArtifacts(config, sshConnection, serviceManager)
 	if err != nil {
 		return err
 	}
@@ -103,14 +141,14 @@ func runApply(cmd *cobra.Command, args []string) error {
 		log.Fatalf("Failed to start service: %v", err)
 	}
 	// Monitor service status
-	statusChan, errChan := serviceManager.MonitorService(config.Service.Systemd.Name, 5*time.Second)
+	statusChan, errChan := serviceManager.MonitorService(config.Service.Systemd.Name, 5*time.Second, 1)
 
 	// Handle status updates and errors
 	go func() {
 		for {
 			select {
 			case status := <-statusChan:
-				fmt.Printf("Service status: %s\n", status)
+				fmt.Printf("Service %s status: %s\n", config.Service.Systemd.Name, status)
 			case err := <-errChan:
 				fmt.Printf("Error monitoring service: %v\n", err)
 				return
@@ -139,5 +177,39 @@ func runApply(cmd *cobra.Command, args []string) error {
 	// if err := serviceManager.StopService(config.Service.Systemd.Name); err != nil {
 	// 	log.Fatalf("Failed to stop service: %v", err)
 	// }
+	return nil
+}
+
+func uploadArtifacts(config *Config, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager) error {
+	fsOperations, err := sshConnection.NewFSOPerations()
+	if err != nil {
+		return err
+	}
+
+	for _, artifact := range config.Service.Artifacts {
+		//check if local file exists and is a file and not directory
+		fileInfo, err := os.Stat(artifact.Path)
+		if err != nil {
+			return fmt.Errorf("local file %s does not exist: %v", artifact.Path, err)
+		}
+		if fileInfo.IsDir() {
+			return fmt.Errorf("local path %s is a directory, expected a file", artifact.Path)
+		}
+
+		err = fsOperations.MkdirAll(filepath.Dir(artifact.RemotePath))
+		if err != nil {
+			return err
+		}
+		err = fsOperations.Upload(artifact.Path, artifact.RemotePath)
+		if err != nil {
+			return err
+		}
+		if artifact.Type == "localbinary" {
+			err = serviceManager.MakeExecutable(artifact.RemotePath)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }

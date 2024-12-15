@@ -196,6 +196,11 @@ func (e *SSHConnection) NewFSOPerations() (FSController, error) {
 
 func (e *SftpFSOperations) Upload(localPath string, remotePath string) error {
 
+	// check if local path exists
+	if _, err := os.Stat(localPath); os.IsNotExist(err) {
+		return fmt.Errorf("local path does not exist: %s", localPath)
+	}
+
 	local, err := os.Open(localPath)
 	if err != nil {
 		return err

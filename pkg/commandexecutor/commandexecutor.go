@@ -108,7 +108,7 @@ func (e *CommandRunner) Execute(cmd Command) (string, string, error) {
 	}(stdin, errPipe)
 
 	if err := session.Start(); err != nil {
-		return "", "", fmt.Errorf("command failed to start: %w", err)
+		return "", "", fmt.Errorf("command start failed: %w", err)
 	}
 
 	if cmd.WithSudo {

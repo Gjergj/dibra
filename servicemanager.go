@@ -33,9 +33,14 @@ func NewServiceManager(exec *commandexecutor.CommandRunner, withSudo bool) *Serv
 }
 
 // MonitorService monitors a service status via SSH
-func (s *ServiceManager) MonitorService(serviceName string, interval time.Duration) (<-chan string, <-chan error) {
+func (s *ServiceManager) MonitorService(serviceName string, interval time.Duration, iterations int) (<-chan string, <-chan error) {
 	statusChan := make(chan string)
 	errChan := make(chan error, 1)
+
+	if iterations == 0 {
+		//indefinitely
+		iterations = 1000000000
+	}
 
 	go func() {
 		defer close(statusChan)
@@ -52,6 +57,11 @@ func (s *ServiceManager) MonitorService(serviceName string, interval time.Durati
 			case statusChan <- status:
 			default:
 				// Channel is full, skip this update
+			}
+
+			iterations--
+			if iterations == 0 {
+				return
 			}
 
 			time.Sleep(interval)
@@ -217,7 +227,7 @@ ExecStart=%s
 		return fmt.Errorf("error creating service unit file: %s", stderr)
 	}
 
-	if err := s.makeExecutable(unit.ExecStart); err != nil {
+	if err := s.MakeExecutable(unit.ExecStart); err != nil {
 		return fmt.Errorf("failed to make executable: %w", err)
 	}
 
@@ -250,7 +260,7 @@ func (s *ServiceManager) InstallService(serviceName string) error {
 }
 
 // StartService starts a systemd service
-func (s *ServiceManager) makeExecutable(path string) error {
+func (s *ServiceManager) MakeExecutable(path string) error {
 	cmd := commandexecutor.Command{
 		Command:  "chmod",
 		Args:     []string{"+x", path},
