@@ -237,6 +237,8 @@ ExecStart=%s
 		if stderr != "" {
 			return fmt.Errorf("error creating service unit file: %s", stderr)
 		}
+	} else {
+		fmt.Printf("Service unit file %s already exists and is up to date\n", filePath)
 	}
 
 	return nil
