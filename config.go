@@ -8,10 +8,11 @@ import (
 )
 
 type Config struct {
-	MachineName string   `yaml:"machine_name"`
-	SSH         *SSH     `yaml:"ssh"`
-	Service     *Service `yaml:"service"`
-	Secrets     *Secrets `yaml:"secrets"`
+	MachineName string            `yaml:"machine_name"`
+	SSH         *SSH              `yaml:"ssh"`
+	Service     *Service          `yaml:"service"`
+	Secrets     *Secrets          `yaml:"secrets"`
+	Variables   map[string]string `yaml:"variables"`
 }
 
 type Secrets struct {
@@ -65,6 +66,11 @@ func LoadConfig(filepath string) (*Config, error) {
 		return nil, err
 	}
 
+	yamlFile, err = expandVariables(yamlFile)
+	if err != nil {
+		return nil, err
+	}
+
 	var config Config
 	err = yaml.Unmarshal(yamlFile, &config)
 	if err != nil {
@@ -80,25 +86,48 @@ func handleSecrets(configFileContent []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	if config.Secrets.Adapter == "bitwarden" {
-		sess, err := unlockBitwarden("")
-		if err != nil {
-			return nil, err
+	if config.Secrets != nil {
+		if config.Secrets.Adapter == "bitwarden" {
+			sess, err := unlockBitwarden("")
+			if err != nil {
+				return nil, err
+			}
+
+			secrets, err := getSecrets(sess, config.Secrets.List)
+			if err != nil {
+				return nil, err
+			}
+
+			yamlFile := os.Expand(string(configFileContent), func(key string) string {
+				if val, ok := secrets[key]; ok {
+					return val
+				}
+				return fmt.Sprintf("${%s}", key)
+
+			})
+			return []byte(yamlFile), nil
 		}
 
-		secrets, err := getSecrets(sess, config.Secrets.List)
-		if err != nil {
-			return nil, err
-		}
-
-		yamlFile := os.Expand(string(configFileContent), func(key string) string {
-			return secrets[key]
-
-		})
-		return []byte(yamlFile), nil
+		return nil, fmt.Errorf("unsupported secret adapter: %s", config.Secrets.Adapter)
 	}
 
-	return nil, fmt.Errorf("unsupported secret adapter: %s", config.Secrets.Adapter)
+	return configFileContent, nil
+}
+
+func expandVariables(configFileContent []byte) ([]byte, error) {
+	var config Config
+	err := yaml.Unmarshal(configFileContent, &config)
+	if err != nil {
+		return nil, err
+	}
+
+	yamlFile := os.Expand(string(configFileContent), func(key string) string {
+		if val, ok := config.Variables[key]; ok {
+			return val
+		}
+		return fmt.Sprintf("${%s}", key)
+	})
+	return []byte(yamlFile), nil
 }
 
 func validateConfig(c *Config) error {

@@ -27,7 +27,7 @@ type Data struct {
 
 func unlockBitwarden(password string) (string, error) {
 
-	//first run bw sync
+	fmt.Println("Syncing bitwarden")
 	cmd := exec.Command("bw", "sync")
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -44,6 +44,7 @@ func unlockBitwarden(password string) (string, error) {
 		password = string(p)
 	}
 
+	fmt.Println("Unlocking bitwarden")
 	cmd = exec.Command("bw", "unlock", "--response")
 	cmd.Stderr = os.Stderr
 
