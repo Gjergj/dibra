@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -68,13 +68,51 @@ func unlockBitwarden() (string, error) {
 	if !response.Success {
 		return "", fmt.Errorf("failed to unlock Bitwarden: %s", response.Data.Message)
 	}
-
-	session := strings.TrimSpace(response.Data.Raw)
-	return session, nil
+	return response.Data.Raw, nil
 }
 
-func getBitwardenItem(session string, item string) (string, error) {
-	cmd := exec.Command("bw", "get", item, "--session", session, "--response")
+type bitwardenItem struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Data    struct {
+		PasswordHistory []struct {
+			LastUsedDate time.Time `json:"lastUsedDate"`
+			Password     string    `json:"password"`
+		} `json:"passwordHistory"`
+		RevisionDate   time.Time `json:"revisionDate"`
+		CreationDate   time.Time `json:"creationDate"`
+		DeletedDate    any       `json:"deletedDate"`
+		Object         string    `json:"object"`
+		ID             string    `json:"id"`
+		OrganizationID any       `json:"organizationId"`
+		FolderID       any       `json:"folderId"`
+		Type           int       `json:"type"`
+		Reprompt       int       `json:"reprompt"`
+		Name           string    `json:"name"`
+		Notes          string    `json:"notes"`
+		Favorite       bool      `json:"favorite"`
+		Fields         []struct {
+			Name     string `json:"name"`
+			Value    string `json:"value"`
+			Type     int    `json:"type"`
+			LinkedID any    `json:"linkedId"`
+		} `json:"fields"`
+		Login struct {
+			Fido2Credentials     []any     `json:"fido2Credentials"`
+			Uris                 []any     `json:"uris"`
+			Username             string    `json:"username"`
+			Password             string    `json:"password"`
+			Totp                 any       `json:"totp"`
+			PasswordRevisionDate time.Time `json:"passwordRevisionDate"`
+		} `json:"login"`
+		CollectionIds []any `json:"collectionIds"`
+	} `json:"data"`
+}
+
+func getBitwardenItem(session string, item string) (bitwardenItem, error) {
+	item = fmt.Sprintf(`"%s"`, item)
+	cmd := exec.Command("bw", "get", "item", item, "--session", session, "--response")
+	fmt.Printf("running command: %s\n", cmd.String())
 	cmd.Stderr = os.Stderr
 
 	var outb, errb bytes.Buffer
@@ -82,48 +120,14 @@ func getBitwardenItem(session string, item string) (string, error) {
 	cmd.Stderr = &errb
 
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("command failed: %s %s", err.Error(), outb.String())
+		return bitwardenItem{}, fmt.Errorf("command failed: %s %s", err.Error(), outb.String())
 	}
 
-	var response struct {
-		PasswordHistory []interface{} `json:"passwordHistory"`
-		RevisionDate    string        `json:"revisionDate"`
-		CreationDate    string        `json:"creationDate"`
-		DeletedDate     interface{}   `json:"deletedDate"`
-		Object          string        `json:"object"`
-		ID              string        `json:"id"`
-		OrganizationID  interface{}   `json:"organizationId"`
-		FolderID        interface{}   `json:"folderId"`
-		Type            int           `json:"type"`
-		Reprompt        int           `json:"reprompt"`
-		Name            string        `json:"name"`
-		Notes           interface{}   `json:"notes"`
-		Favorite        bool          `json:"favorite"`
-		Fields          []struct {
-			Name     string      `json:"name"`
-			Value    string      `json:"value"`
-			Type     int         `json:"type"` // 0 plain text ; 2 hidden
-			LinkedID interface{} `json:"linkedId"`
-		} `json:"fields"`
-		Login struct {
-			Fido2Credentials     []interface{} `json:"fido2Credentials"`
-			URIs                 []interface{} `json:"uris"`
-			Username             string        `json:"username"`
-			Password             string        `json:"password"`
-			TOTP                 interface{}   `json:"totp"`
-			PasswordRevisionDate interface{}   `json:"passwordRevisionDate"`
-		} `json:"login"`
-		CollectionIds []interface{} `json:"collectionIds"`
-	}
-
-	err := json.Unmarshal(outb.Bytes(), &response)
+	var bwi bitwardenItem
+	err := json.Unmarshal(outb.Bytes(), &bwi)
 	if err != nil {
-		return "", fmt.Errorf("failed to unmarshal response: %s", err)
+		return bitwardenItem{}, fmt.Errorf("failed to unmarshal response: %s", err)
 	}
 
-	if !response.Success {
-		return "", fmt.Errorf("failed to get item")
-	}
-
-	return outb.String(), nil
+	return bwi, nil
 }

@@ -3,15 +3,15 @@ machine_name: testmachine
 secrets:
   adapter: bitwarden
   list:
-    SSH_PASSWORD: collection_name/item_name
-    HOST_PASSWORD: collection_name/item_name
+    SSH_PASSWORD: item_name/field_name
+    HOST_PASSWORD: vps_ssd_nodes/password
 
 ssh:
   host: localhost
   user: testuser
   port: 32222
   key_path: /Users/gjergjiramku/.orbstack/ssh/id_ed25519 #~/.ssh/id_rsa
-  password: 1234
+  password: {{.HOST_PASSWORD}}
   timeout: 30
   allow_insecure: true
 
