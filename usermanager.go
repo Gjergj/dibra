@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 
 	"github.com/Gjergj/dibra/pkg/commandexecutor"
@@ -115,7 +116,111 @@ func (s *UserService) Create(user User) error {
 		}
 	}
 
+	// Handle group assignments
+	if err := s.updateGroups(user.Username, user.Groups); err != nil {
+		return fmt.Errorf("error setting user groups: %w", err)
+	}
+
 	return nil
+}
+
+// Helper method to update user groups
+func (s *UserService) updateGroups(username string, desiredGroups []string) error {
+	// First, get current supplementary groups
+	currentUser, err := s.GetUserInfo(username)
+	if err != nil {
+		return fmt.Errorf("error getting current user info: %w", err)
+	}
+
+	// Get primary group
+	primaryGroup, err := s.getPrimaryGroup(username)
+	if err != nil {
+		return fmt.Errorf("error getting primary group: %w", err)
+	}
+
+	// Check if groups are already in desired state
+	if s.groupsMatch(currentUser.Groups, desiredGroups) {
+		return nil // Already in desired state
+	}
+
+	// Verify all groups exist before making any changes
+	for _, group := range desiredGroups {
+		if exists, err := s.groupExists(group); err != nil {
+			return fmt.Errorf("error checking group existence: %w", err)
+		} else if !exists {
+			return fmt.Errorf("group %s does not exist", group)
+		}
+	}
+
+	// Build new groups list, ensuring primary group is preserved
+	newGroups := make([]string, 0, len(desiredGroups)+1)
+	groupSet := make(map[string]bool)
+
+	// Always include primary group first
+	newGroups = append(newGroups, primaryGroup)
+	groupSet[primaryGroup] = true
+
+	// Add other desired groups, avoiding duplicates
+	for _, group := range desiredGroups {
+		if !groupSet[group] {
+			newGroups = append(newGroups, group)
+			groupSet[group] = true
+		}
+	}
+
+	// Only update if there are supplementary groups to set
+	if len(newGroups) > 1 {
+		// Use -G for supplementary groups (excludes primary group)
+		cmd := exec.Command("usermod", "-G", strings.Join(newGroups[1:], ","), username)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("error updating groups: %w, output: %s", err, output)
+		}
+	}
+
+	return nil
+}
+
+// Helper method to check if a group exists
+func (s *UserService) groupExists(groupName string) (bool, error) {
+	cmd := exec.Command("getent", "group", groupName)
+	if err := cmd.Run(); err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() == 2 {
+			return false, nil
+		}
+		return false, fmt.Errorf("error checking group existence: %w", err)
+	}
+	return true, nil
+}
+
+// Improved group matching that handles primary groups correctly
+func (s *UserService) groupsMatch(current, desired []string) bool {
+	if len(current) < len(desired) {
+		return false
+	}
+
+	currentMap := make(map[string]bool)
+	for _, g := range current {
+		currentMap[g] = true
+	}
+
+	// Check if all desired groups are in current groups
+	for _, g := range desired {
+		if !currentMap[g] {
+			return false
+		}
+	}
+
+	return true
+}
+
+// Helper method to get user's primary group
+func (s *UserService) getPrimaryGroup(username string) (string, error) {
+	cmd := exec.Command("id", "-gn", username)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("error getting primary group: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
 }
 
 // Helper method to compare user specifications
