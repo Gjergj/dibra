@@ -49,7 +49,12 @@ func runApply(cmd *cobra.Command, args []string) error {
 	defer sshConnection.Close()
 
 	commandExecutor := commandexecutor.NewCommandRunner(sshConnection)
-	serviceManager := NewServiceManager(commandExecutor, true)
+
+	runWithSudo := false
+	if config.Service.Systemd.User != "root" {
+		runWithSudo = true
+	}
+	serviceManager := NewServiceManager(commandExecutor, runWithSudo)
 
 	switch config.Service.Operation {
 	case "install", "":
