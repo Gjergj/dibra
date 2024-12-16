@@ -12,8 +12,6 @@ var (
 	defaultConfigPaths = []string{
 		"dibra.yaml", // Current directory first
 		"dibra.yml",
-		"config.yaml",
-		"config.yml",
 	}
 
 	rootCmd = &cobra.Command{
