@@ -82,5 +82,12 @@ func cmd() {
 }
 
 func main() {
+
+	sess, err := unlockBitwarden()
+	if err != nil {
+		fmt.Println("failed to unlock bitwarden: %v", err)
+	}
+	fmt.Println(sess)
+	return
 	cmd()
 }
