@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,13 +25,16 @@ type Data struct {
 	Message string `json:"message"`
 }
 
-func unlockBitwarden() (string, error) {
-	fmt.Print("Enter Bitwarden master password: ")
-	password, err := term.ReadPassword(int(syscall.Stdin))
-	if err != nil {
-		return "", fmt.Errorf("failed to read password: %s", err)
+func unlockBitwarden(password string) (string, error) {
+	if password == "" {
+		fmt.Print("Enter Bitwarden master password: ")
+		p, err := term.ReadPassword(int(syscall.Stdin))
+		if err != nil {
+			return "", fmt.Errorf("failed to read password: %s", err)
+		}
+		fmt.Println()
+		password = string(p)
 	}
-	fmt.Println()
 
 	cmd := exec.Command("bw", "unlock", "--response")
 	cmd.Stderr = os.Stderr
@@ -109,10 +113,57 @@ type bitwardenItem struct {
 	} `json:"data"`
 }
 
+func getSecrets(session string, secretsList map[string]string) (map[string]string, error) {
+	collections := make(map[string]interface{})
+
+	secrets := make(map[string]string)
+	for _, value := range secretsList {
+		parts := strings.Split(value, "/")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid secret format: %s (expected collection/field)", value)
+		}
+		collection := parts[0]
+		collections[collection] = interface{}(nil)
+	}
+
+	for collection := range collections {
+		item, err := getBitwardenItem(session, collection)
+		if err != nil {
+			return nil, err
+		}
+		if collection == item.Data.Name {
+			found := false
+			for k, secret := range secretsList {
+				parts := strings.Split(secret, "/")
+				if len(parts) != 2 {
+					return nil, fmt.Errorf("invalid secret format: %s (expected collection/field)", secret)
+				}
+				field := parts[1]
+				for _, f := range item.Data.Fields {
+					if f.Name == field {
+						secrets[k] = f.Value
+						found = true
+					}
+				}
+				if field == "password" {
+					secrets[k] = item.Data.Login.Password
+					found = true
+				} else if field == "username" {
+					secrets[k] = item.Data.Login.Username
+					found = true
+				}
+				if !found {
+					return nil, fmt.Errorf("field %s not found in collection %s", field, collection)
+				}
+			}
+
+		}
+	}
+	return secrets, nil
+}
+
 func getBitwardenItem(session string, item string) (bitwardenItem, error) {
-	item = fmt.Sprintf(`"%s"`, item)
 	cmd := exec.Command("bw", "get", "item", item, "--session", session, "--response")
-	fmt.Printf("running command: %s\n", cmd.String())
 	cmd.Stderr = os.Stderr
 
 	var outb, errb bytes.Buffer

@@ -82,19 +82,5 @@ func cmd() {
 }
 
 func main() {
-
-	sess, err := unlockBitwarden()
-	if err != nil {
-		fmt.Printf("failed to unlock bitwarden: %v\n", err)
-		os.Exit(1)
-	}
-
-	ssh, err := getBitwardenItem(sess, "vps_ssd_nodes")
-	if err != nil {
-		fmt.Printf("failed to get bitwarden item: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("got bitwarden item: %+v\n", ssh)
-	return
 	cmd()
 }

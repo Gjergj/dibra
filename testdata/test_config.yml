@@ -3,7 +3,7 @@ machine_name: testmachine
 secrets:
   adapter: bitwarden
   list:
-    SSH_PASSWORD: item_name/field_name
+    SSH_PASSWORD: vps_ssd_nodes/username
     HOST_PASSWORD: vps_ssd_nodes/password
 
 ssh:
