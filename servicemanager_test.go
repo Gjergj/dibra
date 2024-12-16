@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,9 +20,13 @@ func TestServiceManager(t *testing.T) {
 		t.Fatalf("Failed to load config: %v", err)
 	}
 
+	port, err := strconv.Atoi(config.SSH.Port)
+	if err != nil {
+		t.Fatalf("Failed to convert port to int: %v", err)
+	}
 	sshConfig := &cmdrunner.SSHConfig{
 		Host:          config.SSH.Host,
-		Port:          config.SSH.Port,
+		Port:          port,
 		User:          config.SSH.User,
 		PrivateKey:    config.SSH.KeyPath,
 		Password:      config.SSH.Password,

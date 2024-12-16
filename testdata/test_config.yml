@@ -3,15 +3,18 @@ machine_name: testmachine
 secrets:
   adapter: bitwarden
   list:
-    SSH_PASSWORD: vps_ssd_nodes/username
-    HOST_PASSWORD: vps_ssd_nodes/password
+    SSH_USER: social_posts/username
+    SSH_PASSWORD: social_posts/password
+    SSH_HOST: social_posts/host
+    SSH_KEY_PATH: social_posts/keypath
+    SSH_PORT: social_posts/port
 
 ssh:
-  host: localhost
-  user: testuser
-  port: 32222
-  key_path: /Users/gjergjiramku/.orbstack/ssh/id_ed25519 #~/.ssh/id_rsa
-  password: {{.HOST_PASSWORD}}
+  host: ${SSH_HOST}
+  user: ${SSH_USER}
+  port: ${SSH_PORT}
+  key_path: ${SSH_KEY_PATH} #~/.ssh/id_rsa
+  password: ${SSH_PASSWORD}
   timeout: 30
   allow_insecure: true
 

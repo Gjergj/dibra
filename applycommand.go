@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -20,16 +21,19 @@ func runApply(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	fmt.Printf("Applying configuration from: %s\n", configfile)
 
 	config, err := LoadConfig(configfile)
 	if err != nil {
 		return err
 	}
-
-	fmt.Printf("Applying configuration from: %s\n", configfile)
+	port, err := strconv.Atoi(config.SSH.Port)
+	if err != nil {
+		return err
+	}
 	sshConfig := &cmdrunner.SSHConfig{
 		Host:          config.SSH.Host,
-		Port:          config.SSH.Port,
+		Port:          port,
 		User:          config.SSH.User,
 		PrivateKey:    config.SSH.KeyPath,
 		Password:      config.SSH.Password,

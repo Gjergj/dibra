@@ -7,7 +7,7 @@ import (
 )
 
 func TestBitwarden(t *testing.T) {
-	sess, err := unlockBitwarden("Gocarropatoca1")
+	sess, err := unlockBitwarden("")
 	if err != nil {
 		t.Fatalf("failed to unlock bitwarden: %v", err)
 	}

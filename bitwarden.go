@@ -26,6 +26,14 @@ type Data struct {
 }
 
 func unlockBitwarden(password string) (string, error) {
+
+	//first run bw sync
+	cmd := exec.Command("bw", "sync")
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to sync bitwarden: %s", err)
+	}
+
 	if password == "" {
 		fmt.Print("Enter Bitwarden master password: ")
 		p, err := term.ReadPassword(int(syscall.Stdin))
@@ -36,7 +44,7 @@ func unlockBitwarden(password string) (string, error) {
 		password = string(p)
 	}
 
-	cmd := exec.Command("bw", "unlock", "--response")
+	cmd = exec.Command("bw", "unlock", "--response")
 	cmd.Stderr = os.Stderr
 
 	stdin, err := cmd.StdinPipe()
