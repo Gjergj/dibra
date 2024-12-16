@@ -1,4 +1,11 @@
 machine_name: testmachine
+
+secrets:
+  adapter: bitwarden
+  list:
+    SSH_PASSWORD: collection_name/item_name
+    HOST_PASSWORD: collection_name/item_name
+
 ssh:
   host: localhost
   user: testuser
