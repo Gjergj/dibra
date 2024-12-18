@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"text/template"
 	"time"
 
@@ -121,6 +120,19 @@ func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnectio
 			return err
 		}
 
+		// Create a new service unit
+		unit := ServiceUnit{
+			Name:        config.Service.Systemd.Name,
+			Description: config.Service.Systemd.Description,
+			ExecStart:   filepath.Join(config.Service.Systemd.BinPath, config.Service.Systemd.Name),
+			WorkingDir:  config.Service.Systemd.WorkingDir,
+			User:        config.Service.Systemd.User,
+			Environment: config.Service.Systemd.Env,
+			RestartSec:  10,
+			Restart:     "always",
+			WantedBy:    "multi-user.target",
+		}
+
 		// err = fsOperations.MkdirAll(config.Service.Systemd.BinPath)
 		// if err != nil {
 		// 	return err
@@ -140,19 +152,6 @@ func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnectio
 			return err
 		}
 
-		// Create a new service unit
-		unit := ServiceUnit{
-			Name:        config.Service.Systemd.Name,
-			Description: config.Service.Systemd.Description,
-			ExecStart:   filepath.Join(config.Service.Systemd.BinPath, config.Service.Systemd.Name),
-			WorkingDir:  config.Service.Systemd.WorkingDir,
-			User:        config.Service.Systemd.User,
-			Environment: config.Service.Systemd.Env,
-			RestartSec:  10,
-			Restart:     "always",
-			WantedBy:    "multi-user.target",
-		}
-
 		// check if service already exists, if so, stop it
 		status, err := serviceManager.getServiceStatus(config.Service.Systemd.Name)
 		if err != nil {
@@ -166,14 +165,8 @@ func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnectio
 		}
 
 		// Try to create without force
-		err = serviceManager.CreateServiceUnit(unit, true)
+		err = serviceManager.CreateServiceUnit(unit)
 		if err != nil {
-			if strings.Contains(err.Error(), "already exists") {
-				// Handle existing service case
-				log.Printf("Service already exists: %v", err)
-				// Optionally retry with force
-				err = serviceManager.CreateServiceUnit(unit, true)
-			}
 			if err != nil {
 				log.Fatalf("Failed to create service unit: %v", err)
 			}

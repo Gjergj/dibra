@@ -165,7 +165,7 @@ func (s *ServiceManager) ListServices() ([]string, error) {
 }
 
 // CreateServiceUnit only creates a new systemd service unit file if it doesn't exist, doesn't install it
-func (s *ServiceManager) CreateServiceUnit(unit ServiceUnit, force bool) error {
+func (s *ServiceManager) CreateServiceUnit(unit ServiceUnit) error {
 	if unit.Name == "" || unit.ExecStart == "" {
 		return fmt.Errorf("service name and ExecStart are required")
 	}
@@ -176,16 +176,16 @@ func (s *ServiceManager) CreateServiceUnit(unit ServiceUnit, force bool) error {
 	filePath := fmt.Sprintf("/etc/systemd/system/%s", fileName)
 
 	// Check if service file already exists
-	checkCmd := commandexecutor.Command{
-		Command:  "test",
-		Args:     []string{"-f", filePath},
-		WithSudo: s.WithSudo,
-	}
+	// checkCmd := commandexecutor.Command{
+	// 	Command:  "test",
+	// 	Args:     []string{"-f", filePath},
+	// 	WithSudo: s.WithSudo,
+	// }
 
-	_, _, err := s.exec.Execute(checkCmd)
-	if err == nil && !force {
-		return fmt.Errorf("service unit file %s already exists. Use force=true to overwrite", fileName)
-	}
+	// _, _, err := s.exec.Execute(checkCmd)
+	// if err == nil && !force {
+	// 	return fmt.Errorf("service unit file %s already exists. Use force=true to overwrite", fileName)
+	// }
 
 	// Create unit file content
 	unitContent := fmt.Sprintf(`[Unit]
