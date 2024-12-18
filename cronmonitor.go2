@@ -1,0 +1,396 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+)
+
+var (
+	ErrJobNotFound      = errors.New("cron job not found")
+	ErrInvalidSchedule  = errors.New("invalid cron schedule")
+	ErrJobAlreadyExists = errors.New("cron job already exists")
+	ErrInvalidCommand   = errors.New("invalid command")
+	ErrOperationTimeout = errors.New("operation timeout")
+)
+
+// CronManager handles CRUD operations for cron jobs
+type CronManager struct {
+	monitor  *CronMonitor
+	jobs     map[string]*CronJob
+	mu       sync.RWMutex
+	cronDir  string
+	timeouts TimeoutConfig
+}
+
+// TimeoutConfig defines timeouts for various operations
+type TimeoutConfig struct {
+	Create time.Duration
+	Update time.Duration
+	Delete time.Duration
+	List   time.Duration
+	Verify time.Duration
+}
+
+// NewCronManager creates a new cron manager instance
+func NewCronManager(monitor *CronMonitor, cronDir string, timeouts TimeoutConfig) *CronManager {
+	return &CronManager{
+		monitor:  monitor,
+		jobs:     make(map[string]*CronJob),
+		cronDir:  cronDir,
+		timeouts: timeouts,
+	}
+}
+
+// ListJobs returns all managed cron jobs
+func (cm *CronManager) ListJobs(ctx context.Context) ([]CronJob, error) {
+	ctx, cancel := context.WithTimeout(ctx, cm.timeouts.List)
+	defer cancel()
+
+	done := make(chan struct{})
+	var jobs []CronJob
+	var err error
+
+	go func() {
+		defer close(done)
+		cm.mu.RLock()
+		defer cm.mu.RUnlock()
+
+		jobs = make([]CronJob, 0, len(cm.jobs))
+		for _, job := range cm.jobs {
+			jobs = append(jobs, *job)
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("list jobs: %w", ErrOperationTimeout)
+	case <-done:
+		return jobs, err
+	}
+}
+
+// CreateJob creates a new cron job
+func (cm *CronManager) CreateJob(ctx context.Context, job CronJob) error {
+	ctx, cancel := context.WithTimeout(ctx, cm.timeouts.Create)
+	defer cancel()
+
+	// Validate job
+	if err := cm.validateJob(ctx, job); err != nil {
+		return fmt.Errorf("job validation failed: %w", err)
+	}
+
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	// Check for existing job
+	if _, exists := cm.jobs[job.ID]; exists {
+		return ErrJobAlreadyExists
+	}
+
+	// Create cron file
+	if err := cm.createCronFile(ctx, job); err != nil {
+		return fmt.Errorf("failed to create cron file: %w", err)
+	}
+
+	// Start monitoring
+	if err := cm.monitor.Monitor(ctx, job); err != nil {
+		// Cleanup on failure
+		cm.deleteCronFile(job.ID)
+		return fmt.Errorf("failed to start monitoring: %w", err)
+	}
+
+	cm.jobs[job.ID] = &job
+	return nil
+}
+
+// UpdateJob updates an existing cron job
+func (cm *CronManager) UpdateJob(ctx context.Context, jobID string, updates CronJob) error {
+	ctx, cancel := context.WithTimeout(ctx, cm.timeouts.Update)
+	defer cancel()
+
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	existing, exists := cm.jobs[jobID]
+	if !exists {
+		return ErrJobNotFound
+	}
+
+	// Validate updates
+	if err := cm.validateJob(ctx, updates); err != nil {
+		return fmt.Errorf("invalid updates: %w", err)
+	}
+
+	// Stop monitoring current job
+	if err := cm.monitor.StopMonitoring(ctx, jobID); err != nil {
+		return fmt.Errorf("failed to stop monitoring: %w", err)
+	}
+
+	// Update cron file
+	if err := cm.updateCronFile(ctx, updates); err != nil {
+		// Restore original on failure
+		cm.createCronFile(ctx, *existing)
+		cm.monitor.Monitor(ctx, *existing)
+		return fmt.Errorf("failed to update cron file: %w", err)
+	}
+
+	// Restart monitoring with updates
+	if err := cm.monitor.Monitor(ctx, updates); err != nil {
+		return fmt.Errorf("failed to restart monitoring: %w", err)
+	}
+
+	cm.jobs[jobID] = &updates
+	return nil
+}
+
+// DeleteJob deletes a cron job
+func (cm *CronManager) DeleteJob(ctx context.Context, jobID string) error {
+	ctx, cancel := context.WithTimeout(ctx, cm.timeouts.Delete)
+	defer cancel()
+
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	job, exists := cm.jobs[jobID]
+	if !exists {
+		return ErrJobNotFound
+	}
+
+	// Stop monitoring
+	if err := cm.monitor.StopMonitoring(ctx, jobID); err != nil {
+		return fmt.Errorf("failed to stop monitoring: %w", err)
+	}
+
+	// Delete cron file
+	if err := cm.deleteCronFile(jobID); err != nil {
+		// Restart monitoring on failure
+		cm.monitor.Monitor(ctx, *job)
+		return fmt.Errorf("failed to delete cron file: %w", err)
+	}
+
+	delete(cm.jobs, jobID)
+	return nil
+}
+
+// Helper methods
+
+func (cm *CronManager) validateJob(ctx context.Context, job CronJob) error {
+	// Validate schedule
+	if err := cm.validateSchedule(job.Schedule); err != nil {
+		return err
+	}
+
+	// Validate command
+	if err := cm.validateCommand(ctx, job.Command); err != nil {
+		return err
+	}
+
+	// Validate timeouts
+	if job.Timeout <= 0 {
+		return errors.New("timeout must be positive")
+	}
+
+	// Validate alert rules
+	for _, rule := range job.AlertRules {
+		if err := cm.validateAlertRule(rule); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (cm *CronManager) validateSchedule(schedule string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), cm.timeouts.Verify)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "crontab", "-l")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		defer stdin.Close()
+		fmt.Fprintf(stdin, "%s true\n", schedule)
+	}()
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidSchedule, err)
+	}
+
+	return nil
+}
+
+func (cm *CronManager) validateCommand(ctx context.Context, command string) error {
+	parts := strings.Fields(command)
+	if len(parts) == 0 {
+		return ErrInvalidCommand
+	}
+
+	// Check if command exists
+	path, err := exec.LookPath(parts[0])
+	if err != nil {
+		return fmt.Errorf("%w: command not found", ErrInvalidCommand)
+	}
+
+	// Check if command is executable
+	cmd := exec.CommandContext(ctx, "test", "-x", path)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%w: command not executable", ErrInvalidCommand)
+	}
+
+	return nil
+}
+
+func (cm *CronManager) createCronFile(ctx context.Context, job CronJob) error {
+	filename := filepath.Join(cm.cronDir, job.ID)
+	content := fmt.Sprintf("%s %s\n", job.Schedule, job.Command)
+
+	cmd := exec.CommandContext(ctx, "crontab", "-")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		defer stdin.Close()
+		fmt.Fprint(stdin, content)
+	}()
+
+	return cmd.Run()
+}
+
+func (cm *CronManager) updateCronFile(ctx context.Context, job CronJob) error {
+	return cm.createCronFile(ctx, job) // Same as create for single job
+}
+
+func (cm *CronManager) deleteCronFile(jobID string) error {
+	filename := filepath.Join(cm.cronDir, jobID)
+	cmd := exec.Command("crontab", "-l")
+	output, err := cmd.Output()
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(output), "\n")
+	var newLines []string
+	for _, line := range lines {
+		if !strings.Contains(line, jobID) {
+			newLines = append(newLines, line)
+		}
+	}
+
+	cmd = exec.Command("crontab", "-")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		defer stdin.Close()
+		fmt.Fprint(stdin, strings.Join(newLines, "\n"))
+	}()
+
+	return cmd.Run()
+}
+
+// Example usage
+func ExampleCronManager() {
+	timeouts := TimeoutConfig{
+		Create: 30 * time.Second,
+		Update: 30 * time.Second,
+		Delete: 30 * time.Second,
+		List:   10 * time.Second,
+		Verify: 5 * time.Second,
+	}
+
+	monitor := NewCronMonitor(MonitorConfig{
+		CheckInterval:   time.Minute,
+		RetentionPeriod: 30 * 24 * time.Hour,
+		MaxLogSize:      100 * 1024 * 1024,
+		AlertThresholds: map[string]float64{
+			"cpu":    80.0,
+			"memory": 85.0,
+			"disk":   90.0,
+		},
+	})
+
+	manager := NewCronManager(monitor, "/etc/cron.d", timeouts)
+
+	// Create a new job
+	ctx := context.Background()
+	job := CronJob{
+		ID:       "backup-job",
+		Name:     "Daily Backup",
+		Schedule: "0 0 * * *",
+		Command:  "/usr/local/bin/backup.sh",
+		Timeout:  4 * time.Hour,
+		AlertRules: []AlertRule{
+			{
+				Condition:  "duration",
+				Threshold:  14400,
+				Comparator: ">",
+				AlertLevel: "critical",
+				Channels:   []string{"email", "slack"},
+			},
+		},
+	}
+
+	if err := manager.CreateJob(ctx, job); err != nil {
+		fmt.Printf("Failed to create job: %v\n", err)
+		return
+	}
+
+	// List jobs
+	jobs, err := manager.ListJobs(ctx)
+	if err != nil {
+		fmt.Printf("Failed to list jobs: %v\n", err)
+		return
+	}
+
+	// Update job
+	job.Schedule = "0 1 * * *" // Change to 1 AM
+	if err := manager.UpdateJob(ctx, job.ID, job); err != nil {
+		fmt.Printf("Failed to update job: %v\n", err)
+		return
+	}
+
+	// Delete job
+	if err := manager.DeleteJob(ctx, job.ID); err != nil {
+		fmt.Printf("Failed to delete job: %v\n", err)
+		return
+	}
+}
+
+// Error handling example
+func ExampleErrorHandling() {
+	ctx := context.Background()
+	manager := NewCronManager(nil, "/etc/cron.d", TimeoutConfig{})
+
+	job := CronJob{
+		ID:       "invalid-job",
+		Schedule: "invalid schedule",
+		Command:  "nonexistent-command",
+	}
+
+	err := manager.CreateJob(ctx, job)
+	switch {
+	case errors.Is(err, ErrInvalidSchedule):
+		fmt.Println("Invalid schedule format")
+	case errors.Is(err, ErrInvalidCommand):
+		fmt.Println("Invalid command")
+	case errors.Is(err, ErrJobAlreadyExists):
+		fmt.Println("Job already exists")
+	case errors.Is(err, ErrOperationTimeout):
+		fmt.Println("Operation timed out")
+	default:
+		fmt.Printf("Unexpected error: %v\n", err)
+	}
+}

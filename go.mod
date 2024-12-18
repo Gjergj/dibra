@@ -15,6 +15,7 @@ require (
 )
 
 require (
+	github.com/aws/smithy-go v1.22.1
 	github.com/pkg/sftp v1.13.7
 	github.com/skeema/knownhosts v1.3.0
 	github.com/spf13/cobra v1.8.1
