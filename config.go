@@ -76,9 +76,12 @@ func (a *Artifact) Validate() error {
 		return fmt.Errorf("unsupported artifact type: %s", a.Type)
 	}
 
-	for _, constraint := range a.Constraints {
-		if _, ok := artifactConstraintTypeMap[ArtifactConstraintType(constraint)]; !ok {
-			return fmt.Errorf("unsupported artifact constraint type: %s", constraint)
+	for constraintType, constraint := range a.Constraints {
+		if _, ok := artifactConstraintTypeMap[ArtifactConstraintType(constraintType)]; !ok {
+			return fmt.Errorf("unsupported artifact constraint type: %s", constraintType)
+		}
+		if constraint == string(ArtifactConstraintTypeExecutable) && a.Content != "" {
+			return fmt.Errorf("can not specify executable constraint with content")
 		}
 	}
 	return nil

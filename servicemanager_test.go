@@ -5,7 +5,6 @@ import (
 	"log"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -82,17 +81,9 @@ func TestServiceManager(t *testing.T) {
 	}
 
 	// Try to create without force
-	err = serviceManager.CreateServiceUnit(unit, true)
+	err = serviceManager.CreateServiceUnit(unit)
 	if err != nil {
-		if strings.Contains(err.Error(), "already exists") {
-			// Handle existing service case
-			log.Printf("Service already exists: %v", err)
-			// Optionally retry with force
-			err = serviceManager.CreateServiceUnit(unit, true)
-		}
-		if err != nil {
-			log.Fatalf("Failed to create service unit: %v", err)
-		}
+		log.Fatalf("Failed to create service unit: %v", err)
 	}
 	if err := serviceManager.InstallService(config.Service.Systemd.Name); err != nil {
 		log.Fatalf("Failed to install service: %v", err)

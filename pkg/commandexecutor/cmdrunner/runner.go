@@ -31,6 +31,7 @@ type RunnerSession interface {
 
 type FSController interface {
 	Upload(localPath string, remotePath string) error
+	UploadContent(content string, remotePath string) error
 	MkdirAll(remotePath string) error
 	Stat(remotePath string) (os.FileInfo, error)
 }
@@ -220,6 +221,17 @@ func (e *SftpFSOperations) Upload(localPath string, remotePath string) error {
 	defer remote.Close()
 
 	_, err = io.Copy(remote, local)
+	return err
+}
+
+func (e *SftpFSOperations) UploadContent(content string, remotePath string) error {
+	remote, err := e.sftpClient.Create(remotePath)
+	if err != nil {
+		return err
+	}
+	defer remote.Close()
+
+	_, err = io.WriteString(remote, content)
 	return err
 }
 

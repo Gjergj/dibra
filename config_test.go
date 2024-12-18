@@ -26,3 +26,21 @@ func TestLoadConfig(t *testing.T) {
 	}
 	fmt.Println(config)
 }
+
+func TestArtifactConstraints(t *testing.T) {
+	yamlFile, err := os.ReadFile("testdata/test_config.yml")
+	if err != nil {
+		t.Fatalf("Failed to read test_config.yml: %v", err)
+	}
+
+	var config Config
+	err = yaml.Unmarshal(yamlFile, &config)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal config: %v", err)
+	}
+	err = config.Validate()
+	if err != nil {
+		t.Fatalf("Failed to validate config: %v", err)
+	}
+
+}

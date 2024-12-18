@@ -22,9 +22,9 @@ const (
 	ArtifactConstraintTypeExecutable        ArtifactConstraintType = "executable"
 )
 
-var artifactConstraintTypeMap = map[ArtifactConstraintType]string{
-	ArtifactConstraintTypeIfRemoteNotExists: "if_remote_not_exists",
-	ArtifactConstraintTypeExecutable:        "executable",
+var artifactConstraintTypeMap = map[ArtifactConstraintType]struct{}{
+	ArtifactConstraintTypeIfRemoteNotExists: {},
+	ArtifactConstraintTypeExecutable:        {},
 }
 
 func runApply(cmd *cobra.Command, args []string) error {
@@ -67,14 +67,20 @@ func runApply(cmd *cobra.Command, args []string) error {
 	}
 	serviceManager := NewServiceManager(commandExecutor, runWithSudo)
 
-	switch config.Service.Operation {
-	case "install", "":
-		return applyInstallOperation(config, sshConnection, serviceManager)
-	case "stop":
-		return applyStopOperation(config, serviceManager)
-	default:
-		return fmt.Errorf("invalid operation: %s", config.Service.Operation)
+	if len(config.Artifacts) > 0 {
+		handleArtifacts(config.Artifacts, sshConnection, serviceManager)
 	}
+	if config.Service != nil {
+		switch config.Service.Operation {
+		case "install", "":
+			return applyInstallOperation(config, sshConnection, serviceManager)
+		case "stop":
+			return applyStopOperation(config, serviceManager)
+		default:
+			return fmt.Errorf("invalid operation: %s", config.Service.Operation)
+		}
+	}
+	return nil
 }
 
 func applyStopOperation(config *Config, serviceManager *ServiceManager) error {
@@ -109,11 +115,6 @@ func applyStopOperation(config *Config, serviceManager *ServiceManager) error {
 }
 
 func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager) error {
-
-	if len(config.Artifacts) > 0 {
-		handleArtifacts(config.Artifacts, sshConnection, serviceManager)
-	}
-
 	if config.Service.Systemd != nil {
 		fsOperations, err := sshConnection.NewFSOPerations()
 		if err != nil {
@@ -214,13 +215,13 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 	}
 
 	for _, artifact := range artifacts {
-		upload := true
+		remoteMustExist := true
 		executable := false
 		//check constraints
 		for key, value := range artifact.Constraints {
 			switch key {
 			case "if_remote_not_exists":
-				upload = false
+				remoteMustExist = false
 
 				tmpl, err := template.New("path").Option().Parse(value)
 				if err != nil {
@@ -234,7 +235,7 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 
 				_, err = fsOperations.Stat(remotePath.String())
 				if err != nil {
-					upload = true
+					remoteMustExist = true
 				}
 				// if remoteFileInfo.IsDir() {
 				// 	fmt.Printf("remote file %s is a directory, expected a file\n", remotePath.String())
@@ -244,23 +245,32 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 				executable = true
 			}
 		}
+		if artifact.Path != "" {
+			//check if local file exists and is a file and not directory
+			fileInfo, err := os.Stat(artifact.Path)
+			if err != nil {
+				return fmt.Errorf("local file %s does not exist: %v", artifact.Path, err)
+			}
+			if fileInfo.IsDir() {
+				return fmt.Errorf("local path %s is a directory, expected a file", artifact.Path)
+			}
+		}
 
-		//check if local file exists and is a file and not directory
-		fileInfo, err := os.Stat(artifact.Path)
-		if err != nil {
-			return fmt.Errorf("local file %s does not exist: %v", artifact.Path, err)
-		}
-		if fileInfo.IsDir() {
-			return fmt.Errorf("local path %s is a directory, expected a file", artifact.Path)
-		}
-
-		err = fsOperations.MkdirAll(filepath.Dir(artifact.RemotePath))
-		if err != nil {
-			return err
-		}
-		if upload {
+		// no need to create remote directory if it does not exist, sftp client will create it
+		// // create remote directory if it does not exist
+		// err = fsOperations.MkdirAll(filepath.Dir(artifact.RemotePath))
+		// if err != nil {
+		// 	return err
+		// }
+		if remoteMustExist && artifact.Path != "" {
 			fmt.Printf("Uploading artifact %s to %s\n", artifact.Path, artifact.RemotePath)
 			err = fsOperations.Upload(artifact.Path, artifact.RemotePath)
+			if err != nil {
+				return err
+			}
+		} else if remoteMustExist && artifact.Content != "" {
+			fmt.Printf("Uploading artifact content to %s\n", artifact.RemotePath)
+			err = fsOperations.UploadContent(artifact.Content, artifact.RemotePath)
 			if err != nil {
 				return err
 			}

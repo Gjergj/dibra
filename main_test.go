@@ -74,13 +74,8 @@ func TestCLICommands(t *testing.T) {
 }
 
 func TestValidateConfig(t *testing.T) {
-	config, err := LoadConfig("testdata/test_config.yml")
+	_, err := LoadConfig("testdata/test_config.yml")
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
-	}
-
-	err = validateConfig(config)
-	if err != nil {
-		t.Fatalf("Failed to validate config: %v", err)
 	}
 }
