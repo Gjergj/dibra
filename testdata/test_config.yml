@@ -16,7 +16,7 @@ ssh:
   host: ${SSH_HOST}
   user: ${SSH_USER}
   port: ${SSH_PORT}
-  key_path: ${SSH_KEY_PATH} #~/.ssh/id_rsa
+  key_path: ${SSH_KEY_PATH} 
   password: ${SSH_PASSWORD}
   timeout: 30
   allow_insecure: true
@@ -25,10 +25,18 @@ ssh:
 #   host: localhost
 #   user: testuser
 #   port: 32222
-#   key_path: /Users/gjergjiramku/.orbstack/ssh/id_ed25519
+#   key_path: /Users/gjergjiramku/.orbstack/ssh/id_ed25519 #~/.ssh/id_rsa
 #   password: 1234
 #   timeout: 30
 #   allow_insecure: true
+
+artifacts:
+  - type: local
+    path: /Users/gjergjiramku/projekte/social_posts/bin/social_posts
+    remote_path: ${YTDLP_REMOTEPATH}
+    constraints:
+      if_remote_not_exists: ${YTDLP_REMOTEPATH}
+      executable: true
 
 service:
   type: systemd

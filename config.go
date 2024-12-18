@@ -11,8 +11,25 @@ type Config struct {
 	MachineName string            `yaml:"machine_name"`
 	SSH         *SSH              `yaml:"ssh"`
 	Service     *Service          `yaml:"service"`
+	Artifacts   []Artifact        `yaml:"artifacts"`
 	Secrets     *Secrets          `yaml:"secrets"`
 	Variables   map[string]string `yaml:"variables"`
+}
+
+func (c *Config) Validate() error {
+	if c.SSH == nil {
+		return fmt.Errorf("ssh is required")
+	}
+
+	if c.Artifacts != nil {
+		for _, artifact := range c.Artifacts {
+			if err := artifact.Validate(); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 type Secrets struct {
@@ -42,7 +59,29 @@ type Artifact struct {
 	Type        string            `yaml:"type"`
 	Path        string            `yaml:"path"`
 	RemotePath  string            `yaml:"remote_path"`
+	Content     string            `yaml:"content"`
 	Constraints map[string]string `yaml:"constraints"`
+}
+
+func (a *Artifact) Validate() error {
+	if a.Type == "" {
+		return fmt.Errorf("artifact type is required")
+	} else if a.Type == "local" {
+		if a.RemotePath == "" {
+			return fmt.Errorf("remote artifact path is required")
+		} else if a.Content == "" && a.Path == "" {
+			return fmt.Errorf("artifact content or local path is required")
+		}
+	} else {
+		return fmt.Errorf("unsupported artifact type: %s", a.Type)
+	}
+
+	for _, constraint := range a.Constraints {
+		if _, ok := artifactConstraintTypeMap[ArtifactConstraintType(constraint)]; !ok {
+			return fmt.Errorf("unsupported artifact constraint type: %s", constraint)
+		}
+	}
+	return nil
 }
 
 type SSH struct {
@@ -74,6 +113,10 @@ func LoadConfig(filepath string) (*Config, error) {
 	var config Config
 	err = yaml.Unmarshal(yamlFile, &config)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := config.Validate(); err != nil {
 		return nil, err
 	}
 	return &config, nil
@@ -128,8 +171,4 @@ func expandVariables(configFileContent []byte) ([]byte, error) {
 		return fmt.Sprintf("${%s}", key)
 	})
 	return []byte(yamlFile), nil
-}
-
-func validateConfig(c *Config) error {
-	return nil
 }

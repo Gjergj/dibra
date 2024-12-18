@@ -16,6 +16,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type ArtifactConstraintType string
+
+const (
+	ArtifactConstraintTypeIfRemoteNotExists ArtifactConstraintType = "if_remote_not_exists"
+	ArtifactConstraintTypeExecutable        ArtifactConstraintType = "executable"
+)
+
+var artifactConstraintTypeMap = map[ArtifactConstraintType]string{
+	ArtifactConstraintTypeIfRemoteNotExists: "if_remote_not_exists",
+	ArtifactConstraintTypeExecutable:        "executable",
+}
+
 func runApply(cmd *cobra.Command, args []string) error {
 	configfile, err := findConfigFile()
 	if err != nil {
@@ -98,127 +110,117 @@ func applyStopOperation(config *Config, serviceManager *ServiceManager) error {
 }
 
 func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager) error {
-	fsOperations, err := sshConnection.NewFSOPerations()
-	if err != nil {
-		return err
+
+	if len(config.Artifacts) > 0 {
+		handleArtifacts(config.Artifacts, sshConnection, serviceManager)
 	}
 
-	err = fsOperations.MkdirAll(config.Service.Systemd.BinPath)
-	if err != nil {
-		return err
-	}
-
-	err = uploadArtifacts(config, sshConnection, serviceManager)
-	if err != nil {
-		return err
-	}
-
-	if config.Service.Systemd.WorkingDir == "" {
-		config.Service.Systemd.WorkingDir = config.Service.Systemd.BinPath
-	}
-	// make sure workdir exists
-	err = fsOperations.MkdirAll(config.Service.Systemd.WorkingDir)
-	if err != nil {
-		return err
-	}
-
-	// Create a new service unit
-	unit := ServiceUnit{
-		Name:        config.Service.Systemd.Name,
-		Description: config.Service.Systemd.Description,
-		ExecStart:   filepath.Join(config.Service.Systemd.BinPath, config.Service.Systemd.Name),
-		WorkingDir:  config.Service.Systemd.WorkingDir,
-		User:        config.Service.Systemd.User,
-		Environment: config.Service.Systemd.Env,
-		RestartSec:  10,
-		Restart:     "always",
-		WantedBy:    "multi-user.target",
-	}
-
-	// check if service already exists, if so, stop it
-	status, err := serviceManager.getServiceStatus(config.Service.Systemd.Name)
-	if err != nil {
-		return err
-	}
-	if status == "running" {
-		err = serviceManager.StopService(config.Service.Systemd.Name)
+	if config.Service.Systemd != nil {
+		fsOperations, err := sshConnection.NewFSOPerations()
 		if err != nil {
 			return err
 		}
-	}
 
-	// Try to create without force
-	err = serviceManager.CreateServiceUnit(unit, true)
-	if err != nil {
-		if strings.Contains(err.Error(), "already exists") {
-			// Handle existing service case
-			log.Printf("Service already exists: %v", err)
-			// Optionally retry with force
-			err = serviceManager.CreateServiceUnit(unit, true)
-		}
+		// err = fsOperations.MkdirAll(config.Service.Systemd.BinPath)
+		// if err != nil {
+		// 	return err
+		// }
+
+		err = handleArtifacts(config.Service.Artifacts, sshConnection, serviceManager)
 		if err != nil {
-			log.Fatalf("Failed to create service unit: %v", err)
+			return err
 		}
-	}
-	if err := serviceManager.InstallService(config.Service.Systemd.Name); err != nil {
-		log.Fatalf("Failed to install service: %v", err)
-	}
 
-	// Start the service
-	if err := serviceManager.StartService(config.Service.Systemd.Name); err != nil {
-		log.Fatalf("Failed to start service: %v", err)
-	}
-	// Monitor service status
-	statusChan, errChan := serviceManager.MonitorService(config.Service.Systemd.Name, 5*time.Second, 1)
+		if config.Service.Systemd.WorkingDir == "" {
+			config.Service.Systemd.WorkingDir = config.Service.Systemd.BinPath
+		}
+		// make sure workdir exists
+		err = fsOperations.MkdirAll(config.Service.Systemd.WorkingDir)
+		if err != nil {
+			return err
+		}
 
-	// Handle status updates and errors
-	go func() {
-		for {
-			select {
-			case status := <-statusChan:
-				if status != "" {
-					fmt.Printf("Service %s status: %s\n", config.Service.Systemd.Name, status)
-				}
-			case err := <-errChan:
-				if err != nil {
-					fmt.Printf("Error monitoring service: %v\n", err)
-				}
-				return
+		// Create a new service unit
+		unit := ServiceUnit{
+			Name:        config.Service.Systemd.Name,
+			Description: config.Service.Systemd.Description,
+			ExecStart:   filepath.Join(config.Service.Systemd.BinPath, config.Service.Systemd.Name),
+			WorkingDir:  config.Service.Systemd.WorkingDir,
+			User:        config.Service.Systemd.User,
+			Environment: config.Service.Systemd.Env,
+			RestartSec:  10,
+			Restart:     "always",
+			WantedBy:    "multi-user.target",
+		}
+
+		// check if service already exists, if so, stop it
+		status, err := serviceManager.getServiceStatus(config.Service.Systemd.Name)
+		if err != nil {
+			return err
+		}
+		if status == "running" {
+			err = serviceManager.StopService(config.Service.Systemd.Name)
+			if err != nil {
+				return err
 			}
 		}
-	}()
-	time.Sleep(5 * time.Second)
 
-	// // Wait for some time
-	// time.Sleep(5 * time.Minute)
+		// Try to create without force
+		err = serviceManager.CreateServiceUnit(unit, true)
+		if err != nil {
+			if strings.Contains(err.Error(), "already exists") {
+				// Handle existing service case
+				log.Printf("Service already exists: %v", err)
+				// Optionally retry with force
+				err = serviceManager.CreateServiceUnit(unit, true)
+			}
+			if err != nil {
+				log.Fatalf("Failed to create service unit: %v", err)
+			}
+		}
+		if err := serviceManager.InstallService(config.Service.Systemd.Name); err != nil {
+			log.Fatalf("Failed to install service: %v", err)
+		}
 
-	// Get logs with custom options
-	// logs, err := serviceManager.GetServiceLogs(config.Service.Systemd.Name, LogOptions{
-	// 	// Since:  time.Now().Add(-24 * time.Hour), // Last 24 hours
-	// 	Lines: 50, // Maximum 1000 lines
-	// 	// Follow: true, // Follow new logs
-	// })
-	// if err != nil {
-	// 	return err
-	// }
-	// log.Printf("Service logs: %s", logs)
+		// Start the service
+		if err := serviceManager.StartService(config.Service.Systemd.Name); err != nil {
+			log.Fatalf("Failed to start service: %v", err)
+		}
+		// Monitor service status
+		statusChan, errChan := serviceManager.MonitorService(config.Service.Systemd.Name, 5*time.Second, 1)
 
-	// time.Sleep(5 * time.Minute)
+		// Handle status updates and errors
+		go func() {
+			for {
+				select {
+				case status := <-statusChan:
+					if status != "" {
+						fmt.Printf("Service %s status: %s\n", config.Service.Systemd.Name, status)
+					}
+				case err := <-errChan:
+					if err != nil {
+						fmt.Printf("Error monitoring service: %v\n", err)
+					}
+					return
+				}
+			}
+		}()
+		time.Sleep(5 * time.Second)
+	}
 
-	// // ... later, if you need to stop the service ...
-	// if err := serviceManager.StopService(config.Service.Systemd.Name); err != nil {
-	// 	log.Fatalf("Failed to stop service: %v", err)
-	// }
+	if config.Service.Artifacts != nil {
+
+	}
 	return nil
 }
 
-func uploadArtifacts(config *Config, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager) error {
+func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager) error {
 	fsOperations, err := sshConnection.NewFSOPerations()
 	if err != nil {
 		return err
 	}
 
-	for _, artifact := range config.Service.Artifacts {
+	for _, artifact := range artifacts {
 		upload := true
 		executable := false
 		//check constraints
