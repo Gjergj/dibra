@@ -60,7 +60,12 @@ func runApply(cmd *cobra.Command, args []string) error {
 	for _, task := range config.Tasks {
 
 		commandExecutor := commandexecutor.NewCommandRunner(sshConnection)
-		runWithSudo := task.Systemd.User != "root"
+		runWithSudo := (task.Systemd.User != "root")
+
+		if runWithSudo && sshConfig.Password == "" {
+			return fmt.Errorf("some commands require sudo, but no password is provided")
+		}
+
 		serviceManager := NewServiceManager(commandExecutor, runWithSudo)
 		userManager := NewUserService(commandExecutor, runWithSudo)
 
