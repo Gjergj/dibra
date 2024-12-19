@@ -8,12 +8,11 @@ import (
 )
 
 type Config struct {
-	MachineName string            `yaml:"machine_name"`
-	SSH         *SSH              `yaml:"ssh"`
-	Tasks       []Task            `yaml:"tasks"`
-	Artifacts   []Artifact        `yaml:"artifacts"`
-	Secrets     *Secrets          `yaml:"secrets"`
-	Variables   map[string]string `yaml:"variables"`
+	SSH       *SSH              `yaml:"ssh"`
+	Tasks     []Task            `yaml:"tasks"`
+	Artifacts []Artifact        `yaml:"artifacts"`
+	Secrets   *Secrets          `yaml:"secrets"`
+	Variables map[string]string `yaml:"variables"`
 }
 
 func (c *Config) Validate() error {
