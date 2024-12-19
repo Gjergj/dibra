@@ -135,7 +135,7 @@ func handleSecrets(configFileContent []byte) ([]byte, error) {
 
 	if config.Secrets != nil {
 		if config.Secrets.Adapter == "bitwarden" {
-			sess, err := unlockBitwarden("")
+			sess, err := unlockBitwarden("Gocarropatoca1")
 			if err != nil {
 				return nil, err
 			}

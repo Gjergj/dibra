@@ -118,27 +118,42 @@ func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnectio
 		}
 
 		if config.Service.Systemd.User == "" {
-			// config.Service.Systemd.User = config.SSH.User
-			config.Service.Systemd.User = config.Service.Systemd.Name
+			if config.SSH.User == "root" {
+				config.Service.Systemd.User = config.Service.Systemd.Name
+			} else {
+				config.Service.Systemd.User = config.SSH.User
+			}
 		}
 
 		if config.Service.Systemd.ExecStart == "" {
-			config.Service.Systemd.ExecStart = filepath.Join("/usr/local/bin/", config.Service.Systemd.Name)
+			if config.SSH.User == "root" {
+				config.Service.Systemd.ExecStart = filepath.Join("/usr/local/bin/", config.Service.Systemd.Name)
+			} else {
+				config.Service.Systemd.ExecStart = filepath.Join("/home/", config.SSH.User, config.Service.Systemd.Name, config.Service.Systemd.Name)
+			}
 		}
 
 		if config.Service.Systemd.WorkingDir == "" {
-			config.Service.Systemd.WorkingDir = filepath.Join("/var/lib/", config.Service.Systemd.Name)
+			if config.SSH.User == "root" {
+				config.Service.Systemd.WorkingDir = filepath.Join("/var/lib/", config.Service.Systemd.Name)
+			} else {
+				config.Service.Systemd.WorkingDir = filepath.Dir(config.Service.Systemd.ExecStart)
+			}
 		}
+		fmt.Printf("Installing service %s with user %s\n", config.Service.Systemd.Name, config.Service.Systemd.User)
+		fmt.Printf("Installing service at %s with working dir %s\n", config.Service.Systemd.ExecStart, config.Service.Systemd.WorkingDir)
 
 		if config.Service.Systemd.User != config.SSH.User {
-			fmt.Printf("Creating user %s\n", config.Service.Systemd.User)
-			err = userManager.Create(User{
-				Username: config.Service.Systemd.User,
-				Groups:   []string{config.Service.Systemd.User},
-				System:   true,
-			})
-			if err != nil {
-				return err
+			if config.SSH.User == "root" {
+				fmt.Printf("Creating user %s\n", config.Service.Systemd.User)
+				err = userManager.Create(User{
+					Username: config.Service.Systemd.User,
+					Groups:   []string{config.Service.Systemd.User},
+					System:   true,
+				})
+				if err != nil {
+					return err
+				}
 			}
 		}
 		// TODO: Set permissions:
