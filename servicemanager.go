@@ -21,6 +21,7 @@ type ServiceUnit struct {
 	ExecStart   string
 	WorkingDir  string
 	User        string
+	Group       string
 	RestartSec  int
 	// Additional systemd unit options
 	Environment map[string]string
@@ -200,6 +201,9 @@ ExecStart=%s
 	}
 	if unit.User != "" {
 		unitContent += fmt.Sprintf("User=%s\n", unit.User)
+	}
+	if unit.Group != "" {
+		unitContent += fmt.Sprintf("Group=%s\n", unit.Group)
 	}
 	if len(unit.Environment) > 0 {
 		for _, env := range unit.Environment {

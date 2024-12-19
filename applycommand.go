@@ -57,38 +57,40 @@ func runApply(cmd *cobra.Command, args []string) error {
 	}
 	defer sshConnection.Close()
 
-	commandExecutor := commandexecutor.NewCommandRunner(sshConnection)
+	for _, task := range config.Tasks {
 
-	runWithSudo := config.Service.Systemd.User != "root"
-	serviceManager := NewServiceManager(commandExecutor, runWithSudo)
-	userManager := NewUserService(commandExecutor, runWithSudo)
+		commandExecutor := commandexecutor.NewCommandRunner(sshConnection)
+		runWithSudo := task.Systemd.User != "root"
+		serviceManager := NewServiceManager(commandExecutor, runWithSudo)
+		userManager := NewUserService(commandExecutor, runWithSudo)
 
-	if len(config.Artifacts) > 0 {
-		handleArtifacts(config.Artifacts, sshConnection, serviceManager, map[string]string{})
-	}
-	if config.Service != nil {
-		switch config.Service.Operation {
-		case "install", "":
-			return applyInstallOperation(config, sshConnection, serviceManager, userManager)
-		case "stop":
-			return applyStopOperation(config, serviceManager)
-		default:
-			return fmt.Errorf("invalid operation: %s", config.Service.Operation)
+		if len(config.Artifacts) > 0 {
+			handleArtifacts(config.Artifacts, sshConnection, serviceManager, map[string]string{})
+		}
+		if task.Systemd != nil {
+			switch task.Systemd.Operation {
+			case "install", "":
+				return applyInstallOperation(&task, sshConfig, sshConnection, serviceManager, userManager)
+			case "stop":
+				return applyStopOperation(&task, serviceManager)
+			default:
+				return fmt.Errorf("invalid operation: %s", task.Systemd.Operation)
+			}
 		}
 	}
 	return nil
 }
 
-func applyStopOperation(config *Config, serviceManager *ServiceManager) error {
-	fmt.Printf("Stopping service %s\n", config.Service.Systemd.Name)
-	err := serviceManager.StopService(config.Service.Systemd.Name)
+func applyStopOperation(task *Task, serviceManager *ServiceManager) error {
+	fmt.Printf("Stopping service %s\n", task.Systemd.Name)
+	err := serviceManager.StopService(task.Systemd.Name)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Monitoring service %s\n", config.Service.Systemd.Name)
+	fmt.Printf("Monitoring service %s\n", task.Systemd.Name)
 	// Monitor service status
-	statusChan, errChan := serviceManager.MonitorService(config.Service.Systemd.Name, 5*time.Second, 1)
+	statusChan, errChan := serviceManager.MonitorService(task.Systemd.Name, 5*time.Second, 1)
 
 	// Handle status updates and errors
 	go func() {
@@ -96,11 +98,11 @@ func applyStopOperation(config *Config, serviceManager *ServiceManager) error {
 			select {
 			case status := <-statusChan:
 				if status != "" {
-					fmt.Printf("Service %s status: %s\n", config.Service.Systemd.Name, status)
+					fmt.Printf("Service %s status: %s\n", task.Systemd.Name, status)
 				}
 			case err := <-errChan:
 				if err != nil {
-					fmt.Printf("Error monitoring service %s: %v\n", config.Service.Systemd.Name, err)
+					fmt.Printf("Error monitoring service %s: %v\n", task.Systemd.Name, err)
 				}
 				return
 			}
@@ -110,45 +112,48 @@ func applyStopOperation(config *Config, serviceManager *ServiceManager) error {
 	return nil
 }
 
-func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager, userManager *UserService) error {
-	if config.Service.Systemd != nil {
+func applyInstallOperation(task *Task, sshConfig *cmdrunner.SSHConfig, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager, userManager *UserService) error {
+	if task.Systemd != nil {
 		fsOperations, err := sshConnection.NewFSOPerations()
 		if err != nil {
 			return err
 		}
 
-		if config.Service.Systemd.User == "" {
-			if config.SSH.User == "root" {
-				config.Service.Systemd.User = config.Service.Systemd.Name
+		if task.Systemd.User == "" {
+			if sshConfig.User == "root" {
+				task.Systemd.User = task.Systemd.Name
 			} else {
-				config.Service.Systemd.User = config.SSH.User
+				task.Systemd.User = sshConfig.User
+			}
+		}
+		if task.Systemd.Group == "" {
+			task.Systemd.Group = task.Systemd.User
+		}
+
+		if task.Systemd.ExecStart == "" {
+			if sshConfig.User == "root" {
+				task.Systemd.ExecStart = filepath.Join("/usr/local/bin/", task.Systemd.Name)
+			} else {
+				task.Systemd.ExecStart = filepath.Join("/home/", sshConfig.User, task.Systemd.Name, task.Systemd.Name)
 			}
 		}
 
-		if config.Service.Systemd.ExecStart == "" {
-			if config.SSH.User == "root" {
-				config.Service.Systemd.ExecStart = filepath.Join("/usr/local/bin/", config.Service.Systemd.Name)
+		if task.Systemd.WorkingDir == "" {
+			if sshConfig.User == "root" {
+				task.Systemd.WorkingDir = filepath.Join("/var/lib/", task.Systemd.Name)
 			} else {
-				config.Service.Systemd.ExecStart = filepath.Join("/home/", config.SSH.User, config.Service.Systemd.Name, config.Service.Systemd.Name)
+				task.Systemd.WorkingDir = filepath.Dir(task.Systemd.ExecStart)
 			}
 		}
+		fmt.Printf("Installing service %s with user %s\n", task.Systemd.Name, task.Systemd.User)
+		fmt.Printf("Installing service at %s with working dir %s\n", task.Systemd.ExecStart, task.Systemd.WorkingDir)
 
-		if config.Service.Systemd.WorkingDir == "" {
-			if config.SSH.User == "root" {
-				config.Service.Systemd.WorkingDir = filepath.Join("/var/lib/", config.Service.Systemd.Name)
-			} else {
-				config.Service.Systemd.WorkingDir = filepath.Dir(config.Service.Systemd.ExecStart)
-			}
-		}
-		fmt.Printf("Installing service %s with user %s\n", config.Service.Systemd.Name, config.Service.Systemd.User)
-		fmt.Printf("Installing service at %s with working dir %s\n", config.Service.Systemd.ExecStart, config.Service.Systemd.WorkingDir)
-
-		if config.Service.Systemd.User != config.SSH.User {
-			if config.SSH.User == "root" {
-				fmt.Printf("Creating user %s\n", config.Service.Systemd.User)
+		if task.Systemd.User != sshConfig.User {
+			if sshConfig.User == "root" {
+				fmt.Printf("Creating user %s\n", task.Systemd.User)
 				err = userManager.Create(User{
-					Username: config.Service.Systemd.User,
-					Groups:   []string{config.Service.Systemd.User},
+					Username: task.Systemd.User,
+					Groups:   []string{task.Systemd.User},
 					System:   true,
 				})
 				if err != nil {
@@ -161,49 +166,50 @@ func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnectio
 		// Change ownership of files and directories to the service user.
 		// Restrict permissions by setting them to read and write only where needed, such as chmod 600 for files and chmod 700 for directories.
 
-		// if config.Service.Systemd.BinPath == "" {
-		// 	config.Service.Systemd.BinPath = "/usr/local/bin" + config.Service.Systemd.Name
+		// if config.Task.Systemd.BinPath == "" {
+		// 	config.Task.Systemd.BinPath = "/usr/local/bin" + config.Task.Systemd.Name
 		// }
 
 		// Create a new service unit
 		unit := ServiceUnit{
-			Name:        config.Service.Systemd.Name,
-			Description: config.Service.Systemd.Description,
-			ExecStart:   config.Service.Systemd.ExecStart,
-			WorkingDir:  config.Service.Systemd.WorkingDir,
-			User:        config.Service.Systemd.User,
-			Environment: config.Service.Systemd.Env,
+			Name:        task.Systemd.Name,
+			Description: task.Systemd.Description,
+			ExecStart:   task.Systemd.ExecStart,
+			WorkingDir:  task.Systemd.WorkingDir,
+			User:        task.Systemd.User,
+			Environment: task.Systemd.Env,
+			Group:       task.Systemd.Group,
 			RestartSec:  10,
 			Restart:     "always",
 			WantedBy:    "multi-user.target",
 		}
 
-		// err = fsOperations.MkdirAll(config.Service.Systemd.BinPath)
+		// err = fsOperations.MkdirAll(config.Task.Systemd.BinPath)
 		// if err != nil {
 		// 	return err
 		// }
 
-		err = handleArtifacts(config.Service.Artifacts, sshConnection, serviceManager, map[string]string{
-			"SERVICE_EXEC_PATH": config.Service.Systemd.ExecStart,
-			"SERVICE_WORKDIR":   config.Service.Systemd.WorkingDir,
+		err = handleArtifacts(task.Artifacts, sshConnection, serviceManager, map[string]string{
+			"TASK_EXEC_PATH": task.Systemd.ExecStart,
+			"TASK_WORKDIR":   task.Systemd.WorkingDir,
 		})
 		if err != nil {
 			return err
 		}
 
 		// make sure workdir exists
-		err = fsOperations.MkdirAll(config.Service.Systemd.WorkingDir)
+		err = fsOperations.MkdirAll(task.Systemd.WorkingDir)
 		if err != nil {
 			return err
 		}
 
 		// check if service already exists, if so, stop it
-		status, err := serviceManager.getServiceStatus(config.Service.Systemd.Name)
+		status, err := serviceManager.getServiceStatus(task.Systemd.Name)
 		if err != nil {
 			return err
 		}
 		if status == "running" {
-			err = serviceManager.StopService(config.Service.Systemd.Name)
+			err = serviceManager.StopService(task.Systemd.Name)
 			if err != nil {
 				return err
 			}
@@ -214,16 +220,16 @@ func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnectio
 		if err != nil {
 			log.Fatalf("Failed to create service unit: %v", err)
 		}
-		if err := serviceManager.InstallService(config.Service.Systemd.Name); err != nil {
+		if err := serviceManager.InstallService(task.Systemd.Name); err != nil {
 			log.Fatalf("Failed to install service: %v", err)
 		}
 
 		// Start the service
-		if err := serviceManager.StartService(config.Service.Systemd.Name); err != nil {
+		if err := serviceManager.StartService(task.Systemd.Name); err != nil {
 			log.Fatalf("Failed to start service: %v", err)
 		}
 		// Monitor service status
-		statusChan, errChan := serviceManager.MonitorService(config.Service.Systemd.Name, 5*time.Second, 1)
+		statusChan, errChan := serviceManager.MonitorService(task.Systemd.Name, 5*time.Second, 1)
 
 		// Handle status updates and errors
 		go func() {
@@ -231,7 +237,7 @@ func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnectio
 				select {
 				case status := <-statusChan:
 					if status != "" {
-						fmt.Printf("Service %s status: %s\n", config.Service.Systemd.Name, status)
+						fmt.Printf("Service %s status: %s\n", task.Systemd.Name, status)
 					}
 				case err := <-errChan:
 					if err != nil {
@@ -242,10 +248,6 @@ func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnectio
 			}
 		}()
 		time.Sleep(5 * time.Second)
-	}
-
-	if config.Service.Artifacts != nil {
-
 	}
 	return nil
 }

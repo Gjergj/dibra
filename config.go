@@ -10,7 +10,7 @@ import (
 type Config struct {
 	MachineName string            `yaml:"machine_name"`
 	SSH         *SSH              `yaml:"ssh"`
-	Service     *Service          `yaml:"service"`
+	Tasks       []Task            `yaml:"tasks"`
 	Artifacts   []Artifact        `yaml:"artifacts"`
 	Secrets     *Secrets          `yaml:"secrets"`
 	Variables   map[string]string `yaml:"variables"`
@@ -37,19 +37,20 @@ type Secrets struct {
 	List    map[string]string `yaml:"list"`
 }
 
-type Service struct {
-	Type        string     `yaml:"type"`
+type Task struct {
+	// Type        string     `yaml:"type"`
 	Name        string     `yaml:"name"`
 	Description string     `yaml:"description"`
-	Operation   string     `yaml:"operation"`
 	Systemd     *Systemd   `yaml:"systemd"`
 	Artifacts   []Artifact `yaml:"artifacts"`
 }
 
 type Systemd struct {
 	Name        string `yaml:"name"`
+	Operation   string `yaml:"operation"`
 	Description string `yaml:"description"`
 	ExecStart   string `yaml:"exec_start"`
+	Group       string `yaml:"group"`
 	// BinPath     string            `yaml:"bin_path"`
 	User       string            `yaml:"user"`
 	WorkingDir string            `yaml:"working_dir"`
