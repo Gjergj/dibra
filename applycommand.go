@@ -1,13 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strconv"
-	"text/template"
 	"time"
 
 	"github.com/Gjergj/dibra/pkg/commandexecutor"
@@ -61,19 +59,17 @@ func runApply(cmd *cobra.Command, args []string) error {
 
 	commandExecutor := commandexecutor.NewCommandRunner(sshConnection)
 
-	runWithSudo := false
-	if config.Service.Systemd.User != "root" {
-		runWithSudo = true
-	}
+	runWithSudo := config.Service.Systemd.User != "root"
 	serviceManager := NewServiceManager(commandExecutor, runWithSudo)
+	userManager := NewUserService(commandExecutor, runWithSudo)
 
 	if len(config.Artifacts) > 0 {
-		handleArtifacts(config.Artifacts, sshConnection, serviceManager)
+		handleArtifacts(config.Artifacts, sshConnection, serviceManager, map[string]string{})
 	}
 	if config.Service != nil {
 		switch config.Service.Operation {
 		case "install", "":
-			return applyInstallOperation(config, sshConnection, serviceManager)
+			return applyInstallOperation(config, sshConnection, serviceManager, userManager)
 		case "stop":
 			return applyStopOperation(config, serviceManager)
 		default:
@@ -114,18 +110,51 @@ func applyStopOperation(config *Config, serviceManager *ServiceManager) error {
 	return nil
 }
 
-func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager) error {
+func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager, userManager *UserService) error {
 	if config.Service.Systemd != nil {
 		fsOperations, err := sshConnection.NewFSOPerations()
 		if err != nil {
 			return err
 		}
 
+		if config.Service.Systemd.User == "" {
+			// config.Service.Systemd.User = config.SSH.User
+			config.Service.Systemd.User = config.Service.Systemd.Name
+		}
+
+		if config.Service.Systemd.ExecStart == "" {
+			config.Service.Systemd.ExecStart = filepath.Join("/usr/local/bin/", config.Service.Systemd.Name)
+		}
+
+		if config.Service.Systemd.WorkingDir == "" {
+			config.Service.Systemd.WorkingDir = filepath.Join("/var/lib/", config.Service.Systemd.Name)
+		}
+
+		if config.Service.Systemd.User != config.SSH.User {
+			fmt.Printf("Creating user %s\n", config.Service.Systemd.User)
+			err = userManager.Create(User{
+				Username: config.Service.Systemd.User,
+				Groups:   []string{config.Service.Systemd.User},
+				System:   true,
+			})
+			if err != nil {
+				return err
+			}
+		}
+		// TODO: Set permissions:
+		// sudo chown -R <service-username>:<service-groupname> /path/to/service-directory
+		// Change ownership of files and directories to the service user.
+		// Restrict permissions by setting them to read and write only where needed, such as chmod 600 for files and chmod 700 for directories.
+
+		// if config.Service.Systemd.BinPath == "" {
+		// 	config.Service.Systemd.BinPath = "/usr/local/bin" + config.Service.Systemd.Name
+		// }
+
 		// Create a new service unit
 		unit := ServiceUnit{
 			Name:        config.Service.Systemd.Name,
 			Description: config.Service.Systemd.Description,
-			ExecStart:   filepath.Join(config.Service.Systemd.BinPath, config.Service.Systemd.Name),
+			ExecStart:   config.Service.Systemd.ExecStart,
 			WorkingDir:  config.Service.Systemd.WorkingDir,
 			User:        config.Service.Systemd.User,
 			Environment: config.Service.Systemd.Env,
@@ -139,14 +168,14 @@ func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnectio
 		// 	return err
 		// }
 
-		err = handleArtifacts(config.Service.Artifacts, sshConnection, serviceManager)
+		err = handleArtifacts(config.Service.Artifacts, sshConnection, serviceManager, map[string]string{
+			"SERVICE_EXEC_PATH": config.Service.Systemd.ExecStart,
+			"SERVICE_WORKDIR":   config.Service.Systemd.WorkingDir,
+		})
 		if err != nil {
 			return err
 		}
 
-		if config.Service.Systemd.WorkingDir == "" {
-			config.Service.Systemd.WorkingDir = config.Service.Systemd.BinPath
-		}
 		// make sure workdir exists
 		err = fsOperations.MkdirAll(config.Service.Systemd.WorkingDir)
 		if err != nil {
@@ -168,9 +197,7 @@ func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnectio
 		// Try to create without force
 		err = serviceManager.CreateServiceUnit(unit)
 		if err != nil {
-			if err != nil {
-				log.Fatalf("Failed to create service unit: %v", err)
-			}
+			log.Fatalf("Failed to create service unit: %v", err)
 		}
 		if err := serviceManager.InstallService(config.Service.Systemd.Name); err != nil {
 			log.Fatalf("Failed to install service: %v", err)
@@ -208,32 +235,42 @@ func applyInstallOperation(config *Config, sshConnection *cmdrunner.SSHConnectio
 	return nil
 }
 
-func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager) error {
+func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager, variables map[string]string) error {
 	fsOperations, err := sshConnection.NewFSOPerations()
 	if err != nil {
 		return err
 	}
 
 	for _, artifact := range artifacts {
+
+		artifact.Path = os.Expand(artifact.Path, func(s string) string {
+			if s == "" {
+				return ""
+			}
+			if _, ok := variables[s]; ok {
+				return variables[s]
+			}
+			return fmt.Sprintf("${%s}", s)
+		})
+		artifact.RemotePath = os.Expand(artifact.RemotePath, func(s string) string {
+			if s == "" {
+				return ""
+			}
+			if _, ok := variables[s]; ok {
+				return variables[s]
+			}
+			return fmt.Sprintf("${%s}", s)
+		})
+
 		remoteMustExist := true
 		executable := false
 		//check constraints
-		for key, value := range artifact.Constraints {
+		for key := range artifact.Constraints {
 			switch key {
 			case "if_remote_not_exists":
 				remoteMustExist = false
 
-				tmpl, err := template.New("path").Option().Parse(value)
-				if err != nil {
-					return err
-				}
-				var remotePath bytes.Buffer
-				err = tmpl.Execute(&remotePath, map[string]string{"remote_path": artifact.RemotePath})
-				if err != nil {
-					return err
-				}
-
-				_, err = fsOperations.Stat(remotePath.String())
+				_, err = fsOperations.Stat(artifact.RemotePath)
 				if err != nil {
 					remoteMustExist = true
 				}

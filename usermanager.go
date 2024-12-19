@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/Gjergj/dibra/pkg/commandexecutor"
@@ -51,6 +50,29 @@ func (s *UserService) Exists(username string) (bool, error) {
 	return true, nil
 }
 
+func (s *UserService) createGroup(groupName string) error {
+
+	exists, err := s.groupExists(groupName)
+	if err != nil {
+		return fmt.Errorf("error checking group existence: %w", err)
+	}
+	if exists {
+		return nil
+	}
+
+	cmd := commandexecutor.Command{
+		Command:  "groupadd",
+		Args:     []string{"--system", groupName},
+		WithSudo: s.WithSudo,
+	}
+	_, err = s.exec.ExecuteCombinedOutput(cmd)
+	if err != nil {
+		return fmt.Errorf("error creating group: %w", err)
+	}
+
+	return nil
+}
+
 // Create creates a new Linux user if it doesn't exist
 func (s *UserService) Create(user User) error {
 	exists, err := s.Exists(user.Username)
@@ -73,24 +95,38 @@ func (s *UserService) Create(user User) error {
 
 	args := []string{"useradd"}
 
+	args = append(args, user.Username)
+
 	if user.System {
 		args = append(args, "--system")
 	}
 	if user.CreateHome {
 		args = append(args, "--create-home")
+	} else {
+		args = append(args, "--no-create-home")
 	}
 	if user.HomeDir != "" {
-		args = append(args, "--create-home")
 		args = append(args, "--home", user.HomeDir)
 	}
-	if user.Shell != "" {
+	if user.Shell == "bash" {
+		args = append(args, "--shell", "/bin/bash")
+	} else if user.Shell != "" {
 		args = append(args, "--shell", user.Shell)
+	} else if user.System {
+		args = append(args, "--shell", "/usr/sbin/nologin")
 	}
 	if len(user.Groups) > 0 {
-		args = append(args, "--groups", strings.Join(user.Groups, ","))
+		args = append(args, "-g", user.Groups[0])
+		if len(user.Groups) > 1 {
+			args = append(args, "--groups", strings.Join(user.Groups[1:], ","))
+		}
 	}
-	args = append(args, user.Username)
+	if user.System {
 
+		if err := s.createGroup(user.Username); err != nil {
+			return fmt.Errorf("error creating group: %w", err)
+		}
+	}
 	// cmd := exec.Command(args[0], args[1:]...)
 	// if output, err := cmd.CombinedOutput(); err != nil {
 	// 	return fmt.Errorf("error creating user: %w, output: %s", err, output)
@@ -100,14 +136,11 @@ func (s *UserService) Create(user User) error {
 		Args:     args[1:],
 		WithSudo: s.WithSudo,
 	}
-	output, stderr, err := s.exec.Execute(cmd)
+	output, err := s.exec.ExecuteCombinedOutput(cmd)
 	if err != nil {
+		fmt.Println(output)
 		return fmt.Errorf("error creating user: %w", err)
 	}
-	if stderr != "" {
-		return fmt.Errorf("error creating user: %s", stderr)
-	}
-	fmt.Println(output)
 
 	// Set password if provided
 	if user.Password != "" {
@@ -171,9 +204,15 @@ func (s *UserService) updateGroups(username string, desiredGroups []string) erro
 	// Only update if there are supplementary groups to set
 	if len(newGroups) > 1 {
 		// Use -G for supplementary groups (excludes primary group)
-		cmd := exec.Command("usermod", "-G", strings.Join(newGroups[1:], ","), username)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("error updating groups: %w, output: %s", err, output)
+		args := []string{"usermod", "-G", strings.Join(newGroups[1:], ","), username}
+		cmd := commandexecutor.Command{
+			Command:  args[0],
+			Args:     args[1:],
+			WithSudo: s.WithSudo,
+		}
+		_, err = s.exec.ExecuteCombinedOutput(cmd)
+		if err != nil {
+			return fmt.Errorf("error updating groups: %w", err)
 		}
 	}
 
@@ -182,14 +221,20 @@ func (s *UserService) updateGroups(username string, desiredGroups []string) erro
 
 // Helper method to check if a group exists
 func (s *UserService) groupExists(groupName string) (bool, error) {
-	cmd := exec.Command("getent", "group", groupName)
-	if err := cmd.Run(); err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() == 2 {
-			return false, nil
-		}
+	cmd := commandexecutor.Command{
+		Command:  "getent",
+		Args:     []string{"group", groupName},
+		WithSudo: s.WithSudo,
+	}
+	output, err := s.exec.ExecuteCombinedOutput(cmd)
+	if err != nil {
 		return false, fmt.Errorf("error checking group existence: %w", err)
 	}
-	return true, nil
+	fields := strings.Split(output, ":")
+	if len(fields) > 1 && fields[0] == groupName {
+		return true, nil
+	}
+	return false, nil
 }
 
 // Improved group matching that handles primary groups correctly
@@ -215,8 +260,12 @@ func (s *UserService) groupsMatch(current, desired []string) bool {
 
 // Helper method to get user's primary group
 func (s *UserService) getPrimaryGroup(username string) (string, error) {
-	cmd := exec.Command("id", "-gn", username)
-	output, err := cmd.Output()
+	cmd := commandexecutor.Command{
+		Command:  "id",
+		Args:     []string{"-gn", username},
+		WithSudo: s.WithSudo,
+	}
+	output, err := s.exec.ExecuteCombinedOutput(cmd)
 	if err != nil {
 		return "", fmt.Errorf("error getting primary group: %w", err)
 	}

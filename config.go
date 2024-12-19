@@ -47,12 +47,13 @@ type Service struct {
 }
 
 type Systemd struct {
-	Name        string            `yaml:"name"`
-	Description string            `yaml:"description"`
-	BinPath     string            `yaml:"bin_path"`
-	User        string            `yaml:"user"`
-	WorkingDir  string            `yaml:"working_dir"`
-	Env         map[string]string `yaml:"env"`
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	ExecStart   string `yaml:"exec_start"`
+	// BinPath     string            `yaml:"bin_path"`
+	User       string            `yaml:"user"`
+	WorkingDir string            `yaml:"working_dir"`
+	Env        map[string]string `yaml:"env"`
 }
 
 type Artifact struct {
