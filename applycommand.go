@@ -328,6 +328,14 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 			}
 		}
 		if executable {
+			remoteFileInfo, err := fsOperations.Stat(artifact.RemotePath)
+			if err != nil {
+				return fmt.Errorf("can not make executable remote file %s does not exist: %v", artifact.RemotePath, err)
+			}
+			if remoteFileInfo.IsDir() {
+				// fmt.Printf("remote file %s is a directory, expected a file\n", artifact.RemotePath)
+				return fmt.Errorf("can not make executable remote file %s is a directory", artifact.RemotePath)
+			}
 			fmt.Printf("Making executable %s\n", artifact.RemotePath)
 			err = serviceManager.MakeExecutable(artifact.RemotePath)
 			if err != nil {
