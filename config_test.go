@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 
 	"gopkg.in/yaml.v2"
@@ -43,4 +44,13 @@ func TestArtifactConstraints(t *testing.T) {
 		t.Fatalf("Failed to validate config: %v", err)
 	}
 
+}
+
+func TestInclude(t *testing.T) {
+	config, err := LoadConfig("testdata/test_config.yml")
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+	slices.Compare(config.Include, []string{"test_config_include.yml"})
+	fmt.Println(config)
 }

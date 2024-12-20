@@ -2,12 +2,15 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v2"
 )
 
 type Config struct {
+	Include   []string          `yaml:"include"`
 	SSH       *SSH              `yaml:"ssh"`
 	Tasks     []Task            `yaml:"tasks"`
 	Artifacts []Artifact        `yaml:"artifacts"`
@@ -38,10 +41,10 @@ type Secrets struct {
 
 type Task struct {
 	// Type        string     `yaml:"type"`
-	Name        string     `yaml:"name"`
-	Description string     `yaml:"description"`
-	Systemd     *Systemd   `yaml:"systemd"`
-	Artifacts   []Artifact `yaml:"artifacts"`
+	Hosts       []string `yaml:"hosts"`
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description"`
+	Systemd     *Systemd `yaml:"systemd"`
 }
 
 type Systemd struct {
@@ -54,6 +57,7 @@ type Systemd struct {
 	User       string            `yaml:"user"`
 	WorkingDir string            `yaml:"working_dir"`
 	Env        map[string]string `yaml:"env"`
+	Artifacts  []Artifact        `yaml:"artifacts"`
 }
 
 type Artifact struct {
@@ -99,7 +103,12 @@ type SSH struct {
 }
 
 func LoadConfig(filepath string) (*Config, error) {
-	yamlFile, err := os.ReadFile(filepath)
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+
+	yamlFile, err := mergeConfigs(filepath, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +133,49 @@ func LoadConfig(filepath string) (*Config, error) {
 		return nil, err
 	}
 	return &config, nil
+}
+
+func mergeConfigs(configFilepath string, wd string) ([]byte, error) {
+	configFilepath = filepath.Join(wd, configFilepath)
+	yamlFile, err := os.ReadFile(configFilepath)
+	if err != nil {
+		return nil, err
+	}
+
+	var config Config
+	err = yaml.Unmarshal(yamlFile, &config)
+	if err != nil {
+		return nil, err
+	}
+	var tmpConfigs []Config
+
+	if config.Include != nil {
+		for _, path := range config.Include {
+			configFilepath = filepath.Join(filepath.Dir(configFilepath), path)
+			yamlFile, err = os.ReadFile(configFilepath)
+			if err != nil {
+				return nil, err
+			}
+
+			var tmpConfig Config
+			err = yaml.Unmarshal(yamlFile, &tmpConfig)
+			if err != nil {
+				return nil, err
+			}
+			tmpConfigs = append(tmpConfigs, tmpConfig)
+		}
+
+		for _, tmpConfig := range tmpConfigs {
+			config.Tasks = append(config.Tasks, tmpConfig.Tasks...)
+			config.Artifacts = append(config.Artifacts, tmpConfig.Artifacts...)
+			maps.Copy(config.Variables, tmpConfig.Variables)
+		}
+	}
+	yamlFile, err = yaml.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	return yamlFile, nil
 }
 
 func handleSecrets(configFileContent []byte) ([]byte, error) {

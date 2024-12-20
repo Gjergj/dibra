@@ -1,5 +1,5 @@
-include:
-  - ./test_config_include.yml
+# include:
+#   - ./test_config_include.yml
 
 secrets:
   adapter: bitwarden
@@ -68,10 +68,10 @@ artifacts:
       if_remote_not_exists: /home/testuser/test_script
 
 tasks:
-  hosts:
-    - group_BE
-    - group_FE
-  - systemd:
+  - hosts:
+      - group_BE
+      - group_FE
+    systemd:
       operation: stop
       name: myapp
       description: My Custom Application Service
@@ -81,13 +81,12 @@ tasks:
       env:
         port: 8080
         env: production
-    - artifacts:
+      artifacts:
         - type: local
           path: /Users/gjergjiramku/projekte/social_posts/bin/social_posts
           remote_path: ${TASK_EXEC_PATH}
           constraints:
             executable: true
-    - artifacts:
         - type: local
           path: /Users/gjergjiramku/projekte/social_posts/bin/yt-dlp_linux
           remote_path: ${TASK_WORKDIR}/yt-dlp

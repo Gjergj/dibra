@@ -194,7 +194,7 @@ func applyInstallOperation(task *Task, sshConfig *cmdrunner.SSHConfig, sshConnec
 		// 	return err
 		// }
 
-		err = handleArtifacts(task.Artifacts, sshConnection, serviceManager, map[string]string{
+		err = handleArtifacts(task.Systemd.Artifacts, sshConnection, serviceManager, map[string]string{
 			"TASK_EXEC_PATH": task.Systemd.ExecStart,
 			"TASK_WORKDIR":   task.Systemd.WorkingDir,
 		})
