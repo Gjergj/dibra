@@ -86,6 +86,9 @@ func runApply(cmd *cobra.Command, args []string) error {
 
 	for _, task := range config.Tasks {
 		sshConnections := sshInventory.GetSShConnections(task.Hosts)
+		if len(sshConnections) == 0 {
+			return fmt.Errorf("no ssh connections found for hosts: %v", task.Hosts)
+		}
 		for _, sshConnection := range sshConnections {
 			fmt.Printf("Connecting to %s\n", sshConnection.HostName())
 			err = sshConnection.Connect()

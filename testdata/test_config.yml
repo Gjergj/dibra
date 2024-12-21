@@ -23,20 +23,10 @@ inventory:
       password: ${SSH_PASSWORD}
       timeout: 30
       allow_insecure: true
-  group_FE:
-    testmachine3:
-      host: ${SSH_HOST}
-      user: ${SSH_USER}
-      port: ${SSH_PORT}
-      key_path: ${SSH_KEY_PATH} 
-      password: ${SSH_PASSWORD}
-      timeout: 30
-      allow_insecure: true
 
 tasks:
   - hosts:
       - group_BE
-      - group_FE
     systemd:
       operation: stop
       name: myapp

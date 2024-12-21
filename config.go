@@ -36,10 +36,15 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	if c.Artifacts != nil {
-		for _, artifact := range c.Artifacts {
-			if err := artifact.Validate(); err != nil {
-				return err
+	for _, task := range c.Tasks {
+		if task.Hosts == nil {
+			return fmt.Errorf("hosts are required for task: %s", task.Name)
+		}
+		for _, task := range c.Tasks {
+			for _, artifact := range task.Artifacts {
+				if err := artifact.Validate(); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -62,16 +67,15 @@ type Task struct {
 }
 
 type Systemd struct {
-	Name        string `yaml:"name"`
-	Operation   string `yaml:"operation"`
-	Description string `yaml:"description"`
-	ExecStart   string `yaml:"exec_start"`
-	Group       string `yaml:"group"`
-	// BinPath     string            `yaml:"bin_path"`
-	User       string            `yaml:"user"`
-	WorkingDir string            `yaml:"working_dir"`
-	Env        map[string]string `yaml:"env"`
-	Artifacts  []Artifact        `yaml:"artifacts"`
+	Name        string            `yaml:"name"`
+	Operation   string            `yaml:"operation"`
+	Description string            `yaml:"description"`
+	ExecStart   string            `yaml:"exec_start"`
+	Group       string            `yaml:"group"`
+	User        string            `yaml:"user"`
+	WorkingDir  string            `yaml:"working_dir"`
+	Env         map[string]string `yaml:"env"`
+	Artifacts   []Artifact        `yaml:"artifacts"`
 }
 
 type Artifact struct {
@@ -181,7 +185,6 @@ func mergeConfigs(configFilepath string, wd string) ([]byte, error) {
 
 		for _, tmpConfig := range tmpConfigs {
 			config.Tasks = append(config.Tasks, tmpConfig.Tasks...)
-			config.Artifacts = append(config.Artifacts, tmpConfig.Artifacts...)
 			maps.Copy(config.Variables, tmpConfig.Variables)
 		}
 	}
