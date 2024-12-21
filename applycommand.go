@@ -98,7 +98,7 @@ func runApply(cmd *cobra.Command, args []string) error {
 			defer sshConnection.Close()
 
 			commandExecutor := commandexecutor.NewCommandRunner(sshConnection)
-			runWithSudo := (task.Systemd.User != "root")
+			runWithSudo := (sshConnection.User() != "root")
 
 			if runWithSudo && sshConnection.SudoPassword() == "" {
 				return fmt.Errorf("some commands require sudo, but no password is provided")
