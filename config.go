@@ -13,7 +13,6 @@ type Config struct {
 	Inventory map[string]Group  `yaml:"inventory"`
 	Include   []string          `yaml:"include"`
 	Tasks     []Task            `yaml:"tasks"`
-	Artifacts []Artifact        `yaml:"artifacts"`
 	Secrets   *Secrets          `yaml:"secrets"`
 	Variables map[string]string `yaml:"variables"`
 }
@@ -55,10 +54,11 @@ type Secrets struct {
 
 type Task struct {
 	// Type        string     `yaml:"type"`
-	Hosts       []string `yaml:"hosts"`
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Systemd     *Systemd `yaml:"systemd"`
+	Hosts       []string   `yaml:"hosts"`
+	Name        string     `yaml:"name"`
+	Description string     `yaml:"description"`
+	Systemd     *Systemd   `yaml:"systemd"`
+	Artifacts   []Artifact `yaml:"artifacts"`
 }
 
 type Systemd struct {

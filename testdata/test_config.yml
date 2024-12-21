@@ -33,16 +33,6 @@ inventory:
       timeout: 30
       allow_insecure: true
 
-artifacts:
-  - type: local
-    content: |
-      #!/bin/bash
-      echo "Hello, World!"
-    remote_path: /home/testuser/test_script
-    constraints:
-      executable: true
-      if_remote_not_exists: /home/testuser/test_script
-
 tasks:
   - hosts:
       - group_BE
@@ -69,3 +59,14 @@ tasks:
           constraints:
             if_remote_not_exists: ${YTDLP_REMOTEPATH}
             executable: true
+  - hosts:
+      - group_BE
+    artifacts:
+      - type: local
+        content: |
+          #!/bin/bash
+          echo "Hello, World!"
+        remote_path: /home/testuser/test_script
+        constraints:
+          executable: true
+          if_remote_not_exists: /home/testuser/test_script

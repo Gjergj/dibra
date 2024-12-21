@@ -104,8 +104,8 @@ func runApply(cmd *cobra.Command, args []string) error {
 			serviceManager := NewServiceManager(commandExecutor, runWithSudo)
 			userManager := NewUserService(commandExecutor, runWithSudo)
 
-			if len(config.Artifacts) > 0 {
-				err = handleArtifacts(config.Artifacts, sshConnection, serviceManager, map[string]string{})
+			if len(task.Artifacts) > 0 {
+				err = handleArtifacts(task.Artifacts, sshConnection, serviceManager, map[string]string{})
 				if err != nil {
 					return fmt.Errorf("failed to handle artifacts on %s: %w", sshConnection.HostName(), err)
 				}
