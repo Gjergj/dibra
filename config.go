@@ -10,17 +10,31 @@ import (
 )
 
 type Config struct {
+	Inventory map[string]Group  `yaml:"inventory"`
 	Include   []string          `yaml:"include"`
-	SSH       *SSH              `yaml:"ssh"`
 	Tasks     []Task            `yaml:"tasks"`
 	Artifacts []Artifact        `yaml:"artifacts"`
 	Secrets   *Secrets          `yaml:"secrets"`
 	Variables map[string]string `yaml:"variables"`
 }
+type Group map[string]Host
 
 func (c *Config) Validate() error {
-	if c.SSH == nil {
-		return fmt.Errorf("ssh is required")
+	if c.Inventory == nil {
+		return fmt.Errorf("inventory is required")
+	}
+	if len(c.Inventory) == 0 {
+		return fmt.Errorf("inventory is required")
+	}
+	for groupName, group := range c.Inventory {
+		if len(group) == 0 {
+			return fmt.Errorf("empty group: %s", groupName)
+		}
+		for hostName, host := range group {
+			if host.Host == "" {
+				return fmt.Errorf("empty host: %s", hostName)
+			}
+		}
 	}
 
 	if c.Artifacts != nil {
@@ -92,7 +106,7 @@ func (a *Artifact) Validate() error {
 	return nil
 }
 
-type SSH struct {
+type Host struct {
 	Host          string `yaml:"host"`
 	User          string `yaml:"user"`
 	Port          string `yaml:"port"`
