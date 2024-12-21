@@ -25,7 +25,31 @@ var artifactConstraintTypeMap = map[ArtifactConstraintType]struct{}{
 	ArtifactConstraintTypeExecutable:        {},
 }
 
+type sshInventoryMachine map[string]*cmdrunner.SSHConnection
+
+type sshInventoryGroup map[string]sshInventoryMachine
+
+func (s sshInventoryGroup) GetSShConnections(hosts []string) []*cmdrunner.SSHConnection {
+	connections := []*cmdrunner.SSHConnection{}
+	for _, host := range hosts {
+		if _, ok := s[host]; ok {
+			for _, connection := range s[host] {
+				connections = append(connections, connection)
+			}
+		} else {
+			for _, group := range s {
+				if connection, ok := group[host]; ok {
+					connections = append(connections, connection)
+				}
+			}
+		}
+	}
+
+	return connections
+}
+
 func runApply(cmd *cobra.Command, args []string) error {
+
 	configfile, err := findConfigFile()
 	if err != nil {
 		return err
@@ -36,50 +60,61 @@ func runApply(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	port, err := strconv.Atoi(config.SSH.Port)
-	if err != nil {
-		return err
-	}
-	sshConfig := &cmdrunner.SSHConfig{
-		Host:          config.SSH.Host,
-		Port:          port,
-		User:          config.SSH.User,
-		PrivateKey:    config.SSH.KeyPath,
-		Password:      config.SSH.Password,
-		Timeout:       time.Duration(config.SSH.Timeout) * time.Second,
-		AllowInsecure: config.SSH.AllowInsecure,
-	}
 
-	sshConnection := cmdrunner.NewSSHConnection(sshConfig)
-	err = sshConnection.Connect()
-	if err != nil {
-		return err
+	var sshInventory = sshInventoryGroup{}
+	for groupName, group := range config.Inventory {
+		sshInventory[groupName] = sshInventoryMachine{}
+		for hostName, host := range group {
+
+			port, err := strconv.Atoi(host.Port)
+			if err != nil {
+				return err
+			}
+
+			sshConfig := &cmdrunner.SSHConfig{
+				Host:          host.Host,
+				Port:          port,
+				User:          host.User,
+				PrivateKey:    host.KeyPath,
+				Password:      host.Password,
+				Timeout:       time.Duration(host.Timeout) * time.Second,
+				AllowInsecure: host.AllowInsecure,
+			}
+			sshInventory[groupName][hostName] = cmdrunner.NewSSHConnection(sshConfig)
+		}
 	}
-	defer sshConnection.Close()
 
 	for _, task := range config.Tasks {
+		sshConnections := sshInventory.GetSShConnections(task.Hosts)
+		for _, sshConnection := range sshConnections {
+			err = sshConnection.Connect()
+			if err != nil {
+				return err
+			}
+			defer sshConnection.Close()
 
-		commandExecutor := commandexecutor.NewCommandRunner(sshConnection)
-		runWithSudo := (task.Systemd.User != "root")
+			commandExecutor := commandexecutor.NewCommandRunner(sshConnection)
+			runWithSudo := (task.Systemd.User != "root")
 
-		if runWithSudo && sshConfig.Password == "" {
-			return fmt.Errorf("some commands require sudo, but no password is provided")
-		}
+			if runWithSudo && sshConnection.SudoPassword() == "" {
+				return fmt.Errorf("some commands require sudo, but no password is provided")
+			}
 
-		serviceManager := NewServiceManager(commandExecutor, runWithSudo)
-		userManager := NewUserService(commandExecutor, runWithSudo)
+			serviceManager := NewServiceManager(commandExecutor, runWithSudo)
+			userManager := NewUserService(commandExecutor, runWithSudo)
 
-		if len(config.Artifacts) > 0 {
-			handleArtifacts(config.Artifacts, sshConnection, serviceManager, map[string]string{})
-		}
-		if task.Systemd != nil {
-			switch task.Systemd.Operation {
-			case "install", "":
-				return applyInstallOperation(&task, sshConfig, sshConnection, serviceManager, userManager)
-			case "stop":
-				return applyStopOperation(&task, serviceManager)
-			default:
-				return fmt.Errorf("invalid operation: %s", task.Systemd.Operation)
+			if len(config.Artifacts) > 0 {
+				handleArtifacts(config.Artifacts, sshConnection, serviceManager, map[string]string{})
+			}
+			if task.Systemd != nil {
+				switch task.Systemd.Operation {
+				case "install", "":
+					return applyInstallOperation(&task, sshConnection.User(), sshConnection, serviceManager, userManager)
+				case "stop":
+					return applyStopOperation(&task, serviceManager)
+				default:
+					return fmt.Errorf("invalid operation: %s", task.Systemd.Operation)
+				}
 			}
 		}
 	}
@@ -117,7 +152,7 @@ func applyStopOperation(task *Task, serviceManager *ServiceManager) error {
 	return nil
 }
 
-func applyInstallOperation(task *Task, sshConfig *cmdrunner.SSHConfig, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager, userManager *UserService) error {
+func applyInstallOperation(task *Task, user string, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager, userManager *UserService) error {
 	if task.Systemd != nil {
 		fsOperations, err := sshConnection.NewFSOPerations()
 		if err != nil {
@@ -125,10 +160,10 @@ func applyInstallOperation(task *Task, sshConfig *cmdrunner.SSHConfig, sshConnec
 		}
 
 		if task.Systemd.User == "" {
-			if sshConfig.User == "root" {
+			if user == "root" {
 				task.Systemd.User = task.Systemd.Name
 			} else {
-				task.Systemd.User = sshConfig.User
+				task.Systemd.User = user
 			}
 		}
 		if task.Systemd.Group == "" {
@@ -136,15 +171,15 @@ func applyInstallOperation(task *Task, sshConfig *cmdrunner.SSHConfig, sshConnec
 		}
 
 		if task.Systemd.ExecStart == "" {
-			if sshConfig.User == "root" {
+			if user == "root" {
 				task.Systemd.ExecStart = filepath.Join("/usr/local/bin/", task.Systemd.Name)
 			} else {
-				task.Systemd.ExecStart = filepath.Join("/home/", sshConfig.User, task.Systemd.Name, task.Systemd.Name)
+				task.Systemd.ExecStart = filepath.Join("/home/", user, task.Systemd.Name, task.Systemd.Name)
 			}
 		}
 
 		if task.Systemd.WorkingDir == "" {
-			if sshConfig.User == "root" {
+			if user == "root" {
 				task.Systemd.WorkingDir = filepath.Join("/var/lib/", task.Systemd.Name)
 			} else {
 				task.Systemd.WorkingDir = filepath.Dir(task.Systemd.ExecStart)
@@ -153,8 +188,8 @@ func applyInstallOperation(task *Task, sshConfig *cmdrunner.SSHConfig, sshConnec
 		fmt.Printf("Installing service %s with user %s\n", task.Systemd.Name, task.Systemd.User)
 		fmt.Printf("Installing service at %s with working dir %s\n", task.Systemd.ExecStart, task.Systemd.WorkingDir)
 
-		if task.Systemd.User != sshConfig.User {
-			if sshConfig.User == "root" {
+		if task.Systemd.User != user {
+			if user == "root" {
 				fmt.Printf("Creating user %s\n", task.Systemd.User)
 				err = userManager.Create(User{
 					Username: task.Systemd.User,

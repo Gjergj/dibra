@@ -47,6 +47,7 @@ type Command struct {
 type Runner interface {
 	NewRunnerSession(cmd Command) (RunnerSession, error)
 	SudoPassword() string
+	User() string
 	NewFSOPerations() (FSController, error)
 }
 
@@ -131,6 +132,10 @@ func (e *SSHConnection) Connect() error {
 
 func (e *SSHConnection) SudoPassword() string {
 	return e.config.Password
+}
+
+func (e *SSHConnection) User() string {
+	return e.config.User
 }
 
 func (e *SSHConnection) getPrivateKeyAuth() (ssh.AuthMethod, error) {
