@@ -47,6 +47,7 @@ type Command struct {
 type Runner interface {
 	NewRunnerSession(cmd Command) (RunnerSession, error)
 	SudoPassword() string
+	HostName() string
 	User() string
 	NewFSOPerations() (FSController, error)
 }
@@ -79,6 +80,10 @@ func NewSSHConnection(config *SSHConfig) *SSHConnection {
 		config.Port = 22
 	}
 	return &SSHConnection{config: config}
+}
+
+func (e *SSHConnection) HostName() string {
+	return e.config.Host
 }
 
 // Connect establishes SSH connection

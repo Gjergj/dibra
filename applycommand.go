@@ -87,9 +87,10 @@ func runApply(cmd *cobra.Command, args []string) error {
 	for _, task := range config.Tasks {
 		sshConnections := sshInventory.GetSShConnections(task.Hosts)
 		for _, sshConnection := range sshConnections {
+			fmt.Printf("Connecting to %s\n", sshConnection.HostName())
 			err = sshConnection.Connect()
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to connect to %s: %w", sshConnection.HostName(), err)
 			}
 			defer sshConnection.Close()
 
@@ -104,14 +105,23 @@ func runApply(cmd *cobra.Command, args []string) error {
 			userManager := NewUserService(commandExecutor, runWithSudo)
 
 			if len(config.Artifacts) > 0 {
-				handleArtifacts(config.Artifacts, sshConnection, serviceManager, map[string]string{})
+				err = handleArtifacts(config.Artifacts, sshConnection, serviceManager, map[string]string{})
+				if err != nil {
+					return fmt.Errorf("failed to handle artifacts on %s: %w", sshConnection.HostName(), err)
+				}
 			}
 			if task.Systemd != nil {
 				switch task.Systemd.Operation {
 				case "install", "":
-					return applyInstallOperation(&task, sshConnection.User(), sshConnection, serviceManager, userManager)
+					err = applyInstallOperation(&task, sshConnection.User(), sshConnection, serviceManager, userManager)
+					if err != nil {
+						return fmt.Errorf("failed to install service %s on %s: %w", task.Systemd.Name, sshConnection.HostName(), err)
+					}
 				case "stop":
-					return applyStopOperation(&task, serviceManager)
+					err = applyStopOperation(&task, serviceManager)
+					if err != nil {
+						return fmt.Errorf("failed to stop service %s on %s: %w", task.Systemd.Name, sshConnection.HostName(), err)
+					}
 				default:
 					return fmt.Errorf("invalid operation: %s", task.Systemd.Operation)
 				}
