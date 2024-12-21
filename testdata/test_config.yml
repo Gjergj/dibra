@@ -33,15 +33,6 @@ inventory:
       timeout: 30
       allow_insecure: true
 
-ssh:
-  host: ${SSH_HOST}
-  user: ${SSH_USER}
-  port: ${SSH_PORT}
-  key_path: ${SSH_KEY_PATH} 
-  password: ${SSH_PASSWORD}
-  timeout: 30
-  allow_insecure: true
-
 # ssh:
 #   host: localhost
 #   user: testuser
