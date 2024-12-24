@@ -27,6 +27,7 @@ inventory:
 tasks:
   - hosts:
       - group_BE
+    disabled: true
     systemd:
       operation: stop
       name: myapp
@@ -43,14 +44,15 @@ tasks:
           remote_path: ${TASK_EXEC_PATH}
           constraints:
             executable: true
+            force: true
         - type: local
           path: /Users/gjergjiramku/projekte/social_posts/bin/yt-dlp_linux
           remote_path: ${TASK_WORKDIR}/yt-dlp
           constraints:
-            if_remote_not_exists: ${YTDLP_REMOTEPATH}
             executable: true
   - hosts:
       - group_BE
+    disabled: true
     artifacts:
       - type: local
         content: |
@@ -59,4 +61,11 @@ tasks:
         remote_path: /home/testuser/test_script
         constraints:
           executable: true
-          if_remote_not_exists: /home/testuser/test_script
+  - hosts:
+      - group_BE
+    artifacts:
+      - type: local
+        path: /Users/gjergjiramku/projekte/seemenow/web/dist
+        remote_path: /home/testuser/web
+        constraints:
+          force: true

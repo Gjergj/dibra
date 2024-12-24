@@ -59,6 +59,7 @@ type Secrets struct {
 
 type Task struct {
 	// Type        string     `yaml:"type"`
+	Disabled    bool       `yaml:"disabled"`
 	Hosts       []string   `yaml:"hosts"`
 	Name        string     `yaml:"name"`
 	Description string     `yaml:"description"`
