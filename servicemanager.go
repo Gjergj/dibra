@@ -34,6 +34,29 @@ func NewServiceManager(exec *commandexecutor.CommandRunner, withSudo bool) *Serv
 	return &ServiceManager{exec: exec, WithSudo: withSudo}
 }
 
+func (s *ServiceManager) HashRemoteFile(remotePath string) (string, error) {
+	cmd := commandexecutor.Command{
+		Command:  "sha256sum",
+		Args:     []string{remotePath},
+		WithSudo: s.WithSudo,
+	}
+
+	output, stderr, err := s.exec.Execute(cmd)
+	if err != nil {
+		return "", fmt.Errorf("failed to hash remote file: %w", err)
+	}
+	if stderr != "" {
+		return "", fmt.Errorf("error hashing remote file: %s", stderr)
+	}
+	// split output by space and return the first part
+	parts := strings.Split(output, " ")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid output format: %s", output)
+	}
+
+	return parts[0], nil
+}
+
 // MonitorService monitors a service status via SSH
 func (s *ServiceManager) MonitorService(serviceName string, interval time.Duration, iterations int) (<-chan string, <-chan error) {
 	statusChan := make(chan string)

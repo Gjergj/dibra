@@ -1,7 +1,10 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -16,13 +19,13 @@ import (
 type ArtifactConstraintType string
 
 const (
-	ArtifactConstraintTypeIfRemoteNotExists ArtifactConstraintType = "if_remote_not_exists"
-	ArtifactConstraintTypeExecutable        ArtifactConstraintType = "executable"
+	ArtifactConstraintTypeForce      ArtifactConstraintType = "force"
+	ArtifactConstraintTypeExecutable ArtifactConstraintType = "executable"
 )
 
 var artifactConstraintTypeMap = map[ArtifactConstraintType]struct{}{
-	ArtifactConstraintTypeIfRemoteNotExists: {},
-	ArtifactConstraintTypeExecutable:        {},
+	ArtifactConstraintTypeForce:      {},
+	ArtifactConstraintTypeExecutable: {},
 }
 
 type sshInventoryMachine map[string]*cmdrunner.SSHConnection
@@ -331,25 +334,45 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 			}
 			return fmt.Sprintf("${%s}", s)
 		})
+		remoteMustExist := false
+		sha256Hash := ""
+		if artifact.Type == "local" {
+			// make sha256 of the file artifact.Path
+			hash, err := hashFile(artifact.Path)
+			if err != nil {
+				return err
+			}
+			sha256Hash = hash
 
-		remoteMustExist := true
+			remoteSha256Hash, err := serviceManager.HashRemoteFile(artifact.RemotePath)
+			if err != nil {
+				return err
+			}
+			if sha256Hash != remoteSha256Hash {
+				remoteMustExist = true
+			}
+		}
+
+		// remoteMustExist := true
 		executable := false
 		//check constraints
 		for key := range artifact.Constraints {
-			switch key {
-			case "if_remote_not_exists":
-				remoteMustExist = false
+			switch ArtifactConstraintType(key) {
+			case ArtifactConstraintTypeForce:
+				remoteMustExist = true
 
-				_, err = fsOperations.Stat(artifact.RemotePath)
-				if err != nil {
-					remoteMustExist = true
-				}
+				// _, err = fsOperations.Stat(artifact.RemotePath)
+				// if err != nil {
+				// 	remoteMustExist = true
+				// }
 				// if remoteFileInfo.IsDir() {
 				// 	fmt.Printf("remote file %s is a directory, expected a file\n", remotePath.String())
 				// 	upload = true
 				// }
-			case "executable":
+			case ArtifactConstraintTypeExecutable:
 				executable = true
+			default:
+				return fmt.Errorf("unsupported artifact constraint type: %s", key)
 			}
 		}
 		if artifact.Path != "" {
@@ -399,4 +422,18 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 		}
 	}
 	return nil
+}
+
+func hashFile(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	_, err = io.Copy(hash, file)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
