@@ -17,10 +17,14 @@ import (
 )
 
 type ArtifactConstraintType string
+type ArtifactFileType string
 
 const (
 	ArtifactConstraintTypeForce      ArtifactConstraintType = "force"
 	ArtifactConstraintTypeExecutable ArtifactConstraintType = "executable"
+
+	ArtifactFileTypeFile ArtifactFileType = "file"
+	ArtifactFileTypeDir  ArtifactFileType = "dir"
 )
 
 var artifactConstraintTypeMap = map[ArtifactConstraintType]struct{}{
@@ -88,6 +92,10 @@ func runApply(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, task := range config.Tasks {
+		if task.Disabled {
+			fmt.Printf("Skipping task %s because it is disabled\n", task.Name)
+			continue
+		}
 		sshConnections := sshInventory.GetSShConnections(task.Hosts)
 		if len(sshConnections) == 0 {
 			return fmt.Errorf("no ssh connections found for hosts: %v", task.Hosts)
@@ -169,7 +177,7 @@ func applyStopOperation(task *Task, serviceManager *ServiceManager) error {
 }
 
 func applyInstallOperation(task *Task, user string, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager, userManager *UserService) error {
-	if task.Systemd != nil {
+	if task.Systemd != nil && !task.Disabled {
 		fsOperations, err := sshConnection.NewFSOPerations()
 		if err != nil {
 			return err
@@ -336,20 +344,30 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 		})
 		remoteMustExist := false
 		sha256Hash := ""
-		if artifact.Type == "local" {
-			// make sha256 of the file artifact.Path
-			hash, err := hashFile(artifact.Path)
+		remoteFileType := ArtifactFileTypeFile
+		if artifact.Type == "local" && artifact.Path != "" {
+			// detect if it's file or directory
+			fileInfo, err := os.Stat(artifact.Path)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to stat local file %s: %w", artifact.Path, err)
 			}
-			sha256Hash = hash
+			if fileInfo.IsDir() {
+				remoteFileType = ArtifactFileTypeDir
+			} else {
+				remoteFileType = ArtifactFileTypeFile
+				hash, err := hashFile(artifact.Path)
+				if err != nil {
+					return err
+				}
+				sha256Hash = hash
 
-			remoteSha256Hash, err := serviceManager.HashRemoteFile(artifact.RemotePath)
-			if err != nil {
-				return err
-			}
-			if sha256Hash != remoteSha256Hash {
-				remoteMustExist = true
+				remoteSha256Hash, err := serviceManager.HashRemoteFile(artifact.RemotePath)
+				if err != nil {
+					return err
+				}
+				if sha256Hash != remoteSha256Hash {
+					remoteMustExist = true
+				}
 			}
 		}
 
@@ -375,16 +393,6 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 				return fmt.Errorf("unsupported artifact constraint type: %s", key)
 			}
 		}
-		if artifact.Path != "" {
-			//check if local file exists and is a file and not directory
-			fileInfo, err := os.Stat(artifact.Path)
-			if err != nil {
-				return fmt.Errorf("local file %s does not exist: %v", artifact.Path, err)
-			}
-			if fileInfo.IsDir() {
-				return fmt.Errorf("local path %s is a directory, expected a file", artifact.Path)
-			}
-		}
 
 		// no need to create remote directory if it does not exist, sftp client will create it
 		// // create remote directory if it does not exist
@@ -393,13 +401,28 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 		// 	return err
 		// }
 		if remoteMustExist && artifact.Path != "" {
-			fmt.Printf("Uploading artifact %s to %s\n", artifact.Path, artifact.RemotePath)
-			err = fsOperations.Upload(artifact.Path, artifact.RemotePath)
-			if err != nil {
-				return err
+			if remoteFileType == ArtifactFileTypeDir {
+				fmt.Printf("Uploading artifact %s to %s\n", artifact.Path, artifact.RemotePath)
+				remoteTmpFilePath, err := fsOperations.UploadDir(artifact.Path, artifact.RemotePath)
+				if err != nil {
+					return err
+				}
+				err = serviceManager.UntarRemoteFile(remoteTmpFilePath, artifact.RemotePath)
+				if err != nil {
+					return err
+				}
+			} else {
+				fmt.Printf("Uploading artifact %s to %s\n", artifact.Path, artifact.RemotePath)
+				err = fsOperations.Upload(artifact.Path, artifact.RemotePath)
+				if err != nil {
+					return err
+				}
 			}
 		} else if remoteMustExist && artifact.Content != "" {
 			fmt.Printf("Uploading artifact content to %s\n", artifact.RemotePath)
+			if remoteFileType == ArtifactFileTypeDir {
+				return fmt.Errorf("can not upload content to a directory")
+			}
 			err = fsOperations.UploadContent(artifact.Content, artifact.RemotePath)
 			if err != nil {
 				return err

@@ -34,6 +34,20 @@ func NewServiceManager(exec *commandexecutor.CommandRunner, withSudo bool) *Serv
 	return &ServiceManager{exec: exec, WithSudo: withSudo}
 }
 
+func (s *ServiceManager) UntarRemoteFile(remotePath string, remoteDir string) error {
+	cmd := commandexecutor.Command{
+		Command:  "tar",
+		Args:     []string{"-xvf", remotePath, "-C", remoteDir},
+		WithSudo: s.WithSudo,
+	}
+
+	_, err := s.exec.ExecuteCombinedOutput(cmd)
+	if err != nil {
+		return fmt.Errorf("failed to untar remote file: %w", err)
+	}
+	return nil
+}
+
 func (s *ServiceManager) HashRemoteFile(remotePath string) (string, error) {
 	cmd := commandexecutor.Command{
 		Command:  "sha256sum",

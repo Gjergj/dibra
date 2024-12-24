@@ -1,6 +1,8 @@
 package cmdrunner
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"os"
@@ -31,6 +33,7 @@ type RunnerSession interface {
 
 type FSController interface {
 	Upload(localPath string, remotePath string) error
+	UploadDir(localPath string, remotePath string) (string, error)
 	UploadContent(content string, remotePath string) error
 	MkdirAll(remotePath string) error
 	Stat(remotePath string) (os.FileInfo, error)
@@ -204,6 +207,106 @@ func (e *SSHConnection) NewFSOPerations() (FSController, error) {
 	return &SftpFSOperations{
 		sftpClient: cl,
 	}, nil
+}
+
+func (e *SftpFSOperations) UploadDir(localPath string, remotePath string) (string, error) {
+	// temp file to store gziped tar file
+	tempFile, err := os.CreateTemp("", "dibra-upload-dir-*.tar.gz")
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(tempFile.Name())
+
+	// var buf bytes.Buffer
+	err = Compress(localPath, tempFile)
+	if err != nil {
+		return "", err
+	}
+
+	// // write the compressed file to disk
+	// err = os.WriteFile(tempFile.Name(), buf.Bytes(), os.ModePerm)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// upload the zip file to the remote path
+	// err = e.Upload(tempFile.Name(), remotePath)
+
+	// check if local path exists
+	if _, err := os.Stat(tempFile.Name()); os.IsNotExist(err) {
+		return "", fmt.Errorf("local path does not exist: %s", tempFile.Name())
+	}
+
+	local, err := os.Open(tempFile.Name())
+	if err != nil {
+		return "", err
+	}
+	defer local.Close()
+
+	// defer e.sftpClient.Close()
+	err = e.sftpClient.MkdirAll(remotePath)
+	if err != nil {
+		return "", err
+	}
+	remoteTmpFilePath := filepath.Join(remotePath, filepath.Base(tempFile.Name()))
+	remote, err := e.sftpClient.Create(remoteTmpFilePath)
+	if err != nil {
+		return "", err
+	}
+	defer remote.Close()
+
+	_, err = io.Copy(remote, local)
+	if err != nil {
+		return "", err
+	}
+
+	err = e.sftpClient.Chmod(remoteTmpFilePath, 0755)
+	if err != nil {
+		return "", err
+	}
+	return remoteTmpFilePath, nil
+}
+
+func Compress(src string, buf io.Writer) error {
+	zr := gzip.NewWriter(buf)
+	defer zr.Close()
+	tw := tar.NewWriter(zr)
+	defer tw.Close()
+
+	return filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		header, err := tar.FileInfoHeader(fi, file)
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(src, file)
+		if err != nil {
+			return err
+		}
+		header.Name = filepath.ToSlash(relPath)
+
+		if err := tw.WriteHeader(header); err != nil {
+			return err
+		}
+
+		if !fi.IsDir() {
+			data, err := os.Open(file)
+			if err != nil {
+				return err
+			}
+			defer data.Close()
+
+			_, err = io.Copy(tw, data)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (e *SftpFSOperations) Upload(localPath string, remotePath string) error {
