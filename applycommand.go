@@ -369,6 +369,15 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 					remoteMustExist = true
 				}
 			}
+		} else if artifact.Type == "local" && artifact.Content != "" {
+			//get remote file content
+			remoteContent, err := serviceManager.ReadRemoteTextFile(artifact.RemotePath)
+			if err != nil {
+				return err
+			}
+			if remoteContent != artifact.Content {
+				remoteMustExist = true
+			}
 		}
 
 		// remoteMustExist := true

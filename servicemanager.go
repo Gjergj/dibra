@@ -34,10 +34,10 @@ func NewServiceManager(exec *commandexecutor.CommandRunner, withSudo bool) *Serv
 	return &ServiceManager{exec: exec, WithSudo: withSudo}
 }
 
-func (s *ServiceManager) UntarRemoteFile(remotePath string, remoteDir string) error {
+func (s *ServiceManager) UntarRemoteFile(remotePath string, outputDir string) error {
 	cmd := commandexecutor.Command{
 		Command:  "tar",
-		Args:     []string{"-xvf", remotePath, "-C", remoteDir},
+		Args:     []string{"-xvf", remotePath, "-C", outputDir},
 		WithSudo: s.WithSudo,
 	}
 
@@ -386,37 +386,45 @@ func (s *ServiceManager) reloadDaemon() error {
 
 	return nil
 }
+func (s *ServiceManager) ReadRemoteTextFile(remotePath string) (string, error) {
+	// Check if service file exists
+	checkCmd := commandexecutor.Command{
+		Command:  "test",
+		Args:     []string{"-f", remotePath},
+		WithSudo: s.WithSudo,
+	}
+
+	_, _, err := s.exec.Execute(checkCmd)
+	if err != nil {
+		return "", fmt.Errorf("file %s does not exist", remotePath)
+	}
+
+	// Read the service file
+	cmd := commandexecutor.Command{
+		Command:  "cat",
+		Args:     []string{remotePath},
+		WithSudo: s.WithSudo,
+	}
+
+	output, stderr, err := s.exec.Execute(cmd)
+	if err != nil {
+		return "", fmt.Errorf("failed to read file: %w", err)
+	}
+	if stderr != "" {
+		return "", fmt.Errorf("error reading file: %s", stderr)
+	}
+
+	return output, nil
+}
 
 func (s *ServiceManager) getServiceUnitFile(serviceName string) (string, error) {
 
 	fileName := fmt.Sprintf("%s.service", serviceName)
 	filePath := fmt.Sprintf("/etc/systemd/system/%s", fileName)
 
-	// Check if service file exists
-	checkCmd := commandexecutor.Command{
-		Command:  "test",
-		Args:     []string{"-f", filePath},
-		WithSudo: s.WithSudo,
-	}
-
-	_, _, err := s.exec.Execute(checkCmd)
-	if err != nil {
-		return "", fmt.Errorf("service unit file %s does not exist", filePath)
-	}
-
-	// Read the service file
-	cmd := commandexecutor.Command{
-		Command:  "cat",
-		Args:     []string{filePath},
-		WithSudo: s.WithSudo,
-	}
-
-	output, stderr, err := s.exec.Execute(cmd)
+	output, err := s.ReadRemoteTextFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read service unit file: %w", err)
-	}
-	if stderr != "" {
-		return "", fmt.Errorf("error reading service unit file: %s", stderr)
 	}
 
 	return output, nil

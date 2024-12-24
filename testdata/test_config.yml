@@ -23,6 +23,13 @@ inventory:
       password: ${SSH_PASSWORD}
       timeout: 30
       allow_insecure: true
+  real_vps:
+    sdd_nodes:
+      host: 89.233.108.20
+      user: root
+      port: 22
+      password: 
+      timeout: 30
 
 tasks:
   - hosts:
@@ -63,9 +70,27 @@ tasks:
           executable: true
   - hosts:
       - group_BE
+    disabled: true
     artifacts:
       - type: local
         path: /Users/gjergjiramku/projekte/seemenow/web/dist
         remote_path: /home/testuser/web
+        constraints:
+          force: true
+  - hosts:
+      - real_vps
+    artifacts:
+      - type: local
+        content: >-
+          :80 {
+            header Content-Type text/html
+            respond <<HTML
+              <html>
+                <head><title>Foo</title></head>
+                <body>Foo</body>
+              </html>
+              HTML 200
+          }
+        remote_path: /etc/caddy/Caddyfile
         constraints:
           force: true
