@@ -25,9 +25,11 @@ func TestGetSecrets(t *testing.T) {
 		t.Fatalf("failed to unlock bitwarden: %v", err)
 	}
 	secrets, err := getSecrets(sess, map[string]string{
-		"SSH_PASSWORD": "vps_ssd_nodes/password",
-		"SSH_USER":     "vps_ssd_nodes/username",
-		"SSH_HOST":     "vps_ssd_nodes/IP v4",
+		"SSH_PORT":           "social_posts/port",
+		"SSH_HOST":           "social_posts/host",
+		"SSH_PASSWORD":       "vps_ssd_nodes/password",
+		"SSH_USER":           "vps_ssd_nodes/username",
+		"SSD_NODES_PASSWORD": "vps_ssd_nodes/password",
 	})
 	if err != nil {
 		log.Fatalf("failed to get secrets: %v", err)

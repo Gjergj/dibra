@@ -141,8 +141,11 @@ func getSecrets(session string, secretsList map[string]string) (map[string]strin
 			return nil, err
 		}
 		if collection == item.Data.Name {
-			found := false
 			for k, secret := range secretsList {
+				found := false
+				if !strings.HasPrefix(secret, collection) {
+					continue
+				}
 				parts := strings.Split(secret, "/")
 				if len(parts) != 2 {
 					return nil, fmt.Errorf("invalid secret format: %s (expected collection/field)", secret)
@@ -154,12 +157,14 @@ func getSecrets(session string, secretsList map[string]string) (map[string]strin
 						found = true
 					}
 				}
-				if field == "password" {
-					secrets[k] = item.Data.Login.Password
-					found = true
-				} else if field == "username" {
-					secrets[k] = item.Data.Login.Username
-					found = true
+				if !found {
+					if field == "password" {
+						secrets[k] = item.Data.Login.Password
+						found = true
+					} else if field == "username" {
+						secrets[k] = item.Data.Login.Username
+						found = true
+					}
 				}
 				if !found {
 					return nil, fmt.Errorf("field %s not found in collection %s", field, collection)

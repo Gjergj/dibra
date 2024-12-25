@@ -9,6 +9,7 @@ secrets:
     SSH_HOST: social_posts/host
     SSH_KEY_PATH: social_posts/keypath
     SSH_PORT: social_posts/port
+    SSD_NODES_PASSWORD: vps_ssd_nodes/password
 
 variables:
   YTDLP_REMOTEPATH: /home/testuser/yt-dlp
@@ -28,7 +29,7 @@ inventory:
       host: 89.233.108.20
       user: root
       port: 22
-      password: 
+      password: ${SSD_NODES_PASSWORD}
       timeout: 30
 
 tasks:
@@ -78,7 +79,7 @@ tasks:
         constraints:
           force: true
   - hosts:
-      - real_vps
+      - sdd_nodes
     artifacts:
       - type: local
         content: >-
