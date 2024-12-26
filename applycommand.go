@@ -256,14 +256,6 @@ func applyInstallOperation(task *Task, user string, sshConnection *cmdrunner.SSH
 		// 	return err
 		// }
 
-		err = handleArtifacts(task.Systemd.Artifacts, sshConnection, serviceManager, map[string]string{
-			"TASK_EXEC_PATH": task.Systemd.ExecStart,
-			"TASK_WORKDIR":   task.Systemd.WorkingDir,
-		})
-		if err != nil {
-			return err
-		}
-
 		// make sure workdir exists
 		err = fsOperations.MkdirAll(task.Systemd.WorkingDir)
 		if err != nil {
@@ -271,6 +263,14 @@ func applyInstallOperation(task *Task, user string, sshConnection *cmdrunner.SSH
 		}
 
 		err = serviceManager.StopService(task.Systemd.Name)
+		if err != nil {
+			return err
+		}
+		// handle artifacts only after stopping the service
+		err = handleArtifacts(task.Systemd.Artifacts, sshConnection, serviceManager, map[string]string{
+			"TASK_EXEC_PATH": task.Systemd.ExecStart,
+			"TASK_WORKDIR":   task.Systemd.WorkingDir,
+		})
 		if err != nil {
 			return err
 		}
