@@ -10,8 +10,8 @@ import (
 var (
 	configPath         string
 	defaultConfigPaths = []string{
-		"dibra.yaml", // Current directory first
-		"dibra.yml",
+		"./dibra.yaml", // Current directory first
+		"./dibra.yml",
 	}
 
 	rootCmd = &cobra.Command{
@@ -42,14 +42,12 @@ func findConfigFile() (string, error) {
 		}
 		return "", fmt.Errorf("specified config file not found: %s", configPath)
 	}
-
 	// Try default locations in current directory
 	for _, path := range defaultConfigPaths {
 		if _, err := os.Stat(path); err == nil {
 			return path, nil
 		}
 	}
-
 	return "", fmt.Errorf("no configuration file found in current directory. Expected one of: %v", defaultConfigPaths)
 }
 

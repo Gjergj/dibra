@@ -213,6 +213,8 @@ func (s *ServiceManager) CreateServiceUnit(unit ServiceUnit) error {
 	fileName := fmt.Sprintf("%s.service", unit.Name)
 	filePath := fmt.Sprintf("/etc/systemd/system/%s", fileName)
 
+	fmt.Println("Creating service unit file", filePath)
+
 	// Check if service file already exists
 	// checkCmd := commandexecutor.Command{
 	// 	Command:  "test",
@@ -350,6 +352,23 @@ func (s *ServiceManager) StartService(serviceName string) error {
 
 // StopService stops a systemd service
 func (s *ServiceManager) StopService(serviceName string) error {
+	fmt.Printf("Stopping service %s\n", serviceName)
+	installed, err := s.IsServiceInstalled(serviceName)
+	if err != nil {
+		return fmt.Errorf("failed to check if service is installed: %w", err)
+	}
+	if !installed {
+		return nil
+	}
+
+	status, err := s.getServiceStatus(serviceName)
+	if err != nil {
+		return fmt.Errorf("failed to get service status: %w", err)
+	}
+	if status != "running" {
+		return nil
+	}
+
 	cmd := commandexecutor.Command{
 		Command:  "systemctl",
 		Args:     []string{"stop", serviceName},
@@ -365,6 +384,19 @@ func (s *ServiceManager) StopService(serviceName string) error {
 	}
 
 	return nil
+}
+
+func (s *ServiceManager) IsServiceInstalled(serviceName string) (bool, error) {
+	services, err := s.ListServices()
+	if err != nil {
+		return false, fmt.Errorf("failed to list services: %w", err)
+	}
+	for _, service := range services {
+		if service == serviceName {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // reloadDaemon reloads the systemd daemon

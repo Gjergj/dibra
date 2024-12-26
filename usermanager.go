@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/Gjergj/dibra/pkg/commandexecutor"
+	"golang.org/x/crypto/ssh"
 )
 
 // User represents a Linux user account
@@ -80,6 +82,7 @@ func (s *UserService) Create(user User) error {
 		return fmt.Errorf("error checking user existence: %w", err)
 	}
 	if exists {
+		fmt.Printf("User %s already exists\n", user.Username)
 		// Verify current state matches desired state
 		currentUser, err := s.GetUserInfo(user.Username)
 		if err != nil {
@@ -228,7 +231,14 @@ func (s *UserService) groupExists(groupName string) (bool, error) {
 	}
 	output, err := s.exec.ExecuteCombinedOutput(cmd)
 	if err != nil {
-		return false, fmt.Errorf("error checking group existence: %w", err)
+		var exitErr *ssh.ExitError
+		if errors.As(err, &exitErr) {
+			// nothing found in the database
+			if exitErr.ExitStatus() == 2 {
+				return false, nil
+			}
+		}
+		return false, fmt.Errorf("%s: error checking group %s existence: %w", output, groupName, err)
 	}
 	fields := strings.Split(output, ":")
 	if len(fields) > 1 && fields[0] == groupName {

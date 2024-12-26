@@ -146,7 +146,10 @@ func runApply(cmd *cobra.Command, args []string) error {
 }
 
 func applyStopOperation(task *Task, serviceManager *ServiceManager) error {
-	fmt.Printf("Stopping service %s\n", task.Systemd.Name)
+	if installed, err := serviceManager.IsServiceInstalled(task.Systemd.Name); err != nil || !installed {
+		fmt.Printf("Service %s is not installed, skipping stop\n", task.Systemd.Name)
+		return nil
+	}
 	err := serviceManager.StopService(task.Systemd.Name)
 	if err != nil {
 		return err
@@ -267,16 +270,9 @@ func applyInstallOperation(task *Task, user string, sshConnection *cmdrunner.SSH
 			return err
 		}
 
-		// check if service already exists, if so, stop it
-		status, err := serviceManager.getServiceStatus(task.Systemd.Name)
+		err = serviceManager.StopService(task.Systemd.Name)
 		if err != nil {
 			return err
-		}
-		if status == "running" {
-			err = serviceManager.StopService(task.Systemd.Name)
-			if err != nil {
-				return err
-			}
 		}
 
 		// Try to create without force
@@ -355,18 +351,26 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 				remoteFileType = ArtifactFileTypeDir
 			} else {
 				remoteFileType = ArtifactFileTypeFile
-				hash, err := hashFile(artifact.Path)
+				sha256Hash, err = hashFile(artifact.Path)
 				if err != nil {
 					return err
 				}
-				sha256Hash = hash
 
-				remoteSha256Hash, err := serviceManager.HashRemoteFile(artifact.RemotePath)
+				// check if remote file exists
+				remoteFileInfo, err := fsOperations.Stat(artifact.RemotePath)
 				if err != nil {
-					return err
-				}
-				if sha256Hash != remoteSha256Hash {
 					remoteMustExist = true
+				} else {
+					if remoteFileInfo.IsDir() {
+						return fmt.Errorf("remote file %s is a directory, expected a file", artifact.RemotePath)
+					}
+					remoteSha256Hash, err := serviceManager.HashRemoteFile(artifact.RemotePath)
+					if err != nil {
+						return err
+					}
+					if sha256Hash != remoteSha256Hash {
+						remoteMustExist = true
+					}
 				}
 			}
 		} else if artifact.Type == "local" && artifact.Content != "" {
