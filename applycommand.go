@@ -155,6 +155,7 @@ func applyReloadOperation(task *Task, serviceManager *ServiceManager) error {
 		fmt.Printf("Service %s is not installed, skipping reload\n", task.Systemd.Name)
 		return nil
 	}
+	fmt.Printf("Reloading service %s\n", task.Systemd.Name)
 	err := serviceManager.ReloadService(task.Systemd.Name)
 	if err != nil {
 		return err
