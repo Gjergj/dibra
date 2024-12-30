@@ -312,6 +312,20 @@ func (s *ServiceManager) InstallService(serviceName string) error {
 	return nil
 }
 
+func (s *ServiceManager) ReloadService(serviceName string) error {
+	cmd := commandexecutor.Command{
+		Command:  "systemctl",
+		Args:     []string{"reload", serviceName},
+		WithSudo: s.WithSudo,
+	}
+
+	_, err := s.exec.ExecuteCombinedOutput(cmd)
+	if err != nil {
+		return fmt.Errorf("failed to reload service: %w", err)
+	}
+	return nil
+}
+
 // StartService starts a systemd service
 func (s *ServiceManager) MakeExecutable(path string) error {
 	cmd := commandexecutor.Command{
