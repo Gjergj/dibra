@@ -109,7 +109,7 @@ func runApply(cmd *cobra.Command, args []string) error {
 			defer sshConnection.Close()
 
 			commandExecutor := commandexecutor.NewCommandRunner(sshConnection)
-			runWithSudo := (sshConnection.User() != "root")
+			runWithSudo := sshConnection.User() != "root"
 
 			if runWithSudo && sshConnection.SudoPassword() == "" {
 				return fmt.Errorf("some commands require sudo, but no password is provided")
@@ -136,11 +136,28 @@ func runApply(cmd *cobra.Command, args []string) error {
 					if err != nil {
 						return fmt.Errorf("failed to stop service %s on %s: %w", task.Systemd.Name, sshConnection.HostName(), err)
 					}
+				case "reload":
+					err = applyReloadOperation(&task, serviceManager)
+					if err != nil {
+						return fmt.Errorf("failed to reload service %s on %s: %w", task.Systemd.Name, sshConnection.HostName(), err)
+					}
 				default:
 					return fmt.Errorf("invalid operation: %s", task.Systemd.Operation)
 				}
 			}
 		}
+	}
+	return nil
+}
+
+func applyReloadOperation(task *Task, serviceManager *ServiceManager) error {
+	if installed, err := serviceManager.IsServiceInstalled(task.Systemd.Name); err != nil || !installed {
+		fmt.Printf("Service %s is not installed, skipping reload\n", task.Systemd.Name)
+		return nil
+	}
+	err := serviceManager.ReloadService(task.Systemd.Name)
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -266,6 +283,12 @@ func applyInstallOperation(task *Task, user string, sshConnection *cmdrunner.SSH
 		if err != nil {
 			return err
 		}
+
+		// Verify service is fully stopped
+		if err := verifyServiceStopped(task.Systemd.Name, serviceManager); err != nil {
+			return err
+		}
+
 		// handle artifacts only after stopping the service
 		err = handleArtifacts(task.Systemd.Artifacts, sshConnection, serviceManager, map[string]string{
 			"TASK_EXEC_PATH": task.Systemd.ExecStart,
@@ -310,6 +333,26 @@ func applyInstallOperation(task *Task, user string, sshConnection *cmdrunner.SSH
 		time.Sleep(5 * time.Second)
 	}
 	return nil
+}
+
+func verifyServiceStopped(serviceName string, serviceManager *ServiceManager) error {
+	retries := 3
+	delay := time.Second
+
+	for i := 0; i < retries; i++ {
+		status, err := serviceManager.getServiceStatus(serviceName)
+		if err != nil {
+			return err
+		}
+
+		if status == "inactive" || status == "failed" {
+			return nil
+		}
+
+		time.Sleep(delay)
+	}
+
+	return fmt.Errorf("service %s failed to stop completely", serviceName)
 }
 
 func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager, variables map[string]string) error {
