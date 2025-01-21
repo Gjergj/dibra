@@ -346,7 +346,7 @@ func verifyServiceStopped(serviceName string, serviceManager *ServiceManager) er
 			return err
 		}
 
-		if status == "inactive" || status == "failed" {
+		if status == "inactive" || status == "failed" || status == "not-found" {
 			return nil
 		}
 

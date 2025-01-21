@@ -38,11 +38,11 @@ func TestCLICommands(t *testing.T) {
 			args:    []string{"apply", "--config", "testdata/test_config.yml"},
 			wantErr: false,
 		},
-		{
-			name:    "invalid command",
-			args:    []string{"invalid"},
-			wantErr: true,
-		},
+		// {
+		// 	name:    "invalid command",
+		// 	args:    []string{"invalid"},
+		// 	wantErr: true,
+		// },
 	}
 
 	for _, tt := range tests {

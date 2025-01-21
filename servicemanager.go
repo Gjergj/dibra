@@ -119,14 +119,14 @@ func (s *ServiceManager) getServiceStatus(serviceName string) (string, error) {
 
 	// command := fmt.Sprintf("systemctl status %s", serviceName)
 	// err := session.Run(fmt.Sprintf("sudo -S -p '' %s", command));
-	output, stderr, err := s.exec.Execute(commandexecutor.Command{
+	output, err := s.exec.ExecuteCombinedOutput(commandexecutor.Command{
 		Command:  "systemctl",
 		Args:     []string{"status", serviceName},
 		WithSudo: s.WithSudo,
 	})
 	if err != nil {
 		// Don't return error if service is just inactive
-		if strings.Contains(stderr, "could not be found") {
+		if strings.Contains(output, "could not be found") {
 			return "not-found", nil
 		}
 		// replace the following with errors.As(err, &exitErr)
@@ -134,7 +134,10 @@ func (s *ServiceManager) getServiceStatus(serviceName string) (string, error) {
 		if errors.As(err, &exitErr) && exitErr.ExitStatus() == 3 {
 			return "inactive", nil
 		}
-		return "", fmt.Errorf("failed to get status: %w", err)
+		if errors.As(err, &exitErr) && exitErr.ExitStatus() == 4 {
+			return "", fmt.Errorf("failed to get status with %w EXIT_NOPERMISSION %s", err, output)
+		}
+		return "", fmt.Errorf("failed to get status: %w %s", err, output)
 	}
 
 	return s.parseServiceStatus(output), nil
@@ -245,8 +248,8 @@ ExecStart=%s
 		unitContent += fmt.Sprintf("Group=%s\n", unit.Group)
 	}
 	if len(unit.Environment) > 0 {
-		for _, env := range unit.Environment {
-			unitContent += fmt.Sprintf("Environment=%s\n", env)
+		for variable, value := range unit.Environment {
+			unitContent += fmt.Sprintf(`Environment="%s=%s"\n`, variable, value)
 		}
 	}
 	if unit.Restart != "" {

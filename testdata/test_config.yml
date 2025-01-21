@@ -35,9 +35,9 @@ inventory:
 tasks:
   - hosts:
       - group_BE
-    disabled: true
+    disabled: false
     systemd:
-      operation: stop
+      operation: install
       name: myapp
       description: My Custom Application Service
       # user: testuser
