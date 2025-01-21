@@ -609,6 +609,20 @@ func (s *ServiceManager) GetLogsInTimeRange(serviceName string, since, until tim
 	})
 }
 
+func (s *ServiceManager) ChownDirectory(path string, user string, group string) error {
+	cmd := commandexecutor.Command{
+		Command:  "chown",
+		Args:     []string{"-R", fmt.Sprintf("%s:%s", user, group), path},
+		WithSudo: s.WithSudo,
+	}
+
+	_, err := s.exec.ExecuteCombinedOutput(cmd)
+	if err != nil {
+		return fmt.Errorf("failed to chown directory: %w", err)
+	}
+	return nil
+}
+
 // // FollowLogs is a convenience method to follow service logs in real-time
 // func (s *ServiceManager) FollowLogs(serviceName string) (string, error) {
 // 	return s.GetServiceLogs(serviceName, LogOptions{

@@ -280,6 +280,11 @@ func applyInstallOperation(task *Task, user string, sshConnection *cmdrunner.SSH
 			return err
 		}
 
+		err = serviceManager.ChownDirectory(task.Systemd.WorkingDir, task.Systemd.User, task.Systemd.Group)
+		if err != nil {
+			return err
+		}
+
 		err = serviceManager.StopService(task.Systemd.Name)
 		if err != nil {
 			return err
