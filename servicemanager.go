@@ -249,7 +249,7 @@ ExecStart=%s
 	}
 	if len(unit.Environment) > 0 {
 		for variable, value := range unit.Environment {
-			unitContent += fmt.Sprintf(`Environment="%s=%s"\n`, variable, value)
+			unitContent += fmt.Sprintf("Environment=\"%s=%s\"\n", variable, value)
 		}
 	}
 	if unit.Restart != "" {
