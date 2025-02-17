@@ -48,14 +48,14 @@ tasks:
         env: production
       artifacts:
         - type: local
-          path: /Users/gjergjiramku/projekte/social_posts/bin/social_posts
-          remote_path: ${TASK_EXEC_PATH}
+          source: /Users/gjergjiramku/projekte/social_posts/bin/social_posts
+          destination: ${TASK_EXEC_PATH}
           constraints:
             executable: true
             force: true
         - type: local
-          path: /Users/gjergjiramku/projekte/social_posts/bin/yt-dlp_linux
-          remote_path: ${TASK_WORKDIR}/yt-dlp
+          source: /Users/gjergjiramku/projekte/social_posts/bin/yt-dlp_linux
+          destination: ${TASK_WORKDIR}/yt-dlp
           constraints:
             executable: true
   - hosts:
@@ -66,7 +66,7 @@ tasks:
         content: |
           #!/bin/bash
           echo "Hello, World!"
-        remote_path: /home/testuser/test_script
+        destination: /home/testuser/test_script
         constraints:
           executable: true
   - hosts:
@@ -74,8 +74,8 @@ tasks:
     disabled: true
     artifacts:
       - type: local
-        path: /Users/gjergjiramku/projekte/seemenow/web/dist
-        remote_path: /home/testuser/web
+        source: /Users/gjergjiramku/projekte/seemenow/web/dist
+        destination: /home/testuser/web
         constraints:
           force: true
   - hosts:
@@ -92,6 +92,6 @@ tasks:
               </html>
               HTML 200
           }
-        remote_path: /etc/caddy/Caddyfile
+        destination: /etc/caddy/Caddyfile
         constraints:
           force: true

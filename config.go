@@ -81,8 +81,8 @@ type Systemd struct {
 
 type Artifact struct {
 	Type        string            `yaml:"type"`
-	Path        string            `yaml:"path"`
-	RemotePath  string            `yaml:"remote_path"`
+	Source      string            `yaml:"source"`
+	Destination string            `yaml:"destination"`
 	Content     string            `yaml:"content"`
 	Constraints map[string]string `yaml:"constraints"`
 }
@@ -91,9 +91,9 @@ func (a *Artifact) Validate() error {
 	if a.Type == "" {
 		return fmt.Errorf("artifact type is required")
 	} else if a.Type == "local" {
-		if a.RemotePath == "" {
+		if a.Destination == "" {
 			return fmt.Errorf("remote artifact path is required")
-		} else if a.Content == "" && a.Path == "" {
+		} else if a.Content == "" && a.Source == "" {
 			return fmt.Errorf("artifact content or local path is required")
 		}
 	} else {

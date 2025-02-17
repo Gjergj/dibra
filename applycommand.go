@@ -369,7 +369,7 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 
 	for _, artifact := range artifacts {
 
-		artifact.Path = os.Expand(artifact.Path, func(s string) string {
+		artifact.Source = os.Expand(artifact.Source, func(s string) string {
 			if s == "" {
 				return ""
 			}
@@ -378,7 +378,7 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 			}
 			return fmt.Sprintf("${%s}", s)
 		})
-		artifact.RemotePath = os.Expand(artifact.RemotePath, func(s string) string {
+		artifact.Destination = os.Expand(artifact.Destination, func(s string) string {
 			if s == "" {
 				return ""
 			}
@@ -390,30 +390,30 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 		remoteMustExist := false
 		sha256Hash := ""
 		remoteFileType := ArtifactFileTypeFile
-		if artifact.Type == "local" && artifact.Path != "" {
+		if artifact.Type == "local" && artifact.Source != "" {
 			// detect if it's file or directory
-			fileInfo, err := os.Stat(artifact.Path)
+			fileInfo, err := os.Stat(artifact.Source)
 			if err != nil {
-				return fmt.Errorf("failed to stat local file %s: %w", artifact.Path, err)
+				return fmt.Errorf("failed to stat local file %s: %w", artifact.Source, err)
 			}
 			if fileInfo.IsDir() {
 				remoteFileType = ArtifactFileTypeDir
 			} else {
 				remoteFileType = ArtifactFileTypeFile
-				sha256Hash, err = hashFile(artifact.Path)
+				sha256Hash, err = hashFile(artifact.Source)
 				if err != nil {
 					return err
 				}
 
 				// check if remote file exists
-				remoteFileInfo, err := fsOperations.Stat(artifact.RemotePath)
+				remoteFileInfo, err := fsOperations.Stat(artifact.Destination)
 				if err != nil {
 					remoteMustExist = true
 				} else {
 					if remoteFileInfo.IsDir() {
-						return fmt.Errorf("remote file %s is a directory, expected a file", artifact.RemotePath)
+						return fmt.Errorf("remote file %s is a directory, expected a file", artifact.Destination)
 					}
-					remoteSha256Hash, err := serviceManager.HashRemoteFile(artifact.RemotePath)
+					remoteSha256Hash, err := serviceManager.HashRemoteFile(artifact.Destination)
 					if err != nil {
 						return err
 					}
@@ -424,7 +424,7 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 			}
 		} else if artifact.Type == "local" && artifact.Content != "" {
 			//get remote file content
-			remoteContent, err := serviceManager.ReadRemoteTextFile(artifact.RemotePath)
+			remoteContent, err := serviceManager.ReadRemoteTextFile(artifact.Destination)
 			if err != nil {
 				return err
 			}
@@ -462,45 +462,45 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 		// if err != nil {
 		// 	return err
 		// }
-		if remoteMustExist && artifact.Path != "" {
+		if remoteMustExist && artifact.Source != "" {
 			if remoteFileType == ArtifactFileTypeDir {
-				fmt.Printf("Uploading artifact %s to %s\n", artifact.Path, artifact.RemotePath)
-				remoteTmpFilePath, err := fsOperations.UploadDir(artifact.Path, artifact.RemotePath)
+				fmt.Printf("Uploading artifact %s to %s\n", artifact.Source, artifact.Destination)
+				remoteTmpFilePath, err := fsOperations.UploadDir(artifact.Source, artifact.Destination)
 				if err != nil {
 					return err
 				}
-				err = serviceManager.UntarRemoteFile(remoteTmpFilePath, artifact.RemotePath)
+				err = serviceManager.UntarRemoteFile(remoteTmpFilePath, artifact.Destination)
 				if err != nil {
 					return err
 				}
 			} else {
-				fmt.Printf("Uploading artifact %s to %s\n", artifact.Path, artifact.RemotePath)
-				err = fsOperations.Upload(artifact.Path, artifact.RemotePath)
+				fmt.Printf("Uploading artifact %s to %s\n", artifact.Source, artifact.Destination)
+				err = fsOperations.Upload(artifact.Source, artifact.Destination)
 				if err != nil {
 					return err
 				}
 			}
 		} else if remoteMustExist && artifact.Content != "" {
-			fmt.Printf("Uploading artifact content to %s\n", artifact.RemotePath)
+			fmt.Printf("Uploading artifact content to %s\n", artifact.Destination)
 			if remoteFileType == ArtifactFileTypeDir {
 				return fmt.Errorf("can not upload content to a directory")
 			}
-			err = fsOperations.UploadContent(artifact.Content, artifact.RemotePath)
+			err = fsOperations.UploadContent(artifact.Content, artifact.Destination)
 			if err != nil {
 				return err
 			}
 		}
 		if executable {
-			remoteFileInfo, err := fsOperations.Stat(artifact.RemotePath)
+			remoteFileInfo, err := fsOperations.Stat(artifact.Destination)
 			if err != nil {
-				return fmt.Errorf("can not make executable remote file %s does not exist: %v", artifact.RemotePath, err)
+				return fmt.Errorf("can not make executable remote file %s does not exist: %v", artifact.Destination, err)
 			}
 			if remoteFileInfo.IsDir() {
 				// fmt.Printf("remote file %s is a directory, expected a file\n", artifact.RemotePath)
-				return fmt.Errorf("can not make executable remote file %s is a directory", artifact.RemotePath)
+				return fmt.Errorf("can not make executable remote file %s is a directory", artifact.Destination)
 			}
-			fmt.Printf("Making executable %s\n", artifact.RemotePath)
-			err = serviceManager.MakeExecutable(artifact.RemotePath)
+			fmt.Printf("Making executable %s\n", artifact.Destination)
+			err = serviceManager.MakeExecutable(artifact.Destination)
 			if err != nil {
 				return err
 			}
