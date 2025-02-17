@@ -90,7 +90,7 @@ type Artifact struct {
 func (a *Artifact) Validate() error {
 	if a.Type == "" {
 		return fmt.Errorf("artifact type is required")
-	} else if a.Type == "local" {
+	} else if a.Type == "put" {
 		if a.Destination == "" {
 			return fmt.Errorf("remote artifact path is required")
 		} else if a.Content == "" && a.Source == "" {

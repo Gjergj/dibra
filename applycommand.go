@@ -390,7 +390,7 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 		remoteMustExist := false
 		sha256Hash := ""
 		remoteFileType := ArtifactFileTypeFile
-		if artifact.Type == "local" && artifact.Source != "" {
+		if artifact.Type == "put" && artifact.Source != "" {
 			// detect if it's file or directory
 			fileInfo, err := os.Stat(artifact.Source)
 			if err != nil {
@@ -422,7 +422,7 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 					}
 				}
 			}
-		} else if artifact.Type == "local" && artifact.Content != "" {
+		} else if artifact.Type == "put" && artifact.Content != "" {
 			//get remote file content
 			remoteContent, err := serviceManager.ReadRemoteTextFile(artifact.Destination)
 			if err != nil {

@@ -47,13 +47,13 @@ tasks:
         port: 8080
         env: production
       artifacts:
-        - type: local
+        - type: put
           source: /Users/gjergjiramku/projekte/social_posts/bin/social_posts
           destination: ${TASK_EXEC_PATH}
           constraints:
             executable: true
             force: true
-        - type: local
+        - type: put
           source: /Users/gjergjiramku/projekte/social_posts/bin/yt-dlp_linux
           destination: ${TASK_WORKDIR}/yt-dlp
           constraints:
@@ -62,7 +62,7 @@ tasks:
       - group_BE
     disabled: true
     artifacts:
-      - type: local
+      - type: put
         content: |
           #!/bin/bash
           echo "Hello, World!"
@@ -73,7 +73,7 @@ tasks:
       - group_BE
     disabled: true
     artifacts:
-      - type: local
+      - type: put
         source: /Users/gjergjiramku/projekte/seemenow/web/dist
         destination: /home/testuser/web
         constraints:
@@ -81,7 +81,7 @@ tasks:
   - hosts:
       - sdd_nodes
     artifacts:
-      - type: local
+      - type: put
         content: >-
           :80 {
             header Content-Type text/html
