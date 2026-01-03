@@ -64,19 +64,33 @@ type Task struct {
 	Name        string     `yaml:"name"`
 	Description string     `yaml:"description"`
 	Systemd     *Systemd   `yaml:"systemd"`
+	Commands    []Command  `yaml:"commands"`
 	Artifacts   []Artifact `yaml:"artifacts"`
 }
 
+type Command struct {
+	Command string   `yaml:"command"`
+	Args    []string `yaml:"args"`
+}
+
+func (c *Command) Validate() error {
+	if c.Command == "" {
+		return fmt.Errorf("command is required")
+	}
+	return nil
+}
+
 type Systemd struct {
-	Name        string            `yaml:"name"`
-	Operation   string            `yaml:"operation"`
-	Description string            `yaml:"description"`
-	ExecStart   string            `yaml:"exec_start"`
-	Group       string            `yaml:"group"`
-	User        string            `yaml:"user"`
-	WorkingDir  string            `yaml:"working_dir"`
-	Env         map[string]string `yaml:"env"`
-	Artifacts   []Artifact        `yaml:"artifacts"`
+	Name                string            `yaml:"name"`
+	Operation           string            `yaml:"operation"`
+	Description         string            `yaml:"description"`
+	ExecStart           string            `yaml:"exec_start"`
+	Group               string            `yaml:"group"`
+	User                string            `yaml:"user"`
+	WorkingDir          string            `yaml:"working_dir"`
+	Env                 map[string]string `yaml:"env"`
+	AmbientCapabilities string            `yaml:"ambient_capabilities"`
+	Artifacts           []Artifact        `yaml:"artifacts"`
 }
 
 type Artifact struct {
@@ -85,18 +99,20 @@ type Artifact struct {
 	Destination string            `yaml:"destination"`
 	Content     string            `yaml:"content"`
 	Constraints map[string]string `yaml:"constraints"`
+	Command     Command           `yaml:"command"`
 }
 
 func (a *Artifact) Validate() error {
-	if a.Type == "" {
-		return fmt.Errorf("artifact type is required")
-	} else if a.Type == "put" {
+	switch a.Type {
+	case "put":
 		if a.Destination == "" {
 			return fmt.Errorf("remote artifact path is required")
 		} else if a.Content == "" && a.Source == "" {
 			return fmt.Errorf("artifact content or local path is required")
 		}
-	} else {
+	case "":
+		return fmt.Errorf("artifact type is required")
+	default:
 		return fmt.Errorf("unsupported artifact type: %s", a.Type)
 	}
 

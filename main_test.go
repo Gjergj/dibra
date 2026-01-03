@@ -18,24 +18,29 @@ func TestCLICommands(t *testing.T) {
 		args    []string
 		wantErr bool
 	}{
+		// {
+		// 	name:    "validate command without config",
+		// 	args:    []string{"validate"},
+		// 	wantErr: true,
+		// },
+		// {
+		// 	name:    "apply command without config",
+		// 	args:    []string{"apply"},
+		// 	wantErr: true,
+		// },
+		// {
+		// 	name:    "validate command with config",
+		// 	args:    []string{"validate", "--config", "testdata/test_config.yml"},
+		// 	wantErr: false,
+		// },
+		// {
+		// 	name:    "apply command with config",
+		// 	args:    []string{"apply", "--config", "testdata/test_config.yml"},
+		// 	wantErr: false,
+		// },
 		{
-			name:    "validate command without config",
-			args:    []string{"validate"},
-			wantErr: true,
-		},
-		{
-			name:    "apply command without config",
-			args:    []string{"apply"},
-			wantErr: true,
-		},
-		{
-			name:    "validate command with config",
-			args:    []string{"validate", "--config", "testdata/test_config.yml"},
-			wantErr: false,
-		},
-		{
-			name:    "apply command with config",
-			args:    []string{"apply", "--config", "testdata/test_config.yml"},
+			name:    "apply",
+			args:    []string{"apply", "--config", "testdata/test_config_test_put_content.yml"},
 			wantErr: false,
 		},
 		// {

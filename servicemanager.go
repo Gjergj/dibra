@@ -15,6 +15,9 @@ type ServiceManager struct {
 	WithSudo bool
 }
 
+// create specific error if file does not exist
+var ErrFileDoesNotExist = errors.New("file does not exist")
+
 type ServiceUnit struct {
 	Name        string
 	Description string
@@ -24,9 +27,10 @@ type ServiceUnit struct {
 	Group       string
 	RestartSec  int
 	// Additional systemd unit options
-	Environment map[string]string
-	Restart     string // e.g., "always", "on-failure"
-	WantedBy    string // e.g., "multi-user.target"
+	Environment         map[string]string
+	Restart             string // e.g., "always", "on-failure"
+	WantedBy            string // e.g., "multi-user.target"
+	AmbientCapabilities string // e.g., "CAP_NET_BIND_SERVICE"
 }
 
 // NewServiceManager creates a new ServiceManager instance
@@ -258,6 +262,9 @@ ExecStart=%s
 	if unit.RestartSec != 0 {
 		unitContent += fmt.Sprintf("RestartSec=%d\n", unit.RestartSec)
 	}
+	if unit.AmbientCapabilities != "" {
+		unitContent += fmt.Sprintf("AmbientCapabilities=%s\n", unit.AmbientCapabilities)
+	}
 
 	unitContent += "\n[Install]\n"
 	if unit.WantedBy != "" {
@@ -443,9 +450,13 @@ func (s *ServiceManager) ReadRemoteTextFile(remotePath string) (string, error) {
 		WithSudo: s.WithSudo,
 	}
 
-	_, _, err := s.exec.Execute(checkCmd)
-	if err != nil {
-		return "", fmt.Errorf("file %s does not exist", remotePath)
+	result := s.exec.ExecuteWithExitCode(checkCmd)
+	if result.Err != nil {
+		if result.ExitCode == 1 {
+			return "", ErrFileDoesNotExist
+		} else {
+			return "", fmt.Errorf("failed to check if file exists: %w", result.Err)
+		}
 	}
 
 	// Read the service file
@@ -534,6 +545,8 @@ func (s *ServiceManager) GetServiceUnit(serviceName string) (*ServiceUnit, error
 				}
 			case "Restart":
 				unit.Restart = value
+			case "AmbientCapabilities":
+				unit.AmbientCapabilities = value
 			}
 		case "Install":
 			if key == "WantedBy" {
@@ -619,6 +632,20 @@ func (s *ServiceManager) ChownDirectory(path string, user string, group string) 
 	_, err := s.exec.ExecuteCombinedOutput(cmd)
 	if err != nil {
 		return fmt.Errorf("failed to chown directory: %w", err)
+	}
+	return nil
+}
+
+func (s *ServiceManager) ExecCommand(command string, args []string) error {
+	cmd := commandexecutor.Command{
+		Command:  command,
+		Args:     args,
+		WithSudo: s.WithSudo,
+	}
+
+	_, err := s.exec.ExecuteCombinedOutput(cmd)
+	if err != nil {
+		return fmt.Errorf("error executing command: %w", err)
 	}
 	return nil
 }

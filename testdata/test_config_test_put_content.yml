@@ -1,0 +1,60 @@
+secrets:
+  adapter: bitwarden
+  list:
+    HOST_PASSWORD: tmpemail.xyz_secrets/password
+    HOST: tmpemail.xyz_secrets/host
+    HOST_PORT: tmpemail.xyz_secrets/port
+    HOST_USER: tmpemail.xyz_secrets/user
+
+inventory:
+  real_vps:
+    tmpemail.xyz:
+      host: ${HOST}
+      user: ${HOST_USER}
+      port: ${HOST_PORT}
+      password: ${HOST_PASSWORD}
+      timeout: 30
+
+tasks:
+  - hosts:
+      - tmpemail.xyz
+    artifacts:
+      - type: put
+        content: |
+          # Basic settings
+          myhostname = tmpemail.xyz
+          mydomain = tmpemail.xyz
+          myorigin = $mydomain
+          # Network settings - listen on all interfaces
+          inet_interfaces = all
+          inet_protocols = ipv4
+
+          # Receive only - disable sending
+          default_transport = error
+          relay_transport = error
+          # Virtual mailbox settings
+          virtual_mailbox_domains = /etc/postfix/virtual_domains
+          virtual_mailbox_maps = hash:/etc/postfix/virtual_mailbox
+          virtual_mailbox_base = /var/mail/vmail
+          virtual_uid_maps = static:5000
+          virtual_gid_maps = static:5000
+
+          # Use Maildir format
+          virtual_mailbox_limit = 0
+          virtual_mailbox_limit_maps = hash:/etc/postfix/virtual_mailbox_limit
+          virtual_mailbox_limit_override = yes
+          mailbox_size_limit = 0
+          virtual_mailbox_extended = yes
+
+          # Disable local delivery
+          local_transport = error:local delivery disabled
+          local_recipient_maps =
+
+          # TLS settings for ports 465 and 587
+          smtpd_tls_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem
+          smtpd_tls_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+          smtpd_use_tls=yes
+          smtpd_tls_security_level=may
+        destination: /home/postfix/main.cf
+        constraints:
+          force: true

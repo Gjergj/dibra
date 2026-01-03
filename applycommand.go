@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -124,6 +125,14 @@ func runApply(cmd *cobra.Command, args []string) error {
 					return fmt.Errorf("failed to handle artifacts on %s: %w", sshConnection.HostName(), err)
 				}
 			}
+
+			if len(task.Commands) > 0 {
+				err = handleCommands(task.Commands, sshConnection, serviceManager)
+				if err != nil {
+					return fmt.Errorf("failed to handle commands on %s: %w", sshConnection.HostName(), err)
+				}
+			}
+
 			if task.Systemd != nil {
 				switch task.Systemd.Operation {
 				case "install", "":
@@ -257,16 +266,17 @@ func applyInstallOperation(task *Task, user string, sshConnection *cmdrunner.SSH
 
 		// Create a new service unit
 		unit := ServiceUnit{
-			Name:        task.Systemd.Name,
-			Description: task.Systemd.Description,
-			ExecStart:   task.Systemd.ExecStart,
-			WorkingDir:  task.Systemd.WorkingDir,
-			User:        task.Systemd.User,
-			Environment: task.Systemd.Env,
-			Group:       task.Systemd.Group,
-			RestartSec:  10,
-			Restart:     "always",
-			WantedBy:    "multi-user.target",
+			Name:                task.Systemd.Name,
+			Description:         task.Systemd.Description,
+			ExecStart:           task.Systemd.ExecStart,
+			WorkingDir:          task.Systemd.WorkingDir,
+			User:                task.Systemd.User,
+			Environment:         task.Systemd.Env,
+			Group:               task.Systemd.Group,
+			RestartSec:          10,
+			Restart:             "always",
+			WantedBy:            "multi-user.target",
+			AmbientCapabilities: task.Systemd.AmbientCapabilities,
 		}
 
 		// err = fsOperations.MkdirAll(config.Task.Systemd.BinPath)
@@ -361,6 +371,16 @@ func verifyServiceStopped(serviceName string, serviceManager *ServiceManager) er
 	return fmt.Errorf("service %s failed to stop completely", serviceName)
 }
 
+func handleCommands(commands []Command, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager) error {
+	for _, command := range commands {
+		err := serviceManager.ExecCommand(command.Command, command.Args)
+		if err != nil {
+			return fmt.Errorf("failed to execute command %s: %w", command.Command, err)
+		}
+	}
+	return nil
+}
+
 func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnection, serviceManager *ServiceManager, variables map[string]string) error {
 	fsOperations, err := sshConnection.NewFSOPerations()
 	if err != nil {
@@ -425,8 +445,10 @@ func handleArtifacts(artifacts []Artifact, sshConnection *cmdrunner.SSHConnectio
 		} else if artifact.Type == "put" && artifact.Content != "" {
 			//get remote file content
 			remoteContent, err := serviceManager.ReadRemoteTextFile(artifact.Destination)
-			if err != nil {
-				return err
+			if errors.Is(err, ErrFileDoesNotExist) {
+				remoteMustExist = true
+			} else if err != nil {
+				return fmt.Errorf("failed to read remote file %s: %w", artifact.Destination, err)
 			}
 			if remoteContent != artifact.Content {
 				remoteMustExist = true
