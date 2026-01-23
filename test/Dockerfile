@@ -35,6 +35,10 @@ RUN useradd -m -s /bin/bash testuser && \
 RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
     sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
 
+# Re-enable systemd-user-sessions to remove /run/nologin on boot
+# This allows non-root SSH logins after boot
+RUN ln -sf /lib/systemd/system/systemd-user-sessions.service /etc/systemd/system/multi-user.target.wants/
+
 RUN mkdir -p /etc/apt/keyrings
 
 VOLUME ["/sys/fs/cgroup", "/tmp", "/run"]
