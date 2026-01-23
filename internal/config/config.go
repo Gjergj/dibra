@@ -1,0 +1,178 @@
+package config
+
+import (
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+)
+
+type Config struct {
+	Hosts []Host `yaml:"hosts"`
+	Tasks []Task `yaml:"tasks"`
+}
+
+type Host struct {
+	Name           string `yaml:"name"`
+	Host           string `yaml:"host"`
+	Port           int    `yaml:"port"`
+	User           string `yaml:"user"`
+	Password       string `yaml:"password"`
+	SSHKeyPath     string `yaml:"ssh_key_path"`
+	Become         bool   `yaml:"become"`
+	BecomePassword string `yaml:"become_password"`
+}
+
+type Task struct {
+	Name          string               `yaml:"name"`
+	Apt           *AptParams           `yaml:"apt,omitempty"`
+	AptKey        *AptKeyParams        `yaml:"apt_key,omitempty"`
+	AptRepository *AptRepositoryParams `yaml:"apt_repository,omitempty"`
+	File          *FileParams          `yaml:"file,omitempty"`
+	Copy          *CopyParams          `yaml:"copy,omitempty"`
+	Fetch         *FetchParams         `yaml:"fetch,omitempty"`
+	URI           *URIParams           `yaml:"uri,omitempty"`
+	Cron          *CronParams          `yaml:"cron,omitempty"`
+}
+
+type CopyParams struct {
+	Src       string `yaml:"src,omitempty"`
+	Dest      string `yaml:"dest"`
+	Content   string `yaml:"content,omitempty"`
+	Mode      string `yaml:"mode,omitempty"`
+	Owner     string `yaml:"owner,omitempty"`
+	Group     string `yaml:"group,omitempty"`
+	Backup    bool   `yaml:"backup"`
+	Force     bool   `yaml:"force"`
+	RemoteSrc bool   `yaml:"remote_src"`
+}
+
+type FetchParams struct {
+	Src              string `yaml:"src"`
+	Dest             string `yaml:"dest"`
+	Flat             bool   `yaml:"flat"`
+	FailOnMissing    *bool  `yaml:"fail_on_missing,omitempty"`
+	ValidateChecksum *bool  `yaml:"validate_checksum,omitempty"`
+}
+
+type URIParams struct {
+	URL             string            `yaml:"url"`
+	Method          string            `yaml:"method,omitempty"`
+	Body            string            `yaml:"body,omitempty"`
+	BodyFormat      string            `yaml:"body_format,omitempty"`
+	Headers         map[string]string `yaml:"headers,omitempty"`
+	StatusCode      []int             `yaml:"status_code,omitempty"`
+	Timeout         int               `yaml:"timeout,omitempty"`
+	ReturnContent   bool              `yaml:"return_content"`
+	Dest            string            `yaml:"dest,omitempty"`
+	Creates         string            `yaml:"creates,omitempty"`
+	URLUsername     string            `yaml:"url_username,omitempty"`
+	URLPassword     string            `yaml:"url_password,omitempty"`
+	ForceBasicAuth  bool              `yaml:"force_basic_auth"`
+	FollowRedirects string            `yaml:"follow_redirects,omitempty"`
+	ValidateCerts   *bool             `yaml:"validate_certs,omitempty"`
+}
+
+type CronParams struct {
+	Name         string `yaml:"name"`
+	User         string `yaml:"user,omitempty"`
+	Job          string `yaml:"job,omitempty"`
+	State        string `yaml:"state,omitempty"`
+	Minute       string `yaml:"minute,omitempty"`
+	Hour         string `yaml:"hour,omitempty"`
+	Day          string `yaml:"day,omitempty"`
+	Month        string `yaml:"month,omitempty"`
+	Weekday      string `yaml:"weekday,omitempty"`
+	SpecialTime  string `yaml:"special_time,omitempty"`
+	Disabled     bool   `yaml:"disabled"`
+	Backup       bool   `yaml:"backup"`
+	CronFile     string `yaml:"cron_file,omitempty"`
+	Env          bool   `yaml:"env"`
+	InsertAfter  string `yaml:"insertafter,omitempty"`
+	InsertBefore string `yaml:"insertbefore,omitempty"`
+}
+
+type FileParams struct {
+	Path    string `yaml:"path"`
+	State   string `yaml:"state,omitempty"`
+	Mode    string `yaml:"mode,omitempty"`
+	Owner   string `yaml:"owner,omitempty"`
+	Group   string `yaml:"group,omitempty"`
+	Src     string `yaml:"src,omitempty"`
+	Recurse bool   `yaml:"recurse"`
+	Force   bool   `yaml:"force"`
+	Follow  bool   `yaml:"follow"`
+}
+
+type AptKeyParams struct {
+	URL     string `yaml:"url,omitempty"`
+	Data    string `yaml:"data,omitempty"`
+	File    string `yaml:"file,omitempty"`
+	Keyring string `yaml:"keyring,omitempty"`
+	ID      string `yaml:"id,omitempty"`
+	State   string `yaml:"state,omitempty"`
+}
+
+type AptRepositoryParams struct {
+	Repo        string `yaml:"repo"`
+	State       string `yaml:"state,omitempty"`
+	Filename    string `yaml:"filename,omitempty"`
+	UpdateCache bool   `yaml:"update_cache"`
+}
+
+type AptParams struct {
+	Name           interface{} `yaml:"name"`
+	State          string      `yaml:"state"`
+	UpdateCache    bool        `yaml:"update_cache"`
+	CacheValidTime int         `yaml:"cache_valid_time"`
+	Purge          bool        `yaml:"purge"`
+	ForceAptGet    bool        `yaml:"force_apt_get"`
+	Autoremove     bool        `yaml:"autoremove"`
+	Upgrade        string      `yaml:"upgrade"`
+}
+
+func (a *AptParams) GetPackages() []string {
+	if a.Name == nil {
+		return nil
+	}
+	switch v := a.Name.(type) {
+	case string:
+		return []string{v}
+	case []interface{}:
+		pkgs := make([]string, 0, len(v))
+		for _, p := range v {
+			if s, ok := p.(string); ok {
+				pkgs = append(pkgs, s)
+			}
+		}
+		return pkgs
+	default:
+		return nil
+	}
+}
+
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config: %w", err)
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	for i := range cfg.Hosts {
+		if cfg.Hosts[i].Port == 0 {
+			cfg.Hosts[i].Port = 22
+		}
+	}
+
+	for i := range cfg.Tasks {
+		if cfg.Tasks[i].Apt != nil && cfg.Tasks[i].Apt.State == "" {
+			cfg.Tasks[i].Apt.State = "present"
+		}
+	}
+
+	return &cfg, nil
+}
