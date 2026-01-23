@@ -121,6 +121,27 @@ func remotePackageInstalled(t *testing.T, client *ssh.Client, pkg string) bool {
 	return err == nil
 }
 
+func remoteFileOwner(t *testing.T, client *ssh.Client, path string) string {
+	return remoteExec(t, client, "stat -c %U "+path)
+}
+
+func remoteFileGroup(t *testing.T, client *ssh.Client, path string) string {
+	return remoteExec(t, client, "stat -c %G "+path)
+}
+
+func remoteFileInode(t *testing.T, client *ssh.Client, path string) string {
+	return remoteExec(t, client, "stat -c %i "+path)
+}
+
+func remoteFileMtime(t *testing.T, client *ssh.Client, path string) string {
+	return remoteExec(t, client, "stat -c %Y "+path)
+}
+
+func remoteIsFile(t *testing.T, client *ssh.Client, path string) bool {
+	_, _, err := client.Run("test -f " + path)
+	return err == nil
+}
+
 const playbookHeader = `
 hosts:
   - name: testhost
