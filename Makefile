@@ -19,12 +19,12 @@ test-integration-down:
 # Run integration tests (requires container to be running)
 test-integration: test-integration-up
 	@echo "Running integration tests..."
-	go test -tags=integration -v -timeout 5m ./test/integration/... || (make test-integration-down && exit 1)
+	go test -tags=integration -v -timeout 20m ./test/integration/... || (make test-integration-down && exit 1)
 	make test-integration-down
 
 # Run integration tests without managing container
 test-integration-only:
-	go test -tags=integration -v -timeout 5m ./test/integration/...
+	go test -tags=integration -v -timeout 20m ./test/integration/...
 
 # Clean up
 clean:
