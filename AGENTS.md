@@ -438,6 +438,91 @@ Manages cron.d and crontab entries.
 - When using `cron_file`, user field is included in the job line
 - Empty cron.d files are automatically removed
 
+### systemd_service
+
+Manages systemd units (services, timers, etc.). Alias: `systemd`.
+
+```yaml
+# Start a service
+- name: Start nginx
+  systemd_service:
+    name: nginx
+    state: started
+
+# Stop and disable a service
+- name: Stop and disable service
+  systemd_service:
+    name: nginx
+    state: stopped
+    enabled: false
+
+# Restart with daemon-reload
+- name: Restart after config change
+  systemd_service:
+    name: myapp
+    state: restarted
+    daemon_reload: true
+
+# Enable service at boot
+- name: Enable nginx on boot
+  systemd_service:
+    name: nginx
+    enabled: true
+
+# Reload service configuration
+- name: Reload nginx
+  systemd_service:
+    name: nginx
+    state: reloaded
+
+# Mask a service (prevent starting)
+- name: Mask dangerous service
+  systemd_service:
+    name: insecure-service
+    masked: true
+
+# Unmask and enable
+- name: Unmask and enable
+  systemd_service:
+    name: myservice
+    masked: false
+    enabled: true
+
+# Just daemon-reload (no service name)
+- name: Reload systemd daemon
+  systemd_service:
+    daemon_reload: true
+
+# Timer unit
+- name: Start timer
+  systemd_service:
+    name: backup.timer
+    state: started
+    enabled: true
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `name` | | Name of the unit (adds `.service` if no extension) |
+| `state` | | `started`, `stopped`, `restarted`, `reloaded` |
+| `enabled` | | Whether the unit starts on boot (true/false) |
+| `masked` | | Whether the unit is masked (true/false) |
+| `daemon_reload` | `false` | Run `daemon-reload` before other operations |
+| `daemon_reexec` | `false` | Run `daemon-reexec` before other operations |
+| `scope` | `system` | `system`, `user`, or `global` |
+| `no_block` | `false` | Don't wait for operation to complete |
+| `force` | `false` | Force enable even if symlinks exist |
+
+**State Behaviors**:
+- `started`: Idempotent - starts only if not running
+- `stopped`: Idempotent - stops only if running
+- `restarted`: Always restarts (always reports changed)
+- `reloaded`: Starts if stopped, then reloads (always reports changed)
+
+**Order of Operations**: enable/disable → mask/unmask → state change
+
+**Idempotency**: `started`/`stopped`/`enabled`/`masked` are idempotent.
+
 ## Playbook Format
 
 ```yaml
@@ -585,6 +670,36 @@ systemctl list-units --type=service
 | `TestPlaybook_CronFile` | /etc/cron.d file with user field |
 | `TestPlaybook_CronFileRemove` | Auto-remove empty cron.d file |
 | `TestPlaybook_CronUpdateJob` | Update existing job |
+| `TestPlaybook_SystemdServiceStart` | Start service + idempotency |
+| `TestPlaybook_SystemdServiceStop` | Stop service + idempotency |
+| `TestPlaybook_SystemdServiceRestart` | Restart service (always changed) |
+| `TestPlaybook_SystemdServiceEnable` | Enable at boot + idempotency |
+| `TestPlaybook_SystemdServiceDisable` | Disable from boot + idempotency |
+| `TestPlaybook_SystemdServiceStartAndEnable` | Combined start+enable + idempotency |
+| `TestPlaybook_SystemdServiceDaemonReload` | daemon-reload without service name |
+| `TestPlaybook_SystemdServiceDaemonReloadWithRestart` | daemon-reload before restart |
+| `TestPlaybook_SystemdServiceMask` | Mask service + idempotency |
+| `TestPlaybook_SystemdServiceUnmask` | Unmask service + idempotency |
+| `TestPlaybook_SystemdServiceUnmaskAndEnable` | Unmask then enable + idempotency |
+| `TestPlaybook_SystemdServiceImplicitServiceExtension` | Auto-add .service extension |
+| `TestPlaybook_SystemdServiceExplicitServiceExtension` | Explicit .service extension |
+| `TestPlaybook_SystemdServiceNonExistent` | Fails on non-existent service |
+| `TestPlaybook_SystemdServiceGlobPattern` | Rejects glob patterns |
+| `TestPlaybook_SystemdServiceNoAction` | Fails when no action specified |
+| `TestPlaybook_SystemdAlias` | Uses `systemd` as alias |
+| `TestPlaybook_SystemdServiceStopAndDisable` | Combined stop+disable + idempotency |
+| `TestPlaybook_SystemdServiceReloaded` | Reload service (always changed) |
+| `TestPlaybook_SystemdServiceFullWorkflow` | Full workflow: start+enable+daemon_reload |
+| `TestPlaybook_SystemdServiceTimerUnit` | Timer unit (.timer) management |
+| `TestPlaybook_SystemdServiceNoBlock` | no_block async operation |
+| `TestPlaybook_SystemdServiceInvalidState` | Fails on invalid state |
+| `TestPlaybook_SystemdServiceDaemonReexec` | daemon-reexec |
+| `TestPlaybook_SystemdServiceDaemonReexecAndReload` | Combined daemon-reexec+reload |
+| `TestPlaybook_SystemdServiceForceEnable` | Force enable with --force |
+| `TestPlaybook_SystemdServiceNameRequired` | Fails when name missing for state |
+| `TestPlaybook_SystemdServiceEnabledWithoutName` | Fails when name missing for enabled |
+| `TestPlaybook_SystemdServiceMaskedWithoutName` | Fails when name missing for masked |
+| `TestPlaybook_SystemdServiceStaticService` | Handles static services |
 | `TestPlaybook_FullDeployWorkflow` | Full app deployment: dirs, config, symlinks |
 
 Each test:

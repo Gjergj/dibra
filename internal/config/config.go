@@ -24,17 +24,19 @@ type Host struct {
 }
 
 type Task struct {
-	Name          string               `yaml:"name"`
-	Apt           *AptParams           `yaml:"apt,omitempty"`
-	AptKey        *AptKeyParams        `yaml:"apt_key,omitempty"`
-	AptRepository *AptRepositoryParams `yaml:"apt_repository,omitempty"`
-	File          *FileParams          `yaml:"file,omitempty"`
-	Copy          *CopyParams          `yaml:"copy,omitempty"`
-	Fetch         *FetchParams         `yaml:"fetch,omitempty"`
-	URI           *URIParams           `yaml:"uri,omitempty"`
-	Cron          *CronParams          `yaml:"cron,omitempty"`
-	UFW           *UFWParams           `yaml:"ufw,omitempty"`
-	User          *UserParams          `yaml:"user,omitempty"`
+	Name           string                 `yaml:"name"`
+	Apt            *AptParams             `yaml:"apt,omitempty"`
+	AptKey         *AptKeyParams          `yaml:"apt_key,omitempty"`
+	AptRepository  *AptRepositoryParams   `yaml:"apt_repository,omitempty"`
+	File           *FileParams            `yaml:"file,omitempty"`
+	Copy           *CopyParams            `yaml:"copy,omitempty"`
+	Fetch          *FetchParams           `yaml:"fetch,omitempty"`
+	URI            *URIParams             `yaml:"uri,omitempty"`
+	Cron           *CronParams            `yaml:"cron,omitempty"`
+	UFW            *UFWParams             `yaml:"ufw,omitempty"`
+	User           *UserParams            `yaml:"user,omitempty"`
+	SystemdService *SystemdServiceParams  `yaml:"systemd_service,omitempty"`
+	Systemd        *SystemdServiceParams  `yaml:"systemd,omitempty"`
 }
 
 type CopyParams struct {
@@ -194,6 +196,18 @@ type UserParams struct {
 	SSHKeyFile       string   `yaml:"ssh_key_file,omitempty"`
 	SSHKeyComment    string   `yaml:"ssh_key_comment,omitempty"`
 	SSHKeyPassphrase string   `yaml:"ssh_key_passphrase,omitempty"`
+}
+
+type SystemdServiceParams struct {
+	Name         string `yaml:"name,omitempty"`
+	State        string `yaml:"state,omitempty"`
+	Enabled      *bool  `yaml:"enabled,omitempty"`
+	Masked       *bool  `yaml:"masked,omitempty"`
+	DaemonReload bool   `yaml:"daemon_reload"`
+	DaemonReexec bool   `yaml:"daemon_reexec"`
+	Scope        string `yaml:"scope,omitempty"`
+	NoBlock      bool   `yaml:"no_block"`
+	Force        bool   `yaml:"force"`
 }
 
 func (a *AptParams) GetPackages() []string {
