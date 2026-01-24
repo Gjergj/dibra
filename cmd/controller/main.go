@@ -314,6 +314,26 @@ func main() {
 					Args:   copyArgs,
 				}
 
+			case task.SystemdService != nil || task.Systemd != nil:
+				params := task.SystemdService
+				if params == nil {
+					params = task.Systemd
+				}
+				modReq = ModuleRequest{
+					Module: "systemd_service",
+					Args: map[string]interface{}{
+						"name":          params.Name,
+						"state":         params.State,
+						"enabled":       params.Enabled,
+						"masked":        params.Masked,
+						"daemon_reload": params.DaemonReload,
+						"daemon_reexec": params.DaemonReexec,
+						"scope":         params.Scope,
+						"no_block":      params.NoBlock,
+						"force":         params.Force,
+					},
+				}
+
 			default:
 				fmt.Println("    ⚠ No module specified, skipping")
 				continue
