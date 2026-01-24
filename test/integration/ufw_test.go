@@ -8,6 +8,9 @@ import (
 )
 
 func resetUFW(t *testing.T, client interface{ Run(string) (string, string, error) }) {
+	// Clean up any backup files that might cause reset to fail if called multiple times
+	// within the same second (UFW uses timestamps with second precision for backups)
+	client.Run("rm -f /etc/ufw/*.rules.*")
 	client.Run("ufw --force reset")
 	client.Run("ufw --force disable")
 }
