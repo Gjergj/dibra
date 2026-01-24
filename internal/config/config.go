@@ -33,6 +33,8 @@ type Task struct {
 	Fetch         *FetchParams         `yaml:"fetch,omitempty"`
 	URI           *URIParams           `yaml:"uri,omitempty"`
 	Cron          *CronParams          `yaml:"cron,omitempty"`
+	UFW           *UFWParams           `yaml:"ufw,omitempty"`
+	User          *UserParams          `yaml:"user,omitempty"`
 }
 
 type CopyParams struct {
@@ -92,6 +94,40 @@ type CronParams struct {
 	InsertBefore string `yaml:"insertbefore,omitempty"`
 }
 
+type UFWParams struct {
+	State            string `yaml:"state,omitempty"`
+	Logging          string `yaml:"logging,omitempty"`
+	Default          string `yaml:"default,omitempty"`
+	Policy           string `yaml:"policy,omitempty"`
+	Direction        string `yaml:"direction,omitempty"`
+	Rule             string `yaml:"rule,omitempty"`
+	Delete           bool   `yaml:"delete"`
+	Insert           int    `yaml:"insert,omitempty"`
+	InsertRelativeTo string `yaml:"insert_relative_to,omitempty"`
+	Interface        string `yaml:"interface,omitempty"`
+	If               string `yaml:"if,omitempty"`
+	InterfaceIn      string `yaml:"interface_in,omitempty"`
+	IfIn             string `yaml:"if_in,omitempty"`
+	InterfaceOut     string `yaml:"interface_out,omitempty"`
+	IfOut            string `yaml:"if_out,omitempty"`
+	FromIP           string `yaml:"from_ip,omitempty"`
+	From             string `yaml:"from,omitempty"`
+	Src              string `yaml:"src,omitempty"`
+	FromPort         string `yaml:"from_port,omitempty"`
+	ToIP             string `yaml:"to_ip,omitempty"`
+	Dest             string `yaml:"dest,omitempty"`
+	To               string `yaml:"to,omitempty"`
+	ToPort           string `yaml:"to_port,omitempty"`
+	Port             string `yaml:"port,omitempty"`
+	Proto            string `yaml:"proto,omitempty"`
+	Protocol         string `yaml:"protocol,omitempty"`
+	Name             string `yaml:"name,omitempty"`
+	App              string `yaml:"app,omitempty"`
+	Route            bool   `yaml:"route"`
+	Log              bool   `yaml:"log"`
+	Comment          string `yaml:"comment,omitempty"`
+}
+
 type FileParams struct {
 	Path    string `yaml:"path"`
 	State   string `yaml:"state,omitempty"`
@@ -129,6 +165,35 @@ type AptParams struct {
 	ForceAptGet    bool        `yaml:"force_apt_get"`
 	Autoremove     bool        `yaml:"autoremove"`
 	Upgrade        string      `yaml:"upgrade"`
+}
+
+type UserParams struct {
+	Name             string   `yaml:"name"`
+	State            string   `yaml:"state,omitempty"`
+	UID              *int     `yaml:"uid,omitempty"`
+	Group            string   `yaml:"group,omitempty"`
+	Groups           []string `yaml:"groups,omitempty"`
+	Append           bool     `yaml:"append"`
+	Shell            string   `yaml:"shell,omitempty"`
+	Home             string   `yaml:"home,omitempty"`
+	CreateHome       *bool    `yaml:"create_home,omitempty"`
+	MoveHome         bool     `yaml:"move_home"`
+	System           bool     `yaml:"system"`
+	Password         string   `yaml:"password,omitempty"`
+	PasswordLock     *bool    `yaml:"password_lock,omitempty"`
+	UpdatePassword   string   `yaml:"update_password,omitempty"`
+	Comment          string   `yaml:"comment,omitempty"`
+	Expires          *float64 `yaml:"expires,omitempty"`
+	Remove           bool     `yaml:"remove"`
+	Force            bool     `yaml:"force"`
+	Skeleton         string   `yaml:"skeleton,omitempty"`
+	NonUnique        bool     `yaml:"non_unique"`
+	GenerateSSHKey   bool     `yaml:"generate_ssh_key"`
+	SSHKeyBits       int      `yaml:"ssh_key_bits,omitempty"`
+	SSHKeyType       string   `yaml:"ssh_key_type,omitempty"`
+	SSHKeyFile       string   `yaml:"ssh_key_file,omitempty"`
+	SSHKeyComment    string   `yaml:"ssh_key_comment,omitempty"`
+	SSHKeyPassphrase string   `yaml:"ssh_key_passphrase,omitempty"`
 }
 
 func (a *AptParams) GetPackages() []string {

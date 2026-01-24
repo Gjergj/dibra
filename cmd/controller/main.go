@@ -206,6 +206,77 @@ func main() {
 					},
 				}
 
+			case task.UFW != nil:
+				modReq = ModuleRequest{
+					Module: "ufw",
+					Args: map[string]interface{}{
+						"state":              task.UFW.State,
+						"logging":            task.UFW.Logging,
+						"default":            task.UFW.Default,
+						"policy":             task.UFW.Policy,
+						"direction":          task.UFW.Direction,
+						"rule":               task.UFW.Rule,
+						"delete":             task.UFW.Delete,
+						"insert":             task.UFW.Insert,
+						"insert_relative_to": task.UFW.InsertRelativeTo,
+						"interface":          task.UFW.Interface,
+						"if":                 task.UFW.If,
+						"interface_in":       task.UFW.InterfaceIn,
+						"if_in":              task.UFW.IfIn,
+						"interface_out":      task.UFW.InterfaceOut,
+						"if_out":             task.UFW.IfOut,
+						"from_ip":            task.UFW.FromIP,
+						"from":               task.UFW.From,
+						"src":                task.UFW.Src,
+						"from_port":          task.UFW.FromPort,
+						"to_ip":              task.UFW.ToIP,
+						"dest":               task.UFW.Dest,
+						"to":                 task.UFW.To,
+						"to_port":            task.UFW.ToPort,
+						"port":               task.UFW.Port,
+						"proto":              task.UFW.Proto,
+						"protocol":           task.UFW.Protocol,
+						"name":               task.UFW.Name,
+						"app":                task.UFW.App,
+						"route":              task.UFW.Route,
+						"log":                task.UFW.Log,
+						"comment":            task.UFW.Comment,
+					},
+				}
+
+			case task.User != nil:
+				modReq = ModuleRequest{
+					Module: "user",
+					Args: map[string]interface{}{
+						"name":               task.User.Name,
+						"state":              task.User.State,
+						"uid":                task.User.UID,
+						"group":              task.User.Group,
+						"groups":             task.User.Groups,
+						"append":             task.User.Append,
+						"shell":              task.User.Shell,
+						"home":               task.User.Home,
+						"create_home":        task.User.CreateHome,
+						"move_home":          task.User.MoveHome,
+						"system":             task.User.System,
+						"password":           task.User.Password,
+						"password_lock":      task.User.PasswordLock,
+						"update_password":    task.User.UpdatePassword,
+						"comment":            task.User.Comment,
+						"expires":            task.User.Expires,
+						"remove":             task.User.Remove,
+						"force":              task.User.Force,
+						"skeleton":           task.User.Skeleton,
+						"non_unique":         task.User.NonUnique,
+						"generate_ssh_key":   task.User.GenerateSSHKey,
+						"ssh_key_bits":       task.User.SSHKeyBits,
+						"ssh_key_type":       task.User.SSHKeyType,
+						"ssh_key_file":       task.User.SSHKeyFile,
+						"ssh_key_comment":    task.User.SSHKeyComment,
+						"ssh_key_passphrase": task.User.SSHKeyPassphrase,
+					},
+				}
+
 			case task.Copy != nil:
 				copyArgs := map[string]interface{}{
 					"dest":       task.Copy.Dest,

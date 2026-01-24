@@ -91,7 +91,8 @@ goansible/
 │       ├── file/             # File/directory/symlink management
 │       ├── stat/             # File stat (used internally by fetch)
 │       ├── uri/              # HTTP/HTTPS requests
-│       └── cron/             # Crontab management
+│       ├── cron/             # Crontab management
+│       └── user/             # User account management
 ├── test/
 │   ├── Dockerfile            # Ubuntu 22.04 + systemd + SSH
 │   ├── docker-compose.yaml   # Test container orchestration

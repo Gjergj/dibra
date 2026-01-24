@@ -12,6 +12,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
     cron \
+    ufw \
+    iptables \
     && rm -rf /var/lib/apt/lists/*
 
 RUN cd /lib/systemd/system/sysinit.target.wants/ && \

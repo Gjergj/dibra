@@ -14,7 +14,9 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/cron"
 	"github.com/gjergjiramku/goansible/internal/modules/file"
 	"github.com/gjergjiramku/goansible/internal/modules/stat"
+	"github.com/gjergjiramku/goansible/internal/modules/ufw"
 	"github.com/gjergjiramku/goansible/internal/modules/uri"
+	"github.com/gjergjiramku/goansible/internal/modules/user"
 )
 
 type ModuleRequest struct {
@@ -106,6 +108,22 @@ func main() {
 			return
 		}
 		writeJSON(cron.Execute(req))
+
+	case "ufw":
+		var req ufw.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse ufw request: %v", err))
+			return
+		}
+		writeJSON(ufw.Execute(req))
+
+	case "user":
+		var req user.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse user request: %v", err))
+			return
+		}
+		writeJSON(user.Execute(req))
 
 	default:
 		writeError(fmt.Sprintf("unknown module: %s", modReq.Module))
