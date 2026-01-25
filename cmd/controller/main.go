@@ -354,6 +354,14 @@ func main() {
 					Args:   map[string]interface{}{},
 				}
 
+			case task.Ping != nil:
+				modReq = ModuleRequest{
+					Module: "ping",
+					Args: map[string]interface{}{
+						"data": task.Ping.Data,
+					},
+				}
+
 			default:
 				fmt.Println("    ⚠ No module specified, skipping")
 				continue
