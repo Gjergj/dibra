@@ -574,25 +574,44 @@ func TestPlaybook_ServiceEnableOnlyNoState(t *testing.T) {
 }
 
 func TestPlaybook_ServiceReloadStartsIfStopped(t *testing.T) {
+	// This test uses a dummy service that supports reload.
+	// We can't use ssh (would break our connection if stopped),
+	// cron and rsyslog don't support reload.
+	// Instead, we test the start-before-reload logic by creating a custom service.
 	client := getClient(t)
 	defer client.Close()
 
-	client.Run("systemctl stop cron 2>/dev/null || true")
+	// Create a simple service that supports reload
+	unitContent := `[Unit]
+Description=Test reload service
+
+[Service]
+Type=simple
+ExecStart=/bin/sleep infinity
+ExecReload=/bin/true
+
+[Install]
+WantedBy=multi-user.target`
+
+	client.Run("cat > /etc/systemd/system/test-reload.service << 'EOF'\n" + unitContent + "\nEOF")
+	client.Run("systemctl daemon-reload")
+	client.Run("systemctl stop test-reload 2>/dev/null || true")
+	defer client.Run("systemctl stop test-reload; rm -f /etc/systemd/system/test-reload.service; systemctl daemon-reload")
 
 	playbook := playbookHeader + `
   - name: Reload stopped service (should start first)
     service:
-      name: cron
+      name: test-reload
       state: reloaded
 `
 	output := runPlaybook(t, playbook)
 
 	if strings.Contains(output, "FAILED") {
-		t.Logf("Note: cron may not support reload directly: %s", output)
+		t.Errorf("Reload should succeed: %s", output)
 	}
 
-	status := remoteExec(t, client, "systemctl is-active cron")
+	status := remoteExec(t, client, "systemctl is-active test-reload")
 	if status != "active" {
-		t.Logf("Service should be active after reload (starts if stopped), got: %s", status)
+		t.Errorf("Service should be active after reload (starts if stopped), got: %s", status)
 	}
 }
