@@ -92,6 +92,7 @@ goansible/
 │       ├── stat/             # File stat (used internally by fetch)
 │       ├── uri/              # HTTP/HTTPS requests
 │       ├── cron/             # Crontab management
+│       ├── service/          # Generic service management
 │       └── user/             # User account management
 ├── test/
 │   ├── Dockerfile            # Ubuntu 22.04 + systemd + SSH
@@ -523,6 +524,89 @@ Manages systemd units (services, timers, etc.). Alias: `systemd`.
 
 **Idempotency**: `started`/`stopped`/`enabled`/`masked` are idempotent.
 
+### service
+
+Generic service management module. Works across different init systems (systemd, sysvinit). Provides a simpler interface than `systemd_service` for common operations.
+
+```yaml
+# Start a service
+- name: Start nginx
+  service:
+    name: nginx
+    state: started
+
+# Stop a service
+- name: Stop nginx
+  service:
+    name: nginx
+    state: stopped
+
+# Restart a service
+- name: Restart nginx
+  service:
+    name: nginx
+    state: restarted
+
+# Enable service at boot
+- name: Enable nginx on boot
+  service:
+    name: nginx
+    enabled: true
+
+# Start and enable in one task
+- name: Start and enable nginx
+  service:
+    name: nginx
+    state: started
+    enabled: true
+
+# Restart with sleep between stop/start
+- name: Restart with delay
+  service:
+    name: myapp
+    state: restarted
+    sleep: 2
+
+# Use pattern to find service by process name
+- name: Start service matching pattern
+  service:
+    name: myapp
+    pattern: myapp_daemon
+    state: started
+
+# Force specific init system
+- name: Start using systemd
+  service:
+    name: nginx
+    state: started
+    use: systemd
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `name` | required | Name of the service |
+| `state` | | `started`, `stopped`, `restarted`, `reloaded` |
+| `enabled` | | Whether the service starts on boot (true/false) |
+| `arguments` | `""` | Additional arguments for init scripts (ignored on systemd) |
+| `pattern` | | Process name pattern to check if service is running |
+| `sleep` | `0` | Seconds to wait between stop/start during restart |
+| `use` | `auto` | Force specific service manager: `systemd`, `sysvinit`, or `auto` |
+
+**State Behaviors**:
+- `started`: Idempotent - starts only if not running
+- `stopped`: Idempotent - stops only if running
+- `restarted`: Always restarts (always reports changed)
+- `reloaded`: Starts if stopped, then reloads (always reports changed)
+
+**Idempotency**: `started`/`stopped`/`enabled` are idempotent.
+
+**Differences from systemd_service**:
+- Simpler interface without daemon_reload, masked, scope options
+- Supports `pattern` for finding services by process name
+- Supports `sleep` between stop/start during restart
+- Supports `arguments` for sysvinit scripts
+- Auto-detects init system (defaults to systemd if available)
+
 ## Playbook Format
 
 ```yaml
@@ -700,6 +784,27 @@ systemctl list-units --type=service
 | `TestPlaybook_SystemdServiceEnabledWithoutName` | Fails when name missing for enabled |
 | `TestPlaybook_SystemdServiceMaskedWithoutName` | Fails when name missing for masked |
 | `TestPlaybook_SystemdServiceStaticService` | Handles static services |
+| `TestPlaybook_ServiceStart` | Start service + idempotency |
+| `TestPlaybook_ServiceStop` | Stop service + idempotency |
+| `TestPlaybook_ServiceRestart` | Restart service (always changed) |
+| `TestPlaybook_ServiceEnable` | Enable at boot + idempotency |
+| `TestPlaybook_ServiceDisable` | Disable from boot + idempotency |
+| `TestPlaybook_ServiceStartAndEnable` | Combined start+enable + idempotency |
+| `TestPlaybook_ServiceStopAndDisable` | Combined stop+disable + idempotency |
+| `TestPlaybook_ServiceReloaded` | Reload service (always changed) |
+| `TestPlaybook_ServiceNonExistent` | Fails on non-existent service |
+| `TestPlaybook_ServiceNameRequired` | Fails when name is missing |
+| `TestPlaybook_ServiceStateOrEnabledRequired` | Fails when neither state nor enabled |
+| `TestPlaybook_ServiceInvalidState` | Fails on invalid state |
+| `TestPlaybook_ServiceWithPattern` | Pattern-based service detection |
+| `TestPlaybook_ServiceRestartWithSleep` | Restart with sleep between stop/start |
+| `TestPlaybook_ServiceImplicitServiceExtension` | Auto-add .service extension |
+| `TestPlaybook_ServiceExplicitServiceExtension` | Explicit .service extension |
+| `TestPlaybook_ServiceFullWorkflow` | Full workflow: start+enable + idempotency |
+| `TestPlaybook_ServiceUseSystemd` | Force systemd service manager |
+| `TestPlaybook_ServiceTimerUnit` | Timer unit (.timer) management |
+| `TestPlaybook_ServiceEnableOnlyNoState` | Enable without changing running state |
+| `TestPlaybook_ServiceReloadStartsIfStopped` | Reload starts service if stopped |
 | `TestPlaybook_FullDeployWorkflow` | Full app deployment: dirs, config, symlinks |
 
 Each test:

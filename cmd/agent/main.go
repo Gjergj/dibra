@@ -13,6 +13,7 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/copy"
 	"github.com/gjergjiramku/goansible/internal/modules/cron"
 	"github.com/gjergjiramku/goansible/internal/modules/file"
+	"github.com/gjergjiramku/goansible/internal/modules/service"
 	"github.com/gjergjiramku/goansible/internal/modules/stat"
 	"github.com/gjergjiramku/goansible/internal/modules/systemd_service"
 	"github.com/gjergjiramku/goansible/internal/modules/ufw"
@@ -133,6 +134,14 @@ func main() {
 			return
 		}
 		writeJSON(systemd_service.Execute(req))
+
+	case "service":
+		var req service.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse service request: %v", err))
+			return
+		}
+		writeJSON(service.Execute(req))
 
 	default:
 		writeError(fmt.Sprintf("unknown module: %s", modReq.Module))

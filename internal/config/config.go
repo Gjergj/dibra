@@ -37,6 +37,7 @@ type Task struct {
 	User           *UserParams            `yaml:"user,omitempty"`
 	SystemdService *SystemdServiceParams  `yaml:"systemd_service,omitempty"`
 	Systemd        *SystemdServiceParams  `yaml:"systemd,omitempty"`
+	Service        *ServiceParams         `yaml:"service,omitempty"`
 }
 
 type CopyParams struct {
@@ -208,6 +209,16 @@ type SystemdServiceParams struct {
 	Scope        string `yaml:"scope,omitempty"`
 	NoBlock      bool   `yaml:"no_block"`
 	Force        bool   `yaml:"force"`
+}
+
+type ServiceParams struct {
+	Name      string `yaml:"name"`
+	State     string `yaml:"state,omitempty"`
+	Enabled   *bool  `yaml:"enabled,omitempty"`
+	Arguments string `yaml:"arguments,omitempty"`
+	Pattern   string `yaml:"pattern,omitempty"`
+	Sleep     int    `yaml:"sleep,omitempty"`
+	Use       string `yaml:"use,omitempty"`
 }
 
 func (a *AptParams) GetPackages() []string {
