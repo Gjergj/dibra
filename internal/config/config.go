@@ -38,6 +38,10 @@ type Task struct {
 	SystemdService *SystemdServiceParams  `yaml:"systemd_service,omitempty"`
 	Systemd        *SystemdServiceParams  `yaml:"systemd,omitempty"`
 	Service        *ServiceParams         `yaml:"service,omitempty"`
+	ServiceFacts   *ServiceFactsParams    `yaml:"service_facts,omitempty"`
+}
+
+type ServiceFactsParams struct {
 }
 
 type CopyParams struct {

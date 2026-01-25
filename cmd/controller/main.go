@@ -348,6 +348,12 @@ func main() {
 					},
 				}
 
+			case task.ServiceFacts != nil:
+				modReq = ModuleRequest{
+					Module: "service_facts",
+					Args:   map[string]interface{}{},
+				}
+
 			default:
 				fmt.Println("    ⚠ No module specified, skipping")
 				continue
