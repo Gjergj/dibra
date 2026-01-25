@@ -61,22 +61,16 @@ func TestPlaybook_ServiceFactsContainsSSH(t *testing.T) {
 		t.Fatalf("Expected success, got failed: %s", resp.Msg)
 	}
 
-	found := false
-	for name := range resp.Services {
-		if strings.Contains(name, "ssh") {
-			found = true
-			svc := resp.Services[name]
-			if svc.Source != "systemd" {
-				t.Errorf("SSH service source should be systemd, got: %s", svc.Source)
-			}
-			if svc.State != "running" {
-				t.Errorf("SSH service should be running (we're connected via SSH), got: %s", svc.State)
-			}
-			break
-		}
-	}
+	// Look for exactly "ssh.service" - not ssh@.service (template) or sshd.service (alias)
+	svc, found := resp.Services["ssh.service"]
 	if !found {
-		t.Error("Expected to find ssh service in results")
+		t.Fatal("Expected to find ssh.service in results")
+	}
+	if svc.Source != "systemd" {
+		t.Errorf("SSH service source should be systemd, got: %s", svc.Source)
+	}
+	if svc.State != "running" {
+		t.Errorf("SSH service should be running (we're connected via SSH), got: %s", svc.State)
 	}
 }
 
