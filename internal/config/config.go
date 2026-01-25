@@ -39,9 +39,14 @@ type Task struct {
 	Systemd        *SystemdServiceParams  `yaml:"systemd,omitempty"`
 	Service        *ServiceParams         `yaml:"service,omitempty"`
 	ServiceFacts   *ServiceFactsParams    `yaml:"service_facts,omitempty"`
+	Ping           *PingParams            `yaml:"ping,omitempty"`
 }
 
 type ServiceFactsParams struct {
+}
+
+type PingParams struct {
+	Data string `yaml:"data,omitempty"`
 }
 
 type CopyParams struct {
@@ -243,6 +248,41 @@ func (a *AptParams) GetPackages() []string {
 	default:
 		return nil
 	}
+}
+
+func (t *Task) UnmarshalYAML(node *yaml.Node) error {
+	// First, unmarshal into an alias type to get normal behavior
+	type TaskAlias Task
+	var alias TaskAlias
+	if err := node.Decode(&alias); err != nil {
+		return err
+	}
+	*t = Task(alias)
+
+	// Now check for keys that exist but have nil values
+	// These are modules that can be called with no arguments
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i < len(node.Content); i += 2 {
+			key := node.Content[i].Value
+			value := node.Content[i+1]
+
+			// If the key exists and the value is null, initialize empty struct
+			if value.Kind == yaml.ScalarNode && value.Tag == "!!null" {
+				switch key {
+				case "ping":
+					if t.Ping == nil {
+						t.Ping = &PingParams{}
+					}
+				case "service_facts":
+					if t.ServiceFacts == nil {
+						t.ServiceFacts = &ServiceFactsParams{}
+					}
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func Load(path string) (*Config, error) {

@@ -89,6 +89,7 @@ goansible/
 │       ├── copy/             # File copy (local→remote, content, remote_src)
 │       ├── fetch/            # File fetch (remote→local)
 │       ├── file/             # File/directory/symlink management
+│       ├── ping/             # Connectivity test module
 │       ├── stat/             # File stat (used internally by fetch)
 │       ├── uri/              # HTTP/HTTPS requests
 │       ├── cron/             # Crontab management
@@ -105,6 +106,34 @@ goansible/
 ```
 
 ## Modules
+
+### ping
+
+A trivial test module to verify SSH connectivity. Returns "pong" on success.
+
+```yaml
+# Basic connectivity test
+- name: Test connectivity
+  ping:
+
+# Return custom data
+- name: Ping with custom response
+  ping:
+    data: hello
+
+# Trigger intentional failure (for testing)
+- name: Test failure handling
+  ping:
+    data: crash
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `data` | `pong` | Data to return in the `ping` response field. If set to `crash`, causes intentional failure. |
+
+**Returns**: `{"changed": false, "ping": "<data>"}`
+
+**Note**: Unlike Ansible's ping which checks Python availability, this module only verifies SSH connectivity and agent execution.
 
 ### apt
 
@@ -765,6 +794,18 @@ systemctl list-units --type=service
 
 | Test | What it verifies |
 |------|------------------|
+| `TestPlaybook_PingBasic` | Basic SSH connectivity test |
+| `TestPlaybook_PingReturnsPong` | Default return value is "pong" |
+| `TestPlaybook_PingCustomData` | Custom data parameter via playbook |
+| `TestPlaybook_PingCustomDataReturned` | Custom data returned correctly |
+| `TestPlaybook_PingCrash` | Failure when data=crash |
+| `TestPlaybook_PingCrashResponse` | Response when data=crash |
+| `TestPlaybook_PingIdempotent` | Multiple runs return same result |
+| `TestPlaybook_PingNeverChanges` | Always returns changed=false |
+| `TestPlaybook_PingEmptyData` | Empty data defaults to pong |
+| `TestPlaybook_PingSpecialChars` | Special characters in data |
+| `TestPlaybook_PingSSHConnectivity` | Verifies SSH connection works |
+| `TestPlaybook_PingMultipleRuns` | Multiple playbook runs succeed |
 | `TestPlaybook_AptInstall` | Package install + idempotency via `dpkg -s` |
 | `TestPlaybook_AptRemove` | Package removal + idempotency |
 | `TestPlaybook_FileDirectory` | Directory creation, permissions via `stat` |
