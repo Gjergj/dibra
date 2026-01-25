@@ -215,7 +215,7 @@ func TestPlaybook_ServiceFactsDetectsDisabledStatus(t *testing.T) {
 	client.Run("systemctl disable cron 2>/dev/null || true")
 	defer client.Run("systemctl enable cron 2>/dev/null || true")
 
-	actualStatus := remoteExec(t, client, "systemctl is-enabled cron || echo unknown")
+	actualStatus := remoteExec(t, client, "systemctl is-enabled cron 2>/dev/null || true")
 	if actualStatus != "disabled" {
 		t.Skipf("cron service not disabled, got: %s", actualStatus)
 	}
