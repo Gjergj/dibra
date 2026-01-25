@@ -607,6 +607,52 @@ Generic service management module. Works across different init systems (systemd,
 - Supports `arguments` for sysvinit scripts
 - Auto-detects init system (defaults to systemd if available)
 
+### service_facts
+
+Gathers and returns service state information as facts. Takes no parameters.
+
+```yaml
+# Gather all service facts
+- name: Gather service facts
+  service_facts:
+```
+
+**Returns**: A `services` map where each key is the service name and value contains:
+
+| Field | Description |
+|-------|-------------|
+| `name` | Name of the service (e.g., `ssh.service`) |
+| `state` | Current state: `running`, `stopped`, `failed`, or `unknown` |
+| `status` | Boot status: `enabled`, `disabled`, `static`, `indirect`, `masked`, or `unknown` |
+| `source` | Init system: `systemd` or `sysv` |
+
+**Example Response**:
+```json
+{
+  "changed": false,
+  "services": {
+    "ssh.service": {
+      "name": "ssh.service",
+      "state": "running",
+      "status": "enabled",
+      "source": "systemd"
+    },
+    "cron.service": {
+      "name": "cron.service",
+      "state": "running",
+      "status": "enabled",
+      "source": "systemd"
+    }
+  }
+}
+```
+
+**Features**:
+- Detects systemd services via `systemctl list-units` and `systemctl list-unit-files`
+- Detects sysvinit services via `service --status-all`
+- Always returns `changed: false` (read-only operation)
+- Idempotent by design
+
 ## Playbook Format
 
 ```yaml
@@ -805,6 +851,19 @@ systemctl list-units --type=service
 | `TestPlaybook_ServiceTimerUnit` | Timer unit (.timer) management |
 | `TestPlaybook_ServiceEnableOnlyNoState` | Enable without changing running state |
 | `TestPlaybook_ServiceReloadStartsIfStopped` | Reload starts service if stopped |
+| `TestPlaybook_ServiceFactsGather` | Basic service facts gathering |
+| `TestPlaybook_ServiceFactsContainsSSH` | SSH service included in results |
+| `TestPlaybook_ServiceFactsIdempotent` | Always returns changed=false |
+| `TestPlaybook_ServiceFactsSystemdSource` | Systemd services have source=systemd |
+| `TestPlaybook_ServiceFactsWithRunningService` | Detects running services |
+| `TestPlaybook_ServiceFactsWithStoppedService` | Detects stopped services |
+| `TestPlaybook_ServiceFactsMultipleRuns` | Consistent results across runs |
+| `TestPlaybook_ServiceFactsAgentDirect` | Direct agent execution |
+| `TestPlaybook_ServiceFactsServiceStates` | Valid state values |
+| `TestPlaybook_ServiceFactsEnabledStatus` | Valid status values |
+| `TestPlaybook_ServiceFactsServiceNames` | Map keys match service names |
+| `TestPlaybook_ServiceFactsDetectsEnabledDisabled` | Detects enabled/disabled status |
+| `TestPlaybook_ServiceFactsDetectsRunningState` | Detects running state correctly |
 | `TestPlaybook_FullDeployWorkflow` | Full app deployment: dirs, config, symlinks |
 
 Each test:
