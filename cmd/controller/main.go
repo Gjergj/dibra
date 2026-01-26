@@ -362,6 +362,29 @@ func main() {
 					},
 				}
 
+			case task.Command != nil:
+				stdinAddNewline := true
+				if task.Command.StdinAddNewline != nil {
+					stdinAddNewline = *task.Command.StdinAddNewline
+				}
+				stripEmptyEnds := true
+				if task.Command.StripEmptyEnds != nil {
+					stripEmptyEnds = *task.Command.StripEmptyEnds
+				}
+				modReq = ModuleRequest{
+					Module: "command",
+					Args: map[string]interface{}{
+						"cmd":              task.Command.Cmd,
+						"argv":             task.Command.Argv,
+						"chdir":            task.Command.Chdir,
+						"creates":          task.Command.Creates,
+						"removes":          task.Command.Removes,
+						"stdin":            task.Command.Stdin,
+						"stdin_add_newline": stdinAddNewline,
+						"strip_empty_ends": stripEmptyEnds,
+					},
+				}
+
 			default:
 				fmt.Println("    ⚠ No module specified, skipping")
 				continue

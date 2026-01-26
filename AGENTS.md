@@ -86,6 +86,7 @@ goansible/
 │       ├── apt/              # Package management
 │       ├── apt_key/          # GPG key management
 │       ├── apt_repository/   # Repository management
+│       ├── command/          # Execute commands on targets
 │       ├── copy/             # File copy (local→remote, content, remote_src)
 │       ├── fetch/            # File fetch (remote→local)
 │       ├── file/             # File/directory/symlink management
@@ -134,6 +135,85 @@ A trivial test module to verify SSH connectivity. Returns "pong" on success.
 **Returns**: `{"changed": false, "ping": "<data>"}`
 
 **Note**: Unlike Ansible's ping which checks Python availability, this module only verifies SSH connectivity and agent execution.
+
+### command
+
+Executes commands on targets without going through a shell. This is more secure than the shell module since shell metacharacters are not interpreted.
+
+```yaml
+# Simple command
+- name: Check system uptime
+  command:
+    cmd: uptime
+
+# Command with arguments using argv (safer for arguments with spaces)
+- name: Echo with spaces
+  command:
+    argv:
+      - echo
+      - "hello world"
+
+# Run only if file doesn't exist (idempotent)
+- name: Create database
+  command:
+    cmd: /usr/bin/make_database.sh db_user db_name
+    creates: /path/to/database
+
+# Run only if file exists
+- name: Remove old logs
+  command:
+    cmd: rm /var/log/app/old.log
+    removes: /var/log/app/old.log
+
+# Change directory before execution
+- name: Run in /tmp
+  command:
+    cmd: ls -la
+    chdir: /tmp
+
+# Provide stdin input
+- name: Send input to command
+  command:
+    argv:
+      - cat
+    stdin: "hello from stdin"
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `cmd` | | The command to run as a string (split on spaces, respects quotes). |
+| `argv` | | The command as a list of arguments (safer for arguments with spaces). |
+| `chdir` | | Change to this directory before running the command. |
+| `creates` | | A filename or glob pattern. If it exists, the command will **not** run. |
+| `removes` | | A filename or glob pattern. If it exists, the command **will** run. |
+| `stdin` | | Set the stdin of the command directly to this value. |
+| `stdin_add_newline` | `true` | Append a newline to stdin data. |
+| `strip_empty_ends` | `true` | Strip empty lines from the end of stdout/stderr. |
+
+**Returns**:
+```json
+{
+  "changed": true,
+  "cmd": ["echo", "hello"],
+  "stdout": "hello",
+  "stderr": "",
+  "stdout_lines": ["hello"],
+  "stderr_lines": [],
+  "rc": 0,
+  "start": "2024-01-15 10:30:00.000000",
+  "end": "2024-01-15 10:30:00.001234",
+  "delta": "0:00:00.001234"
+}
+```
+
+**Notes**:
+- One of `cmd` or `argv` is required.
+- Unlike the shell module, special characters like `<`, `>`, `|`, `;`, `&` are **not** interpreted.
+- Use `argv` when arguments contain spaces or special characters.
+- Use `creates`/`removes` for idempotent command execution.
+- Non-zero return codes cause the task to fail.
+
+**Idempotency**: Use `creates` or `removes` parameters to make commands idempotent.
 
 ### apt
 
@@ -761,6 +841,7 @@ tasks:
 ## Testing
 
 ### Integration Tests
+NEVER RUN THE FULL SUITE OF INTEGRATION TESTS BUT RUN ONLT THE SPECIFIC ONES WE ARE WORKING ON.
 
 Integration tests run against a Docker container with Ubuntu 22.04 + systemd + SSH.
 
@@ -771,6 +852,13 @@ make test-integration
 # Or manage container manually
 make test-integration-up      # Start container (SSH on port 2222)
 make test-integration-only    # Run tests (container must be running)
+make test-integration-down    # Stop and remove container
+```
+
+To run specific tests make sure we have docker up and pass the specific module test suite
+```bash
+make test-integration-up      # Start container (SSH on port 2222)
+go test -tags=integration -v -timeout 20m ./test/integration/... -run TestPlaybook_Service # for the service module
 make test-integration-down    # Stop and remove container
 ```
 
@@ -806,6 +894,50 @@ systemctl list-units --type=service
 | `TestPlaybook_PingSpecialChars` | Special characters in data |
 | `TestPlaybook_PingSSHConnectivity` | Verifies SSH connection works |
 | `TestPlaybook_PingMultipleRuns` | Multiple playbook runs succeed |
+| `TestPlaybook_CommandBasic` | Basic command execution |
+| `TestPlaybook_CommandReturnsParsedArgs` | Command args parsing |
+| `TestPlaybook_CommandEcho` | Simple echo command |
+| `TestPlaybook_CommandWithArgv` | Command with argv list |
+| `TestPlaybook_CommandArgvWithSpaces` | Arguments with spaces |
+| `TestPlaybook_CommandWithChdir` | Change directory before execution |
+| `TestPlaybook_CommandChdirNonExistent` | Fails on non-existent chdir |
+| `TestPlaybook_CommandWithCreates` | Skip if creates file exists |
+| `TestPlaybook_CommandCreatesNotExists` | Run when creates file missing |
+| `TestPlaybook_CommandWithRemoves` | Run if removes file exists |
+| `TestPlaybook_CommandRemovesNotExists` | Skip when removes file missing |
+| `TestPlaybook_CommandCreatesGlobPattern` | Creates with glob pattern |
+| `TestPlaybook_CommandRemovesGlobPattern` | Removes with glob pattern |
+| `TestPlaybook_CommandNonZeroRC` | Non-zero return code handling |
+| `TestPlaybook_CommandStderr` | Stderr capture |
+| `TestPlaybook_CommandStdoutLines` | Stdout split into lines |
+| `TestPlaybook_CommandStderrLines` | Stderr split into lines |
+| `TestPlaybook_CommandStripEmptyEnds` | Strip trailing newlines |
+| `TestPlaybook_CommandNoStripEmptyEnds` | Preserve trailing newlines |
+| `TestPlaybook_CommandWithStdin` | Stdin input |
+| `TestPlaybook_CommandTiming` | Start/end/delta timing |
+| `TestPlaybook_CommandNoCmdOrArgv` | Fails without cmd or argv |
+| `TestPlaybook_CommandLs` | ls command |
+| `TestPlaybook_CommandUptime` | uptime command via playbook |
+| `TestPlaybook_CommandHostname` | hostname command |
+| `TestPlaybook_CommandDate` | date command |
+| `TestPlaybook_CommandWhoami` | whoami command |
+| `TestPlaybook_CommandQuotedArgs` | Single-quoted arguments |
+| `TestPlaybook_CommandDoubleQuotedArgs` | Double-quoted arguments |
+| `TestPlaybook_CommandPlaybookWithChdir` | Playbook with chdir |
+| `TestPlaybook_CommandPlaybookWithCreates` | Playbook with creates |
+| `TestPlaybook_CommandPlaybookWithRemoves` | Playbook with removes |
+| `TestPlaybook_CommandPlaybookWithArgv` | Playbook with argv |
+| `TestPlaybook_CommandMultipleCommands` | Multiple commands in sequence |
+| `TestPlaybook_CommandIdempotencyWithCreates` | Idempotency with creates |
+| `TestPlaybook_CommandIdempotencyWithRemoves` | Idempotency with removes |
+| `TestPlaybook_CommandCommandNotFound` | Fails on non-existent command |
+| `TestPlaybook_CommandBinaryExecutable` | Run binary executable |
+| `TestPlaybook_CommandFalseCommand` | /bin/false returns rc=1 |
+| `TestPlaybook_CommandCat` | cat file command |
+| `TestPlaybook_CommandEmptyStdout` | Empty stdout handling |
+| `TestPlaybook_CommandCreatesWithWildcard` | Creates with wildcard glob |
+| `TestPlaybook_CommandChangedAlways` | Always reports changed |
+| `TestPlaybook_CommandMkdirWithCreates` | mkdir idempotency with creates |
 | `TestPlaybook_AptInstall` | Package install + idempotency via `dpkg -s` |
 | `TestPlaybook_AptRemove` | Package removal + idempotency |
 | `TestPlaybook_FileDirectory` | Directory creation, permissions via `stat` |

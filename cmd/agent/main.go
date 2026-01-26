@@ -10,6 +10,7 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/apt"
 	"github.com/gjergjiramku/goansible/internal/modules/apt_key"
 	"github.com/gjergjiramku/goansible/internal/modules/apt_repository"
+	"github.com/gjergjiramku/goansible/internal/modules/command"
 	"github.com/gjergjiramku/goansible/internal/modules/copy"
 	"github.com/gjergjiramku/goansible/internal/modules/cron"
 	"github.com/gjergjiramku/goansible/internal/modules/file"
@@ -160,6 +161,14 @@ func main() {
 			return
 		}
 		writeJSON(ping.Execute(req))
+
+	case "command":
+		var req command.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse command request: %v", err))
+			return
+		}
+		writeJSON(command.Execute(req))
 
 	default:
 		writeError(fmt.Sprintf("unknown module: %s", modReq.Module))
