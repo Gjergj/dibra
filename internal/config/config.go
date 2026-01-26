@@ -40,6 +40,7 @@ type Task struct {
 	Service        *ServiceParams         `yaml:"service,omitempty"`
 	ServiceFacts   *ServiceFactsParams    `yaml:"service_facts,omitempty"`
 	Ping           *PingParams            `yaml:"ping,omitempty"`
+	Command        *CommandParams         `yaml:"command,omitempty"`
 }
 
 type ServiceFactsParams struct {
@@ -47,6 +48,17 @@ type ServiceFactsParams struct {
 
 type PingParams struct {
 	Data string `yaml:"data,omitempty"`
+}
+
+type CommandParams struct {
+	Cmd             string   `yaml:"cmd,omitempty"`
+	Argv            []string `yaml:"argv,omitempty"`
+	Chdir           string   `yaml:"chdir,omitempty"`
+	Creates         string   `yaml:"creates,omitempty"`
+	Removes         string   `yaml:"removes,omitempty"`
+	Stdin           string   `yaml:"stdin,omitempty"`
+	StdinAddNewline *bool    `yaml:"stdin_add_newline,omitempty"`
+	StripEmptyEnds  *bool    `yaml:"strip_empty_ends,omitempty"`
 }
 
 type CopyParams struct {
