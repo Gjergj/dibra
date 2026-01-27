@@ -20,6 +20,7 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/stat"
 	"github.com/gjergjiramku/goansible/internal/modules/systemd_service"
 	"github.com/gjergjiramku/goansible/internal/modules/ufw"
+	"github.com/gjergjiramku/goansible/internal/modules/unarchive"
 	"github.com/gjergjiramku/goansible/internal/modules/uri"
 	"github.com/gjergjiramku/goansible/internal/modules/user"
 )
@@ -169,6 +170,14 @@ func main() {
 			return
 		}
 		writeJSON(command.Execute(req))
+
+	case "unarchive":
+		var req unarchive.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse unarchive request: %v", err))
+			return
+		}
+		writeJSON(unarchive.Execute(req))
 
 	default:
 		writeError(fmt.Sprintf("unknown module: %s", modReq.Module))

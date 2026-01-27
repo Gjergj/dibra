@@ -374,15 +374,54 @@ func main() {
 				modReq = ModuleRequest{
 					Module: "command",
 					Args: map[string]interface{}{
-						"cmd":              task.Command.Cmd,
-						"argv":             task.Command.Argv,
-						"chdir":            task.Command.Chdir,
-						"creates":          task.Command.Creates,
-						"removes":          task.Command.Removes,
-						"stdin":            task.Command.Stdin,
+						"cmd":               task.Command.Cmd,
+						"argv":              task.Command.Argv,
+						"chdir":             task.Command.Chdir,
+						"creates":           task.Command.Creates,
+						"removes":           task.Command.Removes,
+						"stdin":             task.Command.Stdin,
 						"stdin_add_newline": stdinAddNewline,
-						"strip_empty_ends": stripEmptyEnds,
+						"strip_empty_ends":  stripEmptyEnds,
 					},
+				}
+
+			case task.Unarchive != nil:
+				unarchiveArgs := map[string]interface{}{
+					"dest":       task.Unarchive.Dest,
+					"remote_src": task.Unarchive.RemoteSrc,
+					"creates":    task.Unarchive.Creates,
+					"list_files": task.Unarchive.ListFiles,
+					"exclude":    task.Unarchive.Exclude,
+					"include":    task.Unarchive.Include,
+					"keep_newer": task.Unarchive.KeepNewer,
+					"extra_opts": task.Unarchive.ExtraOpts,
+					"mode":       task.Unarchive.Mode,
+					"owner":      task.Unarchive.Owner,
+					"group":      task.Unarchive.Group,
+				}
+
+				if task.Unarchive.RemoteSrc {
+					unarchiveArgs["src"] = task.Unarchive.Src
+				} else if task.Unarchive.Src != "" {
+					localChecksum, err := sha1File(task.Unarchive.Src)
+					if err != nil {
+						fmt.Printf("    ✗ Failed to compute local checksum: %v\n", err)
+						continue
+					}
+
+					remoteTmpPath := fmt.Sprintf("/tmp/.goansible-unarchive-%s", localChecksum[:12])
+					if err := client.UploadFile(task.Unarchive.Src, remoteTmpPath); err != nil {
+						fmt.Printf("    ✗ Failed to upload archive: %v\n", err)
+						continue
+					}
+
+					unarchiveArgs["src"] = remoteTmpPath
+					unarchiveArgs["checksum"] = localChecksum
+				}
+
+				modReq = ModuleRequest{
+					Module: "unarchive",
+					Args:   unarchiveArgs,
 				}
 
 			default:

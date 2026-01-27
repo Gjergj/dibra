@@ -41,6 +41,7 @@ type Task struct {
 	ServiceFacts   *ServiceFactsParams    `yaml:"service_facts,omitempty"`
 	Ping           *PingParams            `yaml:"ping,omitempty"`
 	Command        *CommandParams         `yaml:"command,omitempty"`
+	Unarchive      *UnarchiveParams       `yaml:"unarchive,omitempty"`
 }
 
 type ServiceFactsParams struct {
@@ -71,6 +72,21 @@ type CopyParams struct {
 	Backup    bool   `yaml:"backup"`
 	Force     bool   `yaml:"force"`
 	RemoteSrc bool   `yaml:"remote_src"`
+}
+
+type UnarchiveParams struct {
+	Src       string   `yaml:"src"`
+	Dest      string   `yaml:"dest"`
+	RemoteSrc bool     `yaml:"remote_src"`
+	Creates   string   `yaml:"creates,omitempty"`
+	ListFiles bool     `yaml:"list_files"`
+	Exclude   []string `yaml:"exclude,omitempty"`
+	Include   []string `yaml:"include,omitempty"`
+	KeepNewer bool     `yaml:"keep_newer"`
+	ExtraOpts []string `yaml:"extra_opts,omitempty"`
+	Mode      string   `yaml:"mode,omitempty"`
+	Owner     string   `yaml:"owner,omitempty"`
+	Group     string   `yaml:"group,omitempty"`
 }
 
 type FetchParams struct {
