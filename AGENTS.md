@@ -1259,6 +1259,70 @@ systemctl list-units --type=service
 | `TestPlaybook_CommandCreatesWithWildcard` | Creates with wildcard glob |
 | `TestPlaybook_CommandChangedAlways` | Always reports changed |
 | `TestPlaybook_CommandMkdirWithCreates` | mkdir idempotency with creates |
+| `TestPlaybook_ShellBasic` | Basic shell command execution |
+| `TestPlaybook_ShellEcho` | Simple echo via shell |
+| `TestPlaybook_ShellReturnsCmdString` | Returns command as string (not array) |
+| `TestPlaybook_ShellWithPipe` | Pipe operator support |
+| `TestPlaybook_ShellWithRedirect` | Output redirection to file |
+| `TestPlaybook_ShellWithAppendRedirect` | Append redirection (>>) |
+| `TestPlaybook_ShellWithEnvVar` | Environment variable expansion ($HOME) |
+| `TestPlaybook_ShellWithCommandSubstitution` | $() command substitution |
+| `TestPlaybook_ShellWithBacktickSubstitution` | Backtick command substitution |
+| `TestPlaybook_ShellWithLogicalAnd` | && logical operator |
+| `TestPlaybook_ShellWithLogicalOr` | \|\| logical operator |
+| `TestPlaybook_ShellWithSemicolon` | ; command separator |
+| `TestPlaybook_ShellWithWildcard` | Glob/wildcard expansion |
+| `TestPlaybook_ShellWithChdir` | Change directory before execution |
+| `TestPlaybook_ShellChdirNonExistent` | Fails on non-existent chdir |
+| `TestPlaybook_ShellWithCreates` | Skip if creates file exists |
+| `TestPlaybook_ShellCreatesNotExists` | Run when creates file missing |
+| `TestPlaybook_ShellWithRemoves` | Run if removes file exists |
+| `TestPlaybook_ShellRemovesNotExists` | Skip when removes file missing |
+| `TestPlaybook_ShellCreatesGlobPattern` | Creates with glob pattern |
+| `TestPlaybook_ShellRemovesGlobPattern` | Removes with glob pattern |
+| `TestPlaybook_ShellWithStdin` | Stdin input to shell command |
+| `TestPlaybook_ShellWithStdinNoNewline` | stdin_add_newline=false |
+| `TestPlaybook_ShellWithStdinAddNewline` | stdin_add_newline=true |
+| `TestPlaybook_ShellNonZeroRC` | Non-zero return code handling |
+| `TestPlaybook_ShellStderr` | Stderr capture |
+| `TestPlaybook_ShellStdoutLines` | Stdout split into lines |
+| `TestPlaybook_ShellStripEmptyEnds` | Strip trailing newlines |
+| `TestPlaybook_ShellNoStripEmptyEnds` | Preserve trailing newlines |
+| `TestPlaybook_ShellTiming` | Start/end/delta timing |
+| `TestPlaybook_ShellNoCmd` | Fails without cmd |
+| `TestPlaybook_ShellCustomExecutable` | Custom shell (/bin/bash) |
+| `TestPlaybook_ShellCustomExecutableSh` | Explicit /bin/sh |
+| `TestPlaybook_ShellCommandNotFound` | Fails on non-existent command |
+| `TestPlaybook_ShellFalseCommand` | false command returns rc=1 |
+| `TestPlaybook_ShellTrueCommand` | true command returns rc=0 |
+| `TestPlaybook_ShellEmptyStdout` | Empty stdout handling |
+| `TestPlaybook_ShellChangedAlways` | Always reports changed |
+| `TestPlaybook_ShellIdempotencyWithCreates` | Idempotency with creates |
+| `TestPlaybook_ShellIdempotencyWithRemoves` | Idempotency with removes |
+| `TestPlaybook_ShellPlaybookWithPipe` | Pipe via playbook |
+| `TestPlaybook_ShellPlaybookWithRedirect` | Redirect via playbook |
+| `TestPlaybook_ShellPlaybookWithChdir` | Chdir via playbook |
+| `TestPlaybook_ShellPlaybookWithCreates` | Creates via playbook |
+| `TestPlaybook_ShellPlaybookWithRemoves` | Removes via playbook |
+| `TestPlaybook_ShellPlaybookWithExecutable` | Custom executable via playbook |
+| `TestPlaybook_ShellMultipleCommands` | Multiple shell commands in sequence |
+| `TestPlaybook_ShellForLoop` | For loop in shell |
+| `TestPlaybook_ShellHereDoc` | Here document (<<EOF) |
+| `TestPlaybook_ShellProcessSubstitution` | Process substitution (<()) |
+| `TestPlaybook_ShellSubshell` | Subshell execution (()) |
+| `TestPlaybook_ShellQuotedArguments` | Single-quoted arguments |
+| `TestPlaybook_ShellDoubleQuotes` | Double-quoted with variable expansion |
+| `TestPlaybook_ShellSpecialChars` | Special characters handling |
+| `TestPlaybook_ShellExitCodePropagation` | Various exit codes (0,1,127,255) |
+| `TestPlaybook_ShellComplexPipeline` | Complex pipeline (sort \| head) |
+| `TestPlaybook_ShellMixedStdoutStderr` | Mixed stdout and stderr |
+| `TestPlaybook_ShellStderrToStdout` | Redirect stderr to stdout |
+| `TestPlaybook_ShellDevNull` | Redirect to /dev/null |
+| `TestPlaybook_ShellInputFromFile` | Input redirect from file |
+| `TestPlaybook_ShellSingleVsDoubleQuotes` | Quote behavior comparison |
+| `TestPlaybook_ShellArrayBash` | Bash array syntax |
+| `TestPlaybook_ShellArithmeticExpansion` | Arithmetic expansion $(()) |
+| `TestPlaybook_ShellVsCommand` | Shell vs command module comparison |
 | `TestPlaybook_AptInstall` | Package install + idempotency via `dpkg -s` |
 | `TestPlaybook_AptRemove` | Package removal + idempotency |
 | `TestPlaybook_FileDirectory` | Directory creation, permissions via `stat` |
