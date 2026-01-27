@@ -392,6 +392,135 @@ Fetches files from remote hosts to the controller. Runs entirely on the controll
 
 **Idempotency**: Compares SHA1 checksums; skips if local file matches remote.
 
+### unarchive
+
+Unpacks an archive after (optionally) copying it from the local machine. Supports `.tar`, `.tar.gz/.tgz`, `.tar.bz2/.tbz2`, `.tar.xz/.txz`, `.tar.zst`, and `.zip` formats.
+
+```yaml
+# Extract archive already on remote host
+- name: Extract application
+  unarchive:
+    src: /tmp/app-v1.0.tar.gz
+    dest: /opt/app
+    remote_src: true
+
+# Copy local archive to remote and extract
+- name: Deploy package
+  unarchive:
+    src: ./dist/app.tar.gz
+    dest: /opt/app
+
+# Skip extraction if marker file exists
+- name: Extract only if needed
+  unarchive:
+    src: /tmp/app.tar.gz
+    dest: /opt/app
+    remote_src: true
+    creates: /opt/app/VERSION
+
+# Extract with specific permissions
+- name: Extract with permissions
+  unarchive:
+    src: /tmp/app.tar.gz
+    dest: /opt/app
+    remote_src: true
+    mode: "0755"
+    owner: appuser
+    group: appgroup
+
+# Extract excluding certain files
+- name: Extract without logs
+  unarchive:
+    src: /tmp/app.tar.gz
+    dest: /opt/app
+    remote_src: true
+    exclude:
+      - "*.log"
+      - "tmp/*"
+
+# Extract only specific files
+- name: Extract config only
+  unarchive:
+    src: /tmp/app.tar.gz
+    dest: /opt/app
+    remote_src: true
+    include:
+      - "config/*"
+      - "README.md"
+
+# Keep newer files in destination
+- name: Update without overwriting newer
+  unarchive:
+    src: /tmp/app.tar.gz
+    dest: /opt/app
+    remote_src: true
+    keep_newer: true
+
+# List files in archive
+- name: Extract and list files
+  unarchive:
+    src: /tmp/app.tar.gz
+    dest: /opt/app
+    remote_src: true
+    list_files: true
+
+# Use extra options for tar/unzip
+- name: Extract with verbose
+  unarchive:
+    src: /tmp/app.tar.gz
+    dest: /opt/app
+    remote_src: true
+    extra_opts:
+      - "--verbose"
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `src` | required | Path to archive. Local path if `remote_src=false`, remote path if `remote_src=true`. |
+| `dest` | required | Remote directory where archive should be extracted. Must exist. |
+| `remote_src` | `false` | If `true`, src is on remote system. If `false`, src is copied from controller. |
+| `creates` | | Skip extraction if this path exists on remote. |
+| `list_files` | `false` | Return list of files in the archive. |
+| `exclude` | `[]` | List of patterns to exclude from extraction. Mutually exclusive with `include`. |
+| `include` | `[]` | List of patterns to include (extract only matching). Mutually exclusive with `exclude`. |
+| `keep_newer` | `false` | Do not overwrite files that are newer than those in the archive. |
+| `extra_opts` | `[]` | Additional command-line options passed to tar/unzip. |
+| `mode` | | Mode to apply to all extracted files (e.g., `"0755"`). |
+| `owner` | | Owner for extracted files. |
+| `group` | | Group for extracted files. |
+
+**Returns**:
+```json
+{
+  "changed": true,
+  "dest": "/opt/app",
+  "src": "/tmp/app.tar.gz",
+  "handler": "tar",
+  "files": ["file1.txt", "dir/file2.txt"],
+  "msg": "archive extracted"
+}
+```
+
+**Supported Formats**:
+- `.tar` - Plain tar archive
+- `.tar.gz`, `.tgz` - Gzip compressed tar
+- `.tar.bz2`, `.tbz2` - Bzip2 compressed tar (requires `bzip2`)
+- `.tar.xz`, `.txz` - XZ compressed tar (requires `xz`)
+- `.tar.zst` - Zstandard compressed tar (requires `zstd`)
+- `.zip` - ZIP archive (requires `unzip`)
+
+**File Transfer Flow** (when `remote_src=false`):
+1. Controller computes SHA1 checksum of local archive
+2. Controller uploads to `/tmp/.goansible-unarchive-<hash>`
+3. Agent verifies checksum matches
+4. Agent extracts archive to destination
+5. Agent applies mode/owner/group if specified
+
+**Idempotency**:
+- For tar: Uses `tar --diff` to compare archive contents with filesystem
+- For zip: Checks if all files in archive exist in destination
+- Use `creates` parameter for faster idempotency checks
+
 ### stat
 
 Internal module used by fetch. Gets file metadata and checksum.
@@ -1038,6 +1167,37 @@ systemctl list-units --type=service
 | `TestPlaybook_ServiceFactsDetectsEnabledDisabled` | Detects enabled/disabled status |
 | `TestPlaybook_ServiceFactsDetectsRunningState` | Detects running state correctly |
 | `TestPlaybook_FullDeployWorkflow` | Full app deployment: dirs, config, symlinks |
+| `TestPlaybook_UnarchiveTar` | Basic tar extraction + idempotency |
+| `TestPlaybook_UnarchiveTarGz` | tar.gz extraction + idempotency |
+| `TestPlaybook_UnarchiveTarBz2` | tar.bz2 extraction (skips if bzip2 unavailable) |
+| `TestPlaybook_UnarchiveTarXz` | tar.xz extraction (skips if xz unavailable) |
+| `TestPlaybook_UnarchiveZip` | ZIP file extraction + idempotency |
+| `TestPlaybook_UnarchiveCreates` | Skip extraction when creates path exists |
+| `TestPlaybook_UnarchiveCreatesNotExists` | Extract when creates path missing |
+| `TestPlaybook_UnarchiveListFiles` | list_files parameter returns file list |
+| `TestPlaybook_UnarchiveExclude` | Exclude specific files from extraction |
+| `TestPlaybook_UnarchiveExcludeGlob` | Exclude files using glob patterns (*.log) |
+| `TestPlaybook_UnarchiveInclude` | Include only specific files in extraction |
+| `TestPlaybook_UnarchiveKeepNewer` | Preserve newer files in destination |
+| `TestPlaybook_UnarchiveWithMode` | Apply mode to extracted files |
+| `TestPlaybook_UnarchiveWithOwnerGroup` | Apply owner/group to extracted files |
+| `TestPlaybook_UnarchiveIdempotent` | Multiple tar.gz runs without changes |
+| `TestPlaybook_UnarchiveZipIdempotent` | Multiple zip runs without changes |
+| `TestPlaybook_UnarchiveMissingSrc` | Fails when src archive doesn't exist |
+| `TestPlaybook_UnarchiveMissingDest` | Fails when dest directory doesn't exist |
+| `TestPlaybook_UnarchiveReextractAfterDelete` | Re-extracts after file deletion |
+| `TestPlaybook_UnarchiveContentDiffers` | Re-extracts when file content differs |
+| `TestPlaybook_UnarchiveSymlink` | Handles symlinks in archives |
+| `TestPlaybook_UnarchiveDestSymlinkToDir` | Extract to symlink destination (pointing to dir) |
+| `TestPlaybook_UnarchiveExcludeIncludeMutuallyExclusive` | Fails when both exclude and include specified |
+| `TestPlaybook_UnarchiveExtraOpts` | Pass extra options (--verbose) to tar/unzip |
+| `TestPlaybook_UnarchiveZipExclude` | ZIP extraction with exclude patterns |
+| `TestPlaybook_UnarchiveUnsupportedFormat` | Fails on unsupported archive format (.rar) |
+| `TestPlaybook_UnarchiveDestIsFile` | Fails when dest is a file not directory |
+| `TestPlaybook_UnarchiveNestedDirectories` | Extract deeply nested directory structures |
+| `TestPlaybook_UnarchivePreservesPermissions` | Preserves file permissions from archive |
+| `TestPlaybook_UnarchiveEmptyArchive` | Handles empty archives gracefully |
+| `TestPlaybook_UnarchiveSpecialCharFilenames` | Handles special characters in filenames |
 
 Each test:
 1. Runs a playbook via `go run ./cmd/controller`
