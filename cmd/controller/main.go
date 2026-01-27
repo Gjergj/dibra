@@ -277,6 +277,20 @@ func main() {
 					},
 				}
 
+			case task.Group != nil:
+				modReq = ModuleRequest{
+					Module: "group",
+					Args: map[string]interface{}{
+						"name":       task.Group.Name,
+						"state":      task.Group.State,
+						"gid":        task.Group.GID,
+						"system":     task.Group.System,
+						"local":      task.Group.Local,
+						"non_unique": task.Group.NonUnique,
+						"force":      task.Group.Force,
+					},
+				}
+
 			case task.Copy != nil:
 				copyArgs := map[string]interface{}{
 					"dest":       task.Copy.Dest,

@@ -14,6 +14,7 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/copy"
 	"github.com/gjergjiramku/goansible/internal/modules/cron"
 	"github.com/gjergjiramku/goansible/internal/modules/file"
+	"github.com/gjergjiramku/goansible/internal/modules/group"
 	"github.com/gjergjiramku/goansible/internal/modules/ping"
 	"github.com/gjergjiramku/goansible/internal/modules/service"
 	"github.com/gjergjiramku/goansible/internal/modules/service_facts"
@@ -130,6 +131,14 @@ func main() {
 			return
 		}
 		writeJSON(user.Execute(req))
+
+	case "group":
+		var req group.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse group request: %v", err))
+			return
+		}
+		writeJSON(group.Execute(req))
 
 	case "systemd_service", "systemd":
 		var req systemd_service.Request
