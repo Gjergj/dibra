@@ -35,6 +35,7 @@ type Task struct {
 	Cron           *CronParams            `yaml:"cron,omitempty"`
 	UFW            *UFWParams             `yaml:"ufw,omitempty"`
 	User           *UserParams            `yaml:"user,omitempty"`
+	Group          *GroupParams           `yaml:"group,omitempty"`
 	SystemdService *SystemdServiceParams  `yaml:"systemd_service,omitempty"`
 	Systemd        *SystemdServiceParams  `yaml:"systemd,omitempty"`
 	Service        *ServiceParams         `yaml:"service,omitempty"`
@@ -234,6 +235,16 @@ type UserParams struct {
 	SSHKeyFile       string   `yaml:"ssh_key_file,omitempty"`
 	SSHKeyComment    string   `yaml:"ssh_key_comment,omitempty"`
 	SSHKeyPassphrase string   `yaml:"ssh_key_passphrase,omitempty"`
+}
+
+type GroupParams struct {
+	Name      string `yaml:"name"`
+	State     string `yaml:"state,omitempty"`
+	GID       *int   `yaml:"gid,omitempty"`
+	System    bool   `yaml:"system"`
+	Local     bool   `yaml:"local"`
+	NonUnique bool   `yaml:"non_unique"`
+	Force     bool   `yaml:"force"`
 }
 
 type SystemdServiceParams struct {

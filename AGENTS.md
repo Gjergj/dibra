@@ -95,7 +95,8 @@ goansible/
 │       ├── uri/              # HTTP/HTTPS requests
 │       ├── cron/             # Crontab management
 │       ├── service/          # Generic service management
-│       └── user/             # User account management
+│       ├── user/             # User account management
+│       └── group/            # Group management
 ├── test/
 │   ├── Dockerfile            # Ubuntu 22.04 + systemd + SSH
 │   ├── docker-compose.yaml   # Test container orchestration
@@ -891,6 +892,84 @@ Gathers and returns service state information as facts. Takes no parameters.
 - Always returns `changed: false` (read-only operation)
 - Idempotent by design
 
+### group
+
+Manages groups on the system.
+
+```yaml
+# Create a group
+- name: Create developers group
+  group:
+    name: developers
+    state: present
+
+# Create group with specific GID
+- name: Create group with GID
+  group:
+    name: mygroup
+    gid: 5000
+    state: present
+
+# Create system group (GID < 1000)
+- name: Create system group
+  group:
+    name: myservice
+    system: true
+    state: present
+
+# Create group with non-unique GID
+- name: Create group sharing GID
+  group:
+    name: altgroup
+    gid: 5000
+    non_unique: true
+    state: present
+
+# Remove a group
+- name: Remove old group
+  group:
+    name: oldgroup
+    state: absent
+
+# Force remove group (even if primary for a user)
+- name: Force remove group
+  group:
+    name: testgroup
+    state: absent
+    force: true
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `name` | required | Name of the group to manage. |
+| `state` | `present` | `present` to create/modify, `absent` to remove. |
+| `gid` | | Optional group ID to assign. |
+| `system` | `false` | Create a system group (GID < 1000). |
+| `local` | `false` | Use local group commands (lgroupadd/lgroupmod/lgroupdel). |
+| `non_unique` | `false` | Allow non-unique GID. Requires `gid` to be set. |
+| `force` | `false` | Force deletion even if group is a user's primary group. |
+
+**Returns**:
+```json
+{
+  "changed": true,
+  "name": "developers",
+  "gid": 5000,
+  "state": "present",
+  "system": false
+}
+```
+
+**Idempotency**:
+- Creation: Checks if group exists via `getent group` before creating.
+- Modification: Only modifies if requested GID differs from current.
+- Deletion: Returns `changed: false` if group doesn't exist.
+
+**Notes**:
+- `force` and `local` are mutually exclusive.
+- `non_unique` requires `gid` to be specified.
+- System groups typically have GID < 1000.
+
 ## Playbook Format
 
 ```yaml
@@ -1166,6 +1245,30 @@ systemctl list-units --type=service
 | `TestPlaybook_ServiceFactsServiceNames` | Map keys match service names |
 | `TestPlaybook_ServiceFactsDetectsEnabledDisabled` | Detects enabled/disabled status |
 | `TestPlaybook_ServiceFactsDetectsRunningState` | Detects running state correctly |
+| `TestPlaybook_GroupCreate` | Basic group creation + idempotency |
+| `TestPlaybook_GroupCreateIdempotent` | Multiple runs return no changes |
+| `TestPlaybook_GroupCreateWithGID` | Group creation with specific GID + idempotency |
+| `TestPlaybook_GroupModifyGID` | Modify existing group's GID |
+| `TestPlaybook_GroupModifyGIDIdempotent` | No changes when GID already matches |
+| `TestPlaybook_GroupRemove` | Group removal + idempotency |
+| `TestPlaybook_GroupRemoveNonExistent` | No changes for non-existent group |
+| `TestPlaybook_GroupCreateSystem` | System group with GID < 1000 |
+| `TestPlaybook_GroupNonUniqueGID` | Create group with non-unique GID |
+| `TestPlaybook_GroupNonUniqueRequiresGID` | Fails when non_unique set without gid |
+| `TestPlaybook_GroupNameRequired` | Fails when name is missing |
+| `TestPlaybook_GroupInvalidState` | Fails for invalid state value |
+| `TestPlaybook_GroupForceDelete` | Force delete primary group |
+| `TestPlaybook_GroupMultipleRuns` | 5 consecutive runs return expected results |
+| `TestPlaybook_GroupCreateMultiple` | Create multiple groups in one playbook |
+| `TestPlaybook_GroupGIDRange` | High GID value (65000) |
+| `TestPlaybook_GroupSpecialCharName` | Group name with dashes, underscores, dots |
+| `TestPlaybook_GroupWithUsers` | Create group and add user to it |
+| `TestPlaybook_GroupRetainsMembers` | Modify GID preserves group membership |
+| `TestPlaybook_GroupDefaultState` | Default state is present |
+| `TestPlaybook_GroupFullWorkflow` | Full workflow: create, add user, modify, remove |
+| `TestPlaybook_GroupCreateSystemWithGID` | System group with explicit GID |
+| `TestPlaybook_GroupRemoveMultiple` | Remove multiple groups in one playbook |
+| `TestPlaybook_GroupExistingCheck` | No changes for existing root group |
 | `TestPlaybook_FullDeployWorkflow` | Full app deployment: dirs, config, symlinks |
 | `TestPlaybook_UnarchiveTar` | Basic tar extraction + idempotency |
 | `TestPlaybook_UnarchiveTarGz` | tar.gz extraction + idempotency |
