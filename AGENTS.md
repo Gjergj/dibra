@@ -87,6 +87,7 @@ goansible/
 │       ├── apt_key/          # GPG key management
 │       ├── apt_repository/   # Repository management
 │       ├── command/          # Execute commands on targets
+│       ├── shell/            # Execute shell commands (supports pipes, redirects, etc.)
 │       ├── copy/             # File copy (local→remote, content, remote_src)
 │       ├── fetch/            # File fetch (remote→local)
 │       ├── file/             # File/directory/symlink management
@@ -215,6 +216,118 @@ Executes commands on targets without going through a shell. This is more secure 
 - Non-zero return codes cause the task to fail.
 
 **Idempotency**: Use `creates` or `removes` parameters to make commands idempotent.
+
+### shell
+
+Executes commands through a shell (`/bin/sh` by default) on the remote node. Unlike the command module, shell commands are interpreted by the shell, enabling pipes, redirects, environment variables, and other shell features.
+
+```yaml
+# Simple shell command
+- name: Run shell command
+  shell:
+    cmd: echo hello
+
+# Using pipes
+- name: Count files
+  shell:
+    cmd: ls -la | wc -l
+
+# Redirect output to file
+- name: Write to file
+  shell:
+    cmd: echo "content" > /tmp/myfile.txt
+
+# Using environment variables
+- name: Print home directory
+  shell:
+    cmd: echo $HOME
+
+# Command substitution
+- name: Show current date
+  shell:
+    cmd: echo "Today is $(date)"
+
+# Logical operators
+- name: Check and run
+  shell:
+    cmd: test -f /tmp/flag && echo "exists"
+
+# Run with custom shell
+- name: Run with bash
+  shell:
+    cmd: echo $BASH_VERSION
+    executable: /bin/bash
+
+# Run only if file doesn't exist (idempotent)
+- name: Create database
+  shell:
+    cmd: /usr/bin/make_database.sh
+    creates: /var/lib/mydb/data
+
+# Run only if file exists
+- name: Remove old logs
+  shell:
+    cmd: rm /var/log/app/*.old
+    removes: /var/log/app/cleanup.flag
+
+# Change directory before execution
+- name: Run in /tmp
+  shell:
+    cmd: pwd
+    chdir: /tmp
+
+# Provide stdin input
+- name: Send input to command
+  shell:
+    cmd: cat
+    stdin: "hello from stdin"
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `cmd` | required | The shell command to run as a string. |
+| `chdir` | | Change to this directory before running the command. |
+| `creates` | | A filename or glob pattern. If it exists, the command will **not** run. |
+| `removes` | | A filename or glob pattern. If it exists, the command **will** run. |
+| `stdin` | | Set the stdin of the command directly to this value. |
+| `stdin_add_newline` | `true` | Append a newline to stdin data. |
+| `strip_empty_ends` | `true` | Strip empty lines from the end of stdout/stderr. |
+| `executable` | `/bin/sh` | Path to the shell executable (e.g., `/bin/bash`). |
+
+**Returns**:
+```json
+{
+  "changed": true,
+  "cmd": "echo hello | cat",
+  "stdout": "hello",
+  "stderr": "",
+  "stdout_lines": ["hello"],
+  "stderr_lines": [],
+  "rc": 0,
+  "start": "2024-01-15 10:30:00.000000",
+  "end": "2024-01-15 10:30:00.001234",
+  "delta": "0:00:00.001234"
+}
+```
+
+**Shell Features Supported**:
+- Pipes: `cmd1 | cmd2`
+- Redirects: `>`, `>>`, `<`, `2>&1`
+- Environment variables: `$HOME`, `${VAR}`
+- Command substitution: `$(command)` or `` `command` ``
+- Logical operators: `&&`, `||`, `;`
+- Wildcards/globbing: `*.txt`
+- Subshells: `(cd /tmp && pwd)`
+- Here documents: `cat <<EOF`
+- For loops: `for i in 1 2 3; do echo $i; done`
+
+**Notes**:
+- Use `command` module when you don't need shell features (more secure).
+- Always quote variables with `{{ var | quote }}` to prevent shell injection.
+- Use `creates`/`removes` for idempotent shell command execution.
+- Non-zero return codes cause the task to fail.
+
+**Idempotency**: Use `creates` or `removes` parameters to make shell commands idempotent.
 
 ### apt
 

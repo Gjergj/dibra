@@ -18,6 +18,7 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/ping"
 	"github.com/gjergjiramku/goansible/internal/modules/service"
 	"github.com/gjergjiramku/goansible/internal/modules/service_facts"
+	"github.com/gjergjiramku/goansible/internal/modules/shell"
 	"github.com/gjergjiramku/goansible/internal/modules/stat"
 	"github.com/gjergjiramku/goansible/internal/modules/systemd_service"
 	"github.com/gjergjiramku/goansible/internal/modules/ufw"
@@ -179,6 +180,14 @@ func main() {
 			return
 		}
 		writeJSON(command.Execute(req))
+
+	case "shell":
+		var req shell.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse shell request: %v", err))
+			return
+		}
+		writeJSON(shell.Execute(req))
 
 	case "unarchive":
 		var req unarchive.Request
