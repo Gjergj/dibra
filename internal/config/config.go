@@ -42,6 +42,7 @@ type Task struct {
 	ServiceFacts   *ServiceFactsParams    `yaml:"service_facts,omitempty"`
 	Ping           *PingParams            `yaml:"ping,omitempty"`
 	Command        *CommandParams         `yaml:"command,omitempty"`
+	Shell          *ShellParams           `yaml:"shell,omitempty"`
 	Unarchive      *UnarchiveParams       `yaml:"unarchive,omitempty"`
 }
 
@@ -61,6 +62,17 @@ type CommandParams struct {
 	Stdin           string   `yaml:"stdin,omitempty"`
 	StdinAddNewline *bool    `yaml:"stdin_add_newline,omitempty"`
 	StripEmptyEnds  *bool    `yaml:"strip_empty_ends,omitempty"`
+}
+
+type ShellParams struct {
+	Cmd             string `yaml:"cmd,omitempty"`
+	Chdir           string `yaml:"chdir,omitempty"`
+	Creates         string `yaml:"creates,omitempty"`
+	Removes         string `yaml:"removes,omitempty"`
+	Stdin           string `yaml:"stdin,omitempty"`
+	StdinAddNewline *bool  `yaml:"stdin_add_newline,omitempty"`
+	StripEmptyEnds  *bool  `yaml:"strip_empty_ends,omitempty"`
+	Executable      string `yaml:"executable,omitempty"`
 }
 
 type CopyParams struct {

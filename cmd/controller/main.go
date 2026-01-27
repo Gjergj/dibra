@@ -399,6 +399,29 @@ func main() {
 					},
 				}
 
+			case task.Shell != nil:
+				stdinAddNewline := true
+				if task.Shell.StdinAddNewline != nil {
+					stdinAddNewline = *task.Shell.StdinAddNewline
+				}
+				stripEmptyEnds := true
+				if task.Shell.StripEmptyEnds != nil {
+					stripEmptyEnds = *task.Shell.StripEmptyEnds
+				}
+				modReq = ModuleRequest{
+					Module: "shell",
+					Args: map[string]interface{}{
+						"cmd":               task.Shell.Cmd,
+						"chdir":             task.Shell.Chdir,
+						"creates":           task.Shell.Creates,
+						"removes":           task.Shell.Removes,
+						"stdin":             task.Shell.Stdin,
+						"stdin_add_newline": stdinAddNewline,
+						"strip_empty_ends":  stripEmptyEnds,
+						"executable":        task.Shell.Executable,
+					},
+				}
+
 			case task.Unarchive != nil:
 				unarchiveArgs := map[string]interface{}{
 					"dest":       task.Unarchive.Dest,
