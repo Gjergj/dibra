@@ -44,6 +44,7 @@ type Task struct {
 	Command        *CommandParams         `yaml:"command,omitempty"`
 	Shell          *ShellParams           `yaml:"shell,omitempty"`
 	Unarchive      *UnarchiveParams       `yaml:"unarchive,omitempty"`
+	Git            *GitParams             `yaml:"git,omitempty"`
 }
 
 type ServiceFactsParams struct {
@@ -279,6 +280,28 @@ type ServiceParams struct {
 	Pattern   string `yaml:"pattern,omitempty"`
 	Sleep     int    `yaml:"sleep,omitempty"`
 	Use       string `yaml:"use,omitempty"`
+}
+
+type GitParams struct {
+	Repo             string `yaml:"repo"`
+	Dest             string `yaml:"dest,omitempty"`
+	Version          string `yaml:"version,omitempty"`
+	Remote           string `yaml:"remote,omitempty"`
+	Clone            *bool  `yaml:"clone,omitempty"`
+	Update           *bool  `yaml:"update,omitempty"`
+	Force            bool   `yaml:"force"`
+	Depth            *int   `yaml:"depth,omitempty"`
+	Bare             bool   `yaml:"bare"`
+	Recursive        *bool  `yaml:"recursive,omitempty"`
+	TrackSubmodules  bool   `yaml:"track_submodules"`
+	SingleBranch     bool   `yaml:"single_branch"`
+	AcceptHostkey    bool   `yaml:"accept_hostkey"`
+	AcceptNewhostkey bool   `yaml:"accept_newhostkey"`
+	KeyFile          string `yaml:"key_file,omitempty"`
+	SSHOpts          string `yaml:"ssh_opts,omitempty"`
+	Refspec          string `yaml:"refspec,omitempty"`
+	Executable       string `yaml:"executable,omitempty"`
+	SeparateGitDir   string `yaml:"separate_git_dir,omitempty"`
 }
 
 func (a *AptParams) GetPackages() []string {
