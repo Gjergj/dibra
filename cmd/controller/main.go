@@ -461,6 +461,41 @@ func main() {
 					Args:   unarchiveArgs,
 				}
 
+			case task.Git != nil:
+				gitArgs := map[string]interface{}{
+					"repo":             task.Git.Repo,
+					"dest":             task.Git.Dest,
+					"version":          task.Git.Version,
+					"remote":           task.Git.Remote,
+					"force":            task.Git.Force,
+					"bare":             task.Git.Bare,
+					"track_submodules": task.Git.TrackSubmodules,
+					"single_branch":    task.Git.SingleBranch,
+					"accept_hostkey":   task.Git.AcceptHostkey,
+					"accept_newhostkey": task.Git.AcceptNewhostkey,
+					"key_file":         task.Git.KeyFile,
+					"ssh_opts":         task.Git.SSHOpts,
+					"refspec":          task.Git.Refspec,
+					"executable":       task.Git.Executable,
+					"separate_git_dir": task.Git.SeparateGitDir,
+				}
+				if task.Git.Clone != nil {
+					gitArgs["clone"] = *task.Git.Clone
+				}
+				if task.Git.Update != nil {
+					gitArgs["update"] = *task.Git.Update
+				}
+				if task.Git.Depth != nil {
+					gitArgs["depth"] = *task.Git.Depth
+				}
+				if task.Git.Recursive != nil {
+					gitArgs["recursive"] = *task.Git.Recursive
+				}
+				modReq = ModuleRequest{
+					Module: "git",
+					Args:   gitArgs,
+				}
+
 			default:
 				fmt.Println("    ⚠ No module specified, skipping")
 				continue

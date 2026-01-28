@@ -31,3 +31,6 @@ clean:
 	docker compose -f test/docker-compose.yaml down -v
 	rm -f /tmp/goansible-test-agent
 	go clean
+
+# go run ./cmd/controller -config playbook.yaml --force-agent-upload 2>&1 | head -10  
+# go test -tags=integration -v -timeout 10m -count=1 ./test/integration/... -run "TestPlaybook_GitCloneBareIdempotent" 2>&1

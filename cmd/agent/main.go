@@ -14,6 +14,7 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/copy"
 	"github.com/gjergjiramku/goansible/internal/modules/cron"
 	"github.com/gjergjiramku/goansible/internal/modules/file"
+	"github.com/gjergjiramku/goansible/internal/modules/git"
 	"github.com/gjergjiramku/goansible/internal/modules/group"
 	"github.com/gjergjiramku/goansible/internal/modules/ping"
 	"github.com/gjergjiramku/goansible/internal/modules/service"
@@ -196,6 +197,14 @@ func main() {
 			return
 		}
 		writeJSON(unarchive.Execute(req))
+
+	case "git":
+		var req git.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse git request: %v", err))
+			return
+		}
+		writeJSON(git.Execute(req))
 
 	default:
 		writeError(fmt.Sprintf("unknown module: %s", modReq.Module))

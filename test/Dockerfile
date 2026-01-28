@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y \
     rsyslog \
     ufw \
     iptables \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 RUN cd /lib/systemd/system/sysinit.target.wants/ && \
