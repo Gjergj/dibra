@@ -518,6 +518,29 @@ func main() {
 					},
 				}
 
+			case task.Blockinfile != nil:
+				modReq = ModuleRequest{
+					Module: "blockinfile",
+					Args: map[string]interface{}{
+						"path":            task.Blockinfile.Path,
+						"block":           task.Blockinfile.Block,
+						"marker":          task.Blockinfile.Marker,
+						"marker_begin":    task.Blockinfile.MarkerBegin,
+						"marker_end":      task.Blockinfile.MarkerEnd,
+						"insertafter":     task.Blockinfile.InsertAfter,
+						"insertbefore":    task.Blockinfile.InsertBefore,
+						"state":           task.Blockinfile.State,
+						"create":          task.Blockinfile.Create,
+						"backup":          task.Blockinfile.Backup,
+						"mode":            task.Blockinfile.Mode,
+						"owner":           task.Blockinfile.Owner,
+						"group":           task.Blockinfile.Group,
+						"validate":        task.Blockinfile.Validate,
+						"prepend_newline": task.Blockinfile.PrependNewline,
+						"append_newline":  task.Blockinfile.AppendNewline,
+					},
+				}
+
 			default:
 				fmt.Println("    ⚠ No module specified, skipping")
 				continue

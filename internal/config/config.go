@@ -46,6 +46,7 @@ type Task struct {
 	Unarchive      *UnarchiveParams       `yaml:"unarchive,omitempty"`
 	Git            *GitParams             `yaml:"git,omitempty"`
 	Lineinfile     *LineinfileParams      `yaml:"lineinfile,omitempty"`
+	Blockinfile    *BlockinfileParams     `yaml:"blockinfile,omitempty"`
 }
 
 type ServiceFactsParams struct {
@@ -321,6 +322,25 @@ type LineinfileParams struct {
 	Owner        string `yaml:"owner,omitempty"`
 	Group        string `yaml:"group,omitempty"`
 	Validate     string `yaml:"validate,omitempty"`
+}
+
+type BlockinfileParams struct {
+	Path           string `yaml:"path"`
+	Block          string `yaml:"block,omitempty"`
+	Marker         string `yaml:"marker,omitempty"`
+	MarkerBegin    string `yaml:"marker_begin,omitempty"`
+	MarkerEnd      string `yaml:"marker_end,omitempty"`
+	InsertAfter    string `yaml:"insertafter,omitempty"`
+	InsertBefore   string `yaml:"insertbefore,omitempty"`
+	State          string `yaml:"state,omitempty"`
+	Create         bool   `yaml:"create"`
+	Backup         bool   `yaml:"backup"`
+	Mode           string `yaml:"mode,omitempty"`
+	Owner          string `yaml:"owner,omitempty"`
+	Group          string `yaml:"group,omitempty"`
+	Validate       string `yaml:"validate,omitempty"`
+	PrependNewline bool   `yaml:"prepend_newline"`
+	AppendNewline  bool   `yaml:"append_newline"`
 }
 
 func (a *AptParams) GetPackages() []string {

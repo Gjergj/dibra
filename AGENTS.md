@@ -457,6 +457,140 @@ Ensures a particular line is in a file, or replaces an existing line using a reg
 
 **Idempotency**: Checks if line already exists before adding. Replaces only if content differs.
 
+### blockinfile
+
+Inserts, updates, or removes a block of multi-line text surrounded by customizable marker lines.
+
+```yaml
+# Basic block insertion
+- name: Add SSH match block
+  blockinfile:
+    path: /etc/ssh/sshd_config
+    block: |
+      Match User ansible-agent
+          PasswordAuthentication no
+
+# Custom markers
+- name: Add Apache logging config
+  blockinfile:
+    path: /etc/httpd/httpd.conf
+    marker: "# {mark} LOGGING CONFIG"
+    block: |
+      ErrorLog ${APACHE_LOG_DIR}/error.log
+      CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+# Insert after a pattern
+- name: Add kernel parameters
+  blockinfile:
+    path: /etc/sysctl.conf
+    insertafter: "net.ipv4.ip_forward"
+    block: |
+      net.ipv4.tcp_syncookies = 1
+      net.core.somaxconn = 1024
+
+# Insert before a pattern
+- name: Add firewall rules
+  blockinfile:
+    path: /etc/firewalld/services/custom.xml
+    marker: "<!-- {mark} CUSTOM RULES -->"
+    insertbefore: "</service>"
+    block: |
+      <port protocol="tcp" port="8080"/>
+      <port protocol="tcp" port="8443"/>
+
+# Insert at beginning of file
+- name: Add file header
+  blockinfile:
+    path: /etc/config
+    insertbefore: BOF
+    block: |
+      # Configuration file
+      # Do not edit manually
+
+# Create file if it doesn't exist
+- name: Create config with block
+  blockinfile:
+    path: /etc/myapp/config
+    create: true
+    block: |
+      key1=value1
+      key2=value2
+
+# Remove block
+- name: Remove old block
+  blockinfile:
+    path: /etc/config
+    state: absent
+
+# Add newlines around block
+- name: Insert with spacing
+  blockinfile:
+    path: /etc/config
+    prepend_newline: true
+    append_newline: true
+    block: |
+      separated block
+
+# Create backup before modification
+- name: Modify with backup
+  blockinfile:
+    path: /etc/important.conf
+    block: |
+      new configuration
+    backup: true
+
+# Validate before applying
+- name: Modify sudoers safely
+  blockinfile:
+    path: /etc/sudoers.d/custom
+    block: |
+      user ALL=(ALL) NOPASSWD: ALL
+    validate: "visudo -cf %s"
+
+# Multiple blocks with different markers
+- name: Add first block
+  blockinfile:
+    path: /etc/config
+    marker: "# {mark} BLOCK ONE"
+    block: |
+      block one content
+
+- name: Add second block
+  blockinfile:
+    path: /etc/config
+    marker: "# {mark} BLOCK TWO"
+    block: |
+      block two content
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `path` | required | Path to the file to modify. |
+| `block` | `""` | The text to insert inside the marker lines. Empty string or missing removes the block. |
+| `marker` | `"# {mark} ANSIBLE MANAGED BLOCK"` | Marker line template. `{mark}` is replaced with `marker_begin` or `marker_end`. |
+| `marker_begin` | `"BEGIN"` | Text to replace `{mark}` in the opening marker. |
+| `marker_end` | `"END"` | Text to replace `{mark}` in the closing marker. |
+| `insertafter` | `EOF` | Insert after last match of this regex. Special: `EOF` (end of file). |
+| `insertbefore` | | Insert before last match of this regex. Special: `BOF` (beginning of file). Mutually exclusive with `insertafter`. |
+| `state` | `present` | `present` to add/update block, `absent` to remove block. |
+| `create` | `false` | Create file if it doesn't exist. |
+| `backup` | `false` | Create timestamped backup before modifying. |
+| `prepend_newline` | `false` | Add blank line before block if not at beginning. |
+| `append_newline` | `false` | Add blank line after block if not at end. |
+| `validate` | | Command to validate file before applying. Use `%s` for temp file path. |
+| `mode` | | File mode (e.g., `"0644"`). |
+| `owner` | | File owner. |
+| `group` | | File group. |
+
+**Behavior Notes**:
+- If markers exist: replaces the existing block content
+- If markers don't exist: inserts at position determined by `insertafter`/`insertbefore`
+- Empty `block` or `state=absent`: removes the block (markers and content)
+- Use unique markers when managing multiple blocks in the same file
+- Markers are matched exactly (including any indentation)
+
+**Idempotency**: Compares block content with existing. Only changes if content differs.
+
 ### apt
 
 Manages Debian/Ubuntu packages via apt-get.
