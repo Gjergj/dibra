@@ -16,6 +16,7 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/file"
 	"github.com/gjergjiramku/goansible/internal/modules/git"
 	"github.com/gjergjiramku/goansible/internal/modules/group"
+	"github.com/gjergjiramku/goansible/internal/modules/lineinfile"
 	"github.com/gjergjiramku/goansible/internal/modules/ping"
 	"github.com/gjergjiramku/goansible/internal/modules/service"
 	"github.com/gjergjiramku/goansible/internal/modules/service_facts"
@@ -205,6 +206,14 @@ func main() {
 			return
 		}
 		writeJSON(git.Execute(req))
+
+	case "lineinfile":
+		var req lineinfile.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse lineinfile request: %v", err))
+			return
+		}
+		writeJSON(lineinfile.Execute(req))
 
 	default:
 		writeError(fmt.Sprintf("unknown module: %s", modReq.Module))

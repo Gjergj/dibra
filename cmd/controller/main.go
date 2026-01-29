@@ -496,6 +496,28 @@ func main() {
 					Args:   gitArgs,
 				}
 
+			case task.Lineinfile != nil:
+				modReq = ModuleRequest{
+					Module: "lineinfile",
+					Args: map[string]interface{}{
+						"path":          task.Lineinfile.Path,
+						"line":          task.Lineinfile.Line,
+						"regexp":        task.Lineinfile.Regexp,
+						"search_string": task.Lineinfile.SearchString,
+						"state":         task.Lineinfile.State,
+						"backrefs":      task.Lineinfile.Backrefs,
+						"insertafter":   task.Lineinfile.InsertAfter,
+						"insertbefore":  task.Lineinfile.InsertBefore,
+						"firstmatch":    task.Lineinfile.FirstMatch,
+						"create":        task.Lineinfile.Create,
+						"backup":        task.Lineinfile.Backup,
+						"mode":          task.Lineinfile.Mode,
+						"owner":         task.Lineinfile.Owner,
+						"group":         task.Lineinfile.Group,
+						"validate":      task.Lineinfile.Validate,
+					},
+				}
+
 			default:
 				fmt.Println("    ⚠ No module specified, skipping")
 				continue
