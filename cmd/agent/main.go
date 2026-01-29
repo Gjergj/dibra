@@ -10,6 +10,7 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/apt"
 	"github.com/gjergjiramku/goansible/internal/modules/apt_key"
 	"github.com/gjergjiramku/goansible/internal/modules/apt_repository"
+	"github.com/gjergjiramku/goansible/internal/modules/blockinfile"
 	"github.com/gjergjiramku/goansible/internal/modules/command"
 	"github.com/gjergjiramku/goansible/internal/modules/copy"
 	"github.com/gjergjiramku/goansible/internal/modules/cron"
@@ -214,6 +215,14 @@ func main() {
 			return
 		}
 		writeJSON(lineinfile.Execute(req))
+
+	case "blockinfile":
+		var req blockinfile.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse blockinfile request: %v", err))
+			return
+		}
+		writeJSON(blockinfile.Execute(req))
 
 	default:
 		writeError(fmt.Sprintf("unknown module: %s", modReq.Module))
