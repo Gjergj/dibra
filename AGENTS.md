@@ -1481,6 +1481,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_Service` | Service Module Start service + idempotency |
 | `TestPlaybook_Group` | Group Module |
 | `TestPlaybook_Lineinfile` | Lineinfile Module: line add, replace, remove, backrefs, firstmatch |
+| `TestPlaybook_Blockinfile` | Blockinfile Module: block insert, update, remove, markers, insertafter/before |
 | `TestPlaybook_FullDeployWorkflow` | Full app deployment: dirs, config, symlinks |
 | `TestPlaybook_Unarchive` | Unarchive module Basic tar extraction + idempotency |
 
