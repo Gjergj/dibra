@@ -91,6 +91,7 @@ goansible/
 │       ├── copy/             # File copy (local→remote, content, remote_src)
 │       ├── fetch/            # File fetch (remote→local)
 │       ├── file/             # File/directory/symlink management
+│       ├── lineinfile/       # Line-in-file management
 │       ├── ping/             # Connectivity test module
 │       ├── stat/             # File stat (used internally by fetch)
 │       ├── uri/              # HTTP/HTTPS requests
@@ -328,6 +329,133 @@ Executes commands through a shell (`/bin/sh` by default) on the remote node. Unl
 - Non-zero return codes cause the task to fail.
 
 **Idempotency**: Use `creates` or `removes` parameters to make shell commands idempotent.
+
+### lineinfile
+
+Ensures a particular line is in a file, or replaces an existing line using a regular expression. Useful for managing single lines in configuration files.
+
+```yaml
+# Add line at end of file (default)
+- name: Add line to file
+  lineinfile:
+    path: /etc/hosts
+    line: "192.168.1.100 myserver.local"
+
+# Insert line at beginning of file
+- name: Add line at BOF
+  lineinfile:
+    path: /etc/config
+    line: "# Configuration file"
+    insertbefore: BOF
+
+# Insert after a pattern
+- name: Add setting after section header
+  lineinfile:
+    path: /etc/myapp.conf
+    line: "option = value"
+    insertafter: "\\[section\\]"
+
+# Insert before a pattern
+- name: Add setting before section
+  lineinfile:
+    path: /etc/myapp.conf
+    line: "global_option = true"
+    insertbefore: "\\[section\\]"
+
+# Replace line matching regexp
+- name: Change SSH port
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?Port"
+    line: "Port 2222"
+
+# Replace using literal string search
+- name: Replace by literal match
+  lineinfile:
+    path: /etc/config
+    search_string: "old_value"
+    line: "new_value"
+
+# Replace with backreferences
+- name: Update config with captured groups
+  lineinfile:
+    path: /etc/config
+    regexp: "^(key)=.*$"
+    line: "\\1=newvalue"
+    backrefs: true
+
+# Remove line matching pattern
+- name: Remove comment lines
+  lineinfile:
+    path: /etc/config
+    regexp: "^#.*$"
+    state: absent
+
+# Create file if it doesn't exist
+- name: Ensure line in new file
+  lineinfile:
+    path: /etc/newconfig
+    line: "setting=value"
+    create: true
+
+# Create backup before modification
+- name: Modify with backup
+  lineinfile:
+    path: /etc/important.conf
+    regexp: "^setting="
+    line: "setting=new"
+    backup: true
+
+# Replace only first matching line
+- name: Replace first match
+  lineinfile:
+    path: /etc/config
+    regexp: "^duplicate"
+    line: "replaced"
+    firstmatch: true
+
+# Validate before applying changes
+- name: Modify sudoers safely
+  lineinfile:
+    path: /etc/sudoers
+    line: "user ALL=(ALL) NOPASSWD: ALL"
+    validate: "visudo -cf %s"
+
+# Set file permissions
+- name: Add line with permissions
+  lineinfile:
+    path: /etc/secure.conf
+    line: "secret=value"
+    mode: "0600"
+    owner: root
+    group: root
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `path` | required | Path to the file to modify. |
+| `line` | | The line to insert/replace. Required for `state=present`. |
+| `regexp` | | Regex pattern to find the line to replace. Only last match is replaced (or first if `firstmatch=true`). |
+| `search_string` | | Literal string to find in the line. Mutually exclusive with `regexp`. |
+| `state` | `present` | `present` to add/replace, `absent` to remove matching lines. |
+| `backrefs` | `false` | Use regex capture groups in `line` (e.g., `\\1`). Requires `regexp`. If no match, file is unchanged. |
+| `insertafter` | `EOF` | Insert after last match of this regex. Special: `EOF` (end of file). |
+| `insertbefore` | | Insert before last match of this regex. Special: `BOF` (beginning of file). Mutually exclusive with `insertafter`. |
+| `firstmatch` | `false` | Insert after/before first match instead of last. Also affects which line `regexp` replaces. |
+| `create` | `false` | Create file if it doesn't exist. |
+| `backup` | `false` | Create timestamped backup before modifying. |
+| `validate` | | Command to validate file before applying. Use `%s` for temp file path. |
+| `mode` | | File mode (e.g., `"0644"`). |
+| `owner` | | File owner. |
+| `group` | | File group. |
+
+**Behavior Notes**:
+- When `regexp` matches: replaces the matched line with `line`
+- When `regexp` doesn't match: inserts `line` at position determined by `insertafter`/`insertbefore`
+- When `backrefs=true` and `regexp` doesn't match: file is unchanged (safe behavior)
+- `regexp` takes precedence over `insertafter`/`insertbefore` for determining replacement
+
+**Idempotency**: Checks if line already exists before adding. Replaces only if content differs.
 
 ### apt
 
@@ -1218,6 +1346,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_Systemd` | SystemD module Start service + idempotency |
 | `TestPlaybook_Service` | Service Module Start service + idempotency |
 | `TestPlaybook_Group` | Group Module |
+| `TestPlaybook_Lineinfile` | Lineinfile Module: line add, replace, remove, backrefs, firstmatch |
 | `TestPlaybook_FullDeployWorkflow` | Full app deployment: dirs, config, symlinks |
 | `TestPlaybook_Unarchive` | Unarchive module Basic tar extraction + idempotency |
 

@@ -45,6 +45,7 @@ type Task struct {
 	Shell          *ShellParams           `yaml:"shell,omitempty"`
 	Unarchive      *UnarchiveParams       `yaml:"unarchive,omitempty"`
 	Git            *GitParams             `yaml:"git,omitempty"`
+	Lineinfile     *LineinfileParams      `yaml:"lineinfile,omitempty"`
 }
 
 type ServiceFactsParams struct {
@@ -302,6 +303,24 @@ type GitParams struct {
 	Refspec          string `yaml:"refspec,omitempty"`
 	Executable       string `yaml:"executable,omitempty"`
 	SeparateGitDir   string `yaml:"separate_git_dir,omitempty"`
+}
+
+type LineinfileParams struct {
+	Path         string `yaml:"path"`
+	Line         string `yaml:"line,omitempty"`
+	Regexp       string `yaml:"regexp,omitempty"`
+	SearchString string `yaml:"search_string,omitempty"`
+	State        string `yaml:"state,omitempty"`
+	Backrefs     bool   `yaml:"backrefs"`
+	InsertAfter  string `yaml:"insertafter,omitempty"`
+	InsertBefore string `yaml:"insertbefore,omitempty"`
+	FirstMatch   bool   `yaml:"firstmatch"`
+	Create       bool   `yaml:"create"`
+	Backup       bool   `yaml:"backup"`
+	Mode         string `yaml:"mode,omitempty"`
+	Owner        string `yaml:"owner,omitempty"`
+	Group        string `yaml:"group,omitempty"`
+	Validate     string `yaml:"validate,omitempty"`
 }
 
 func (a *AptParams) GetPackages() []string {
