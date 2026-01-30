@@ -541,6 +541,65 @@ func main() {
 					},
 				}
 
+			case task.Iptables != nil:
+				iptablesArgs := map[string]interface{}{
+					"table":              task.Iptables.Table,
+					"chain":              task.Iptables.Chain,
+					"state":              task.Iptables.State,
+					"action":             task.Iptables.Action,
+					"rule_num":           task.Iptables.RuleNum,
+					"protocol":           task.Iptables.Protocol,
+					"source":             task.Iptables.Source,
+					"destination":        task.Iptables.Destination,
+					"match":              task.Iptables.Match,
+					"jump":               task.Iptables.Jump,
+					"goto":               task.Iptables.Goto,
+					"in_interface":       task.Iptables.InInterface,
+					"out_interface":      task.Iptables.OutInterface,
+					"source_port":        task.Iptables.SourcePort,
+					"destination_port":   task.Iptables.DestinationPort,
+					"destination_ports":  task.Iptables.DestinationPorts,
+					"ctstate":            task.Iptables.Ctstate,
+					"comment":            task.Iptables.Comment,
+					"icmp_type":          task.Iptables.IcmpType,
+					"fragment":           task.Iptables.Fragment,
+					"syn":                task.Iptables.Syn,
+					"limit":              task.Iptables.Limit,
+					"limit_burst":        task.Iptables.LimitBurst,
+					"log_prefix":         task.Iptables.LogPrefix,
+					"log_level":          task.Iptables.LogLevel,
+					"reject_with":        task.Iptables.RejectWith,
+					"to_destination":     task.Iptables.ToDestination,
+					"to_source":          task.Iptables.ToSource,
+					"to_ports":           task.Iptables.ToPorts,
+					"gateway":            task.Iptables.Gateway,
+					"src_range":          task.Iptables.SrcRange,
+					"dst_range":          task.Iptables.DstRange,
+					"set_counters":       task.Iptables.SetCounters,
+					"set_dscp_mark":      task.Iptables.SetDscpMark,
+					"set_dscp_mark_class": task.Iptables.SetDscpMarkClass,
+					"uid_owner":          task.Iptables.UidOwner,
+					"gid_owner":          task.Iptables.GidOwner,
+					"match_set":          task.Iptables.MatchSet,
+					"match_set_flags":    task.Iptables.MatchSetFlags,
+					"flush":              task.Iptables.Flush,
+					"policy":             task.Iptables.Policy,
+					"chain_management":   task.Iptables.ChainManagement,
+					"ip_version":         task.Iptables.IPVersion,
+					"wait":               task.Iptables.Wait,
+					"numeric":            task.Iptables.Numeric,
+				}
+				if task.Iptables.TcpFlags != nil {
+					iptablesArgs["tcp_flags"] = map[string]interface{}{
+						"flags":     task.Iptables.TcpFlags.Flags,
+						"flags_set": task.Iptables.TcpFlags.FlagsSet,
+					}
+				}
+				modReq = ModuleRequest{
+					Module: "iptables",
+					Args:   iptablesArgs,
+				}
+
 			default:
 				fmt.Println("    ⚠ No module specified, skipping")
 				continue
