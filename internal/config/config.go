@@ -47,6 +47,7 @@ type Task struct {
 	Git            *GitParams             `yaml:"git,omitempty"`
 	Lineinfile     *LineinfileParams      `yaml:"lineinfile,omitempty"`
 	Blockinfile    *BlockinfileParams     `yaml:"blockinfile,omitempty"`
+	Iptables       *IptablesParams        `yaml:"iptables,omitempty"`
 }
 
 type ServiceFactsParams struct {
@@ -341,6 +342,60 @@ type BlockinfileParams struct {
 	Validate       string `yaml:"validate,omitempty"`
 	PrependNewline bool   `yaml:"prepend_newline"`
 	AppendNewline  bool   `yaml:"append_newline"`
+}
+
+type TcpFlagsParams struct {
+	Flags    []string `yaml:"flags,omitempty"`
+	FlagsSet []string `yaml:"flags_set,omitempty"`
+}
+
+type IptablesParams struct {
+	Table            string          `yaml:"table,omitempty"`
+	Chain            string          `yaml:"chain,omitempty"`
+	State            string          `yaml:"state,omitempty"`
+	Action           string          `yaml:"action,omitempty"`
+	RuleNum          int             `yaml:"rule_num,omitempty"`
+	Protocol         string          `yaml:"protocol,omitempty"`
+	Source           string          `yaml:"source,omitempty"`
+	Destination      string          `yaml:"destination,omitempty"`
+	Match            []string        `yaml:"match,omitempty"`
+	Jump             string          `yaml:"jump,omitempty"`
+	Goto             string          `yaml:"goto,omitempty"`
+	InInterface      string          `yaml:"in_interface,omitempty"`
+	OutInterface     string          `yaml:"out_interface,omitempty"`
+	SourcePort       string          `yaml:"source_port,omitempty"`
+	DestinationPort  string          `yaml:"destination_port,omitempty"`
+	DestinationPorts []string        `yaml:"destination_ports,omitempty"`
+	Ctstate          []string        `yaml:"ctstate,omitempty"`
+	Comment          string          `yaml:"comment,omitempty"`
+	IcmpType         string          `yaml:"icmp_type,omitempty"`
+	Fragment         string          `yaml:"fragment,omitempty"`
+	TcpFlags         *TcpFlagsParams `yaml:"tcp_flags,omitempty"`
+	Syn              string          `yaml:"syn,omitempty"`
+	Limit            string          `yaml:"limit,omitempty"`
+	LimitBurst       string          `yaml:"limit_burst,omitempty"`
+	LogPrefix        string          `yaml:"log_prefix,omitempty"`
+	LogLevel         string          `yaml:"log_level,omitempty"`
+	RejectWith       string          `yaml:"reject_with,omitempty"`
+	ToDestination    string          `yaml:"to_destination,omitempty"`
+	ToSource         string          `yaml:"to_source,omitempty"`
+	ToPorts          string          `yaml:"to_ports,omitempty"`
+	Gateway          string          `yaml:"gateway,omitempty"`
+	SrcRange         string          `yaml:"src_range,omitempty"`
+	DstRange         string          `yaml:"dst_range,omitempty"`
+	SetCounters      string          `yaml:"set_counters,omitempty"`
+	SetDscpMark      string          `yaml:"set_dscp_mark,omitempty"`
+	SetDscpMarkClass string          `yaml:"set_dscp_mark_class,omitempty"`
+	UidOwner         string          `yaml:"uid_owner,omitempty"`
+	GidOwner         string          `yaml:"gid_owner,omitempty"`
+	MatchSet         string          `yaml:"match_set,omitempty"`
+	MatchSetFlags    string          `yaml:"match_set_flags,omitempty"`
+	Flush            bool            `yaml:"flush,omitempty"`
+	Policy           string          `yaml:"policy,omitempty"`
+	ChainManagement  bool            `yaml:"chain_management,omitempty"`
+	IPVersion        string          `yaml:"ip_version,omitempty"`
+	Wait             int             `yaml:"wait,omitempty"`
+	Numeric          bool            `yaml:"numeric,omitempty"`
 }
 
 func (a *AptParams) GetPackages() []string {

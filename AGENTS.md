@@ -98,7 +98,8 @@ goansible/
 │       ├── cron/             # Crontab management
 │       ├── service/          # Generic service management
 │       ├── user/             # User account management
-│       └── group/            # Group management
+│       ├── group/            # Group management
+│       └── iptables/         # Iptables firewall rule management
 ├── test/
 │   ├── Dockerfile            # Ubuntu 22.04 + systemd + SSH
 │   ├── docker-compose.yaml   # Test container orchestration
@@ -1345,6 +1346,221 @@ Manages groups on the system.
 - `non_unique` requires `gid` to be specified.
 - System groups typically have GID < 1000.
 
+### iptables
+
+Manages iptables firewall rules. Supports IPv4 (iptables) and IPv6 (ip6tables), all tables (filter, nat, mangle, raw, security), chain management, policies, and rule CRUD operations with idempotency via the `-C` (check) flag.
+
+```yaml
+# Basic rule - allow SSH
+- name: Allow SSH
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "22"
+    jump: ACCEPT
+
+# Drop traffic from malicious IP
+- name: Block bad IP
+  iptables:
+    chain: INPUT
+    source: 192.168.100.50
+    jump: DROP
+
+# Rule with comment
+- name: Allow HTTP with comment
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "80"
+    jump: ACCEPT
+    comment: "Allow HTTP traffic"
+
+# Connection tracking (stateful firewall)
+- name: Allow established connections
+  iptables:
+    chain: INPUT
+    ctstate:
+      - ESTABLISHED
+      - RELATED
+    jump: ACCEPT
+
+# Multiple destination ports (multiport)
+- name: Allow web ports
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_ports:
+      - "80"
+      - "443"
+      - "8080"
+    jump: ACCEPT
+
+# NAT - DNAT port forwarding
+- name: Forward port 8080 to internal server
+  iptables:
+    table: nat
+    chain: PREROUTING
+    protocol: tcp
+    destination_port: "8080"
+    jump: DNAT
+    to_destination: "192.168.1.100:80"
+
+# NAT - Masquerade (source NAT)
+- name: Masquerade outgoing traffic
+  iptables:
+    table: nat
+    chain: POSTROUTING
+    source: 192.168.0.0/24
+    out_interface: eth0
+    jump: MASQUERADE
+
+# Set chain policy
+- name: Set INPUT policy to DROP
+  iptables:
+    chain: INPUT
+    policy: DROP
+
+# Flush chain
+- name: Flush INPUT chain
+  iptables:
+    chain: INPUT
+    flush: true
+
+# Create custom chain
+- name: Create LOGDROP chain
+  iptables:
+    chain: LOGDROP
+    chain_management: true
+    state: present
+
+# Delete custom chain
+- name: Delete custom chain
+  iptables:
+    chain: LOGDROP
+    chain_management: true
+    state: absent
+
+# Insert rule at specific position
+- name: Insert SSH rule at top
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "22"
+    jump: ACCEPT
+    action: insert
+    rule_num: 1
+
+# Remove a rule
+- name: Remove old rule
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "8080"
+    jump: ACCEPT
+    state: absent
+
+# Rate limiting
+- name: Rate limit SSH connections
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "22"
+    limit: 3/minute
+    limit_burst: "5"
+    jump: ACCEPT
+
+# Logging
+- name: Log dropped packets
+  iptables:
+    chain: INPUT
+    jump: LOG
+    log_prefix: "DROPPED: "
+    log_level: warning
+
+# REJECT with ICMP message
+- name: Reject with port unreachable
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "23"
+    jump: REJECT
+    reject_with: icmp-port-unreachable
+
+# ICMP rules
+- name: Allow ping
+  iptables:
+    chain: INPUT
+    protocol: icmp
+    icmp_type: echo-request
+    jump: ACCEPT
+
+# Interface matching
+- name: Allow all traffic on loopback
+  iptables:
+    chain: INPUT
+    in_interface: lo
+    jump: ACCEPT
+
+# Source negation
+- name: Allow from all except specific IP
+  iptables:
+    chain: INPUT
+    source: "!192.168.1.100"
+    protocol: tcp
+    destination_port: "80"
+    jump: ACCEPT
+
+# Goto custom chain
+- name: Goto LOGDROP chain
+  iptables:
+    chain: INPUT
+    source: 10.0.0.0/8
+    goto: LOGDROP
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `table` | `filter` | Table to operate on: `filter`, `nat`, `mangle`, `raw`, `security`. |
+| `chain` | required | Chain to operate on (INPUT, OUTPUT, FORWARD, PREROUTING, POSTROUTING, or custom). |
+| `state` | `present` | `present` to add rule, `absent` to remove. |
+| `action` | `append` | `append` or `insert`. |
+| `rule_num` | | Insert position (only with `action=insert`). |
+| `protocol` | | Protocol: `tcp`, `udp`, `icmp`, `all`, etc. |
+| `source` | | Source address/network. Prefix with `!` to negate. |
+| `destination` | | Destination address/network. Prefix with `!` to negate. |
+| `source_port` | | Source port or range (e.g., `1024:65535`). |
+| `destination_port` | | Destination port or range. |
+| `destination_ports` | | Multiple ports (uses multiport extension). |
+| `in_interface` | | Input interface (e.g., `eth0`, `lo`). |
+| `out_interface` | | Output interface. |
+| `jump` | | Target: `ACCEPT`, `DROP`, `REJECT`, `LOG`, `DNAT`, `SNAT`, `MASQUERADE`, etc. |
+| `goto` | | Goto user-defined chain (instead of jump). |
+| `ctstate` | | Connection tracking states: `NEW`, `ESTABLISHED`, `RELATED`, `INVALID`. |
+| `comment` | | Comment for the rule (uses comment extension). |
+| `match` | | Explicit match extensions to load. |
+| `icmp_type` | | ICMP type (e.g., `echo-request`). |
+| `limit` | | Rate limit (e.g., `5/second`, `100/minute`). |
+| `limit_burst` | | Burst limit for rate limiting. |
+| `log_prefix` | | Prefix for LOG messages. |
+| `log_level` | | Log level (e.g., `warning`, `info`). |
+| `reject_with` | | ICMP type for REJECT (e.g., `icmp-port-unreachable`). |
+| `to_destination` | | DNAT destination (e.g., `192.168.1.1:80`). |
+| `to_source` | | SNAT source address. |
+| `to_ports` | | Port translation for NAT. |
+| `flush` | `false` | Flush all rules from chain (or entire table if no chain). |
+| `policy` | | Set chain policy: `ACCEPT`, `DROP`, `QUEUE`, `RETURN`. |
+| `chain_management` | `false` | Create/delete custom chains. |
+| `ip_version` | `ipv4` | `ipv4`, `ipv6`, or `both`. |
+| `wait` | `0` | Seconds to wait for xtables lock. |
+
+**Idempotency**: Uses `iptables -C` (check) to verify if rule exists before adding/removing.
+
+**Safe Deployment Pattern**:
+1. Keep default policy as ACCEPT (prevents lockout on flush)
+2. Add permissive rules (SSH, established connections) first
+3. Add restrictive rules (DROP) last
+4. Use explicit DROP rule at end instead of DROP policy
+
 ## Playbook Format
 
 ```yaml
@@ -1482,6 +1698,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_Group` | Group Module |
 | `TestPlaybook_Lineinfile` | Lineinfile Module: line add, replace, remove, backrefs, firstmatch |
 | `TestPlaybook_Blockinfile` | Blockinfile Module: block insert, update, remove, markers, insertafter/before |
+| `TestPlaybook_Iptables` | Iptables Module: rules, chains, tables, NAT, policies, flush |
 | `TestPlaybook_FullDeployWorkflow` | Full app deployment: dirs, config, symlinks |
 | `TestPlaybook_Unarchive` | Unarchive module Basic tar extraction + idempotency |
 
