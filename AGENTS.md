@@ -1561,6 +1561,105 @@ Manages iptables firewall rules. Supports IPv4 (iptables) and IPv6 (ip6tables), 
 3. Add restrictive rules (DROP) last
 4. Use explicit DROP rule at end instead of DROP policy
 
+### iptables_state
+
+Saves iptables state to a file or restores from a file. Uses `iptables-save` and `iptables-restore` internally. Supports saving/restoring specific tables and idempotent operations.
+
+```yaml
+# Save current iptables state to a file
+- name: Save iptables rules
+  iptables_state:
+    path: /etc/iptables/rules.v4
+    state: saved
+
+# Save only filter table
+- name: Save filter table
+  iptables_state:
+    path: /etc/iptables/filter.rules
+    state: saved
+    table: filter
+
+# Restore iptables state from a file
+- name: Restore iptables rules
+  iptables_state:
+    path: /etc/iptables/rules.v4
+    state: restored
+
+# Restore without flushing existing rules
+- name: Append rules from file
+  iptables_state:
+    path: /etc/iptables/extra.rules
+    state: restored
+    noflush: true
+
+# Restore specific table from file
+- name: Restore only nat table
+  iptables_state:
+    path: /etc/iptables/rules.v4
+    state: restored
+    table: nat
+
+# Save with counters (non-idempotent)
+- name: Save with packet counters
+  iptables_state:
+    path: /tmp/iptables-counters.save
+    state: saved
+    counters: true
+
+# IPv6 rules
+- name: Save IPv6 rules
+  iptables_state:
+    path: /etc/iptables/rules.v6
+    state: saved
+    ip_version: ipv6
+
+# Get current state without saving (check_mode pattern)
+- name: Get current state
+  iptables_state:
+    path: /tmp/current.rules
+    state: saved
+  register: iptables_state
+  check_mode: true
+  changed_when: false
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `path` | required | Path to save or restore iptables state file. |
+| `state` | required | `saved` to save state to file, `restored` to restore from file. |
+| `table` | | Specific table to save/restore: `filter`, `nat`, `mangle`, `raw`, `security`. If not specified, all tables are used. |
+| `counters` | `false` | Save/restore packet and byte counters. When true, module is not idempotent. |
+| `noflush` | `false` | For `state=restored`: don't flush existing rules before restoring. Policies are still updated. |
+| `ip_version` | `ipv4` | `ipv4` or `ipv6`. |
+| `wait` | `0` | Seconds to wait for xtables lock. |
+| `modprobe` | | Path to modprobe program for loading kernel modules. |
+
+**Returns**:
+```json
+{
+  "changed": true,
+  "applied": true,
+  "initial_state": ["*filter", ":INPUT ACCEPT [0:0]", ...],
+  "saved": ["*filter", ":INPUT ACCEPT [0:0]", ...],
+  "restored": ["*filter", ":INPUT DROP [0:0]", ...],
+  "tables": {
+    "filter": [":INPUT ACCEPT", ":FORWARD ACCEPT", "-A INPUT -j ACCEPT"],
+    "nat": [":PREROUTING ACCEPT", ":POSTROUTING ACCEPT"]
+  }
+}
+```
+
+**Idempotency**:
+- For `state=saved`: Compares file content with current state (excluding timestamps/counters)
+- For `state=restored`: Compares current state with file content for specified tables
+- Returns `changed: false` if states already match
+
+**Notes**:
+- Requires `iptables-save` and `iptables-restore` (or `ip6tables-save`/`ip6tables-restore` for IPv6)
+- Saved files have mode 0600 for security
+- When restoring a partial file (only some tables), only those tables are compared/restored
+- Use `table` parameter to work with specific tables without affecting others
+
 ## Playbook Format
 
 ```yaml
@@ -1699,6 +1798,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_Lineinfile` | Lineinfile Module: line add, replace, remove, backrefs, firstmatch |
 | `TestPlaybook_Blockinfile` | Blockinfile Module: block insert, update, remove, markers, insertafter/before |
 | `TestPlaybook_Iptables` | Iptables Module: rules, chains, tables, NAT, policies, flush |
+| `TestPlaybook_IptablesState` | Iptables State Module: save, restore, tables, idempotency |
 | `TestPlaybook_FullDeployWorkflow` | Full app deployment: dirs, config, symlinks |
 | `TestPlaybook_Unarchive` | Unarchive module Basic tar extraction + idempotency |
 

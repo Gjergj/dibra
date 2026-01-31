@@ -48,6 +48,7 @@ type Task struct {
 	Lineinfile     *LineinfileParams      `yaml:"lineinfile,omitempty"`
 	Blockinfile    *BlockinfileParams     `yaml:"blockinfile,omitempty"`
 	Iptables       *IptablesParams        `yaml:"iptables,omitempty"`
+	IptablesState  *IptablesStateParams   `yaml:"iptables_state,omitempty"`
 }
 
 type ServiceFactsParams struct {
@@ -347,6 +348,17 @@ type BlockinfileParams struct {
 type TcpFlagsParams struct {
 	Flags    []string `yaml:"flags,omitempty"`
 	FlagsSet []string `yaml:"flags_set,omitempty"`
+}
+
+type IptablesStateParams struct {
+	Path      string `yaml:"path"`
+	State     string `yaml:"state"`
+	Table     string `yaml:"table,omitempty"`
+	Counters  bool   `yaml:"counters,omitempty"`
+	Noflush   bool   `yaml:"noflush,omitempty"`
+	IPVersion string `yaml:"ip_version,omitempty"`
+	Wait      int    `yaml:"wait,omitempty"`
+	Modprobe  string `yaml:"modprobe,omitempty"`
 }
 
 type IptablesParams struct {

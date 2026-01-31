@@ -541,6 +541,21 @@ func main() {
 					},
 				}
 
+			case task.IptablesState != nil:
+				modReq = ModuleRequest{
+					Module: "iptables_state",
+					Args: map[string]interface{}{
+						"path":       task.IptablesState.Path,
+						"state":      task.IptablesState.State,
+						"table":      task.IptablesState.Table,
+						"counters":   task.IptablesState.Counters,
+						"noflush":    task.IptablesState.Noflush,
+						"ip_version": task.IptablesState.IPVersion,
+						"wait":       task.IptablesState.Wait,
+						"modprobe":   task.IptablesState.Modprobe,
+					},
+				}
+
 			case task.Iptables != nil:
 				iptablesArgs := map[string]interface{}{
 					"table":              task.Iptables.Table,
