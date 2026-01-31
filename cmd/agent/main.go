@@ -18,6 +18,7 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/git"
 	"github.com/gjergjiramku/goansible/internal/modules/group"
 	"github.com/gjergjiramku/goansible/internal/modules/iptables"
+	"github.com/gjergjiramku/goansible/internal/modules/iptables_state"
 	"github.com/gjergjiramku/goansible/internal/modules/lineinfile"
 	"github.com/gjergjiramku/goansible/internal/modules/ping"
 	"github.com/gjergjiramku/goansible/internal/modules/service"
@@ -232,6 +233,14 @@ func main() {
 			return
 		}
 		writeJSON(iptables.Execute(req))
+
+	case "iptables_state":
+		var req iptables_state.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse iptables_state request: %v", err))
+			return
+		}
+		writeJSON(iptables_state.Execute(req))
 
 	default:
 		writeError(fmt.Sprintf("unknown module: %s", modReq.Module))
