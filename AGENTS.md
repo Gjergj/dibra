@@ -94,6 +94,7 @@ goansible/
 │       ├── lineinfile/       # Line-in-file management
 │       ├── ping/             # Connectivity test module
 │       ├── stat/             # File stat (used internally by fetch)
+│       ├── tempfile/         # Temporary file/directory creation
 │       ├── uri/              # HTTP/HTTPS requests
 │       ├── cron/             # Crontab management
 │       ├── service/          # Generic service management
@@ -908,6 +909,58 @@ Internal module used by fetch. Gets file metadata and checksum.
     path: /etc/myapp/config.yaml
     follow: true  # Follow symlinks
 ```
+
+### tempfile
+
+Creates temporary files and directories. Files/directories created by this module are accessible only by the creator.
+
+```yaml
+# Create a temporary file with defaults
+- name: Create temp file
+  tempfile:
+
+# Create a temporary directory
+- name: Create temp directory
+  tempfile:
+    state: directory
+
+# Create temp file with custom prefix and suffix
+- name: Create temp config file
+  tempfile:
+    prefix: myapp.
+    suffix: .conf
+
+# Create temp file in specific directory
+- name: Create temp file in /var/tmp
+  tempfile:
+    path: /var/tmp
+    prefix: myapp.
+    suffix: .tmp
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `state` | `file` | `file` to create a temporary file, `directory` to create a temporary directory. |
+| `path` | | Directory where the temp file/directory should be created. Defaults to system temp directory. |
+| `prefix` | `ansible.` | Prefix for the generated file/directory name. |
+| `suffix` | `""` | Suffix for the generated file/directory name. |
+
+**Returns**:
+```json
+{
+  "changed": true,
+  "path": "/tmp/ansible.abc123",
+  "state": "file"
+}
+```
+
+**Notes**:
+- Always returns `changed: true` since a new file/directory is created each time
+- Created files have mode 0600, directories have mode 0700
+- The `path` directory must exist; the module will fail if it doesn't
+- Use the `file` module with `state: absent` to clean up temp files/directories
+
+**Idempotency**: This module is NOT idempotent - it creates a new unique file/directory on each run.
 
 ### uri
 
@@ -1801,6 +1854,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_IptablesState` | Iptables State Module: save, restore, tables, idempotency |
 | `TestPlaybook_FullDeployWorkflow` | Full app deployment: dirs, config, symlinks |
 | `TestPlaybook_Unarchive` | Unarchive module Basic tar extraction + idempotency |
+| `TestPlaybook_Tempfile` | Tempfile module: file/directory creation, prefix/suffix, custom path, permissions |
 
 Each test:
 1. Runs a playbook via `go run ./cmd/controller`
