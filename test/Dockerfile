@@ -16,6 +16,12 @@ RUN apt-get update && apt-get install -y \
     ufw \
     iptables \
     git \
+    zip \
+    unzip \
+    bzip2 \
+    xz-utils \
+    cowsay \
+    nginx \
     && rm -rf /var/lib/apt/lists/*
 
 RUN cd /lib/systemd/system/sysinit.target.wants/ && \
