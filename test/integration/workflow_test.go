@@ -113,16 +113,14 @@ func TestWorkflow_PackageAndConfigDeployment(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	// Cleanup before test
-	client.Run("apt-get remove -y cowsay 2>/dev/null || true")
+	// Cleanup before test (don't remove cowsay - it's pre-installed and can't be reinstalled without network)
 	client.Run("rm -rf /etc/goansible-test-cowsay")
 
 	playbook := playbookHeader + `
-  - name: Install cowsay package
+  - name: Ensure cowsay package is present
     apt:
       name: cowsay
       state: present
-      update_cache: true
 
   - name: Create config directory
     file:
@@ -166,8 +164,7 @@ func TestWorkflow_PackageAndConfigDeployment(t *testing.T) {
 		t.Errorf("Idempotent run failed: %s", output)
 	}
 
-	// Cleanup
-	client.Run("apt-get remove -y cowsay")
+	// Cleanup (keep cowsay installed for future test runs)
 	client.Run("rm -rf /etc/goansible-test-cowsay")
 }
 
@@ -187,7 +184,7 @@ func TestWorkflow_DownloadAndDeploy(t *testing.T) {
 
   - name: Download sample file from internet
     uri:
-      url: https://httpbin.org/robots.txt
+      url: http://httpbin:80/robots.txt
       dest: /opt/goansible-download-test/robots.txt
 
   - name: Create bin directory
@@ -902,8 +899,7 @@ func TestWorkflow_WebServerSetup(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	// Cleanup
-	client.Run("apt-get remove -y nginx 2>/dev/null || true")
+	// Cleanup (don't remove nginx - it's pre-installed and can't be reinstalled without network)
 	client.Run("rm -rf /var/www/goansible-test")
 	client.Run("rm -f /etc/nginx/sites-available/goansible-test")
 	client.Run("rm -f /etc/nginx/sites-enabled/goansible-test")
@@ -991,11 +987,10 @@ func TestWorkflow_WebServerSetup(t *testing.T) {
 		t.Errorf("Expected idempotent run, got %d changes", changedCount)
 	}
 
-	// Cleanup
+	// Cleanup (keep nginx installed for future test runs)
 	client.Run("rm -f /etc/nginx/sites-enabled/goansible-test")
 	client.Run("rm -f /etc/nginx/sites-available/goansible-test")
 	client.Run("rm -rf /var/www/goansible-test")
-	client.Run("apt-get remove -y nginx")
 }
 
 func TestWorkflow_MultiStepDatabaseSetup(t *testing.T) {

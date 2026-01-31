@@ -8,11 +8,14 @@ import (
 	"testing"
 )
 
+// httpbinURL is the base URL for the httpbin service running in the test docker network
+const httpbinURL = "http://httpbin:80"
+
 func TestPlaybook_URIGet(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Make GET request
     uri:
-      url: https://httpbin.org/get
+      url: http://httpbin:80/get
       return_content: true
 `
 	output := runPlaybook(t, playbook)
@@ -29,7 +32,7 @@ func TestPlaybook_URIPost(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Make POST request with JSON body
     uri:
-      url: https://httpbin.org/post
+      url: http://httpbin:80/post
       method: POST
       body: '{"key": "value", "number": 42}'
       body_format: json
@@ -49,7 +52,7 @@ func TestPlaybook_URIStatusCode(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Accept 404 as success
     uri:
-      url: https://httpbin.org/status/404
+      url: http://httpbin:80/status/404
       status_code:
         - 404
 `
@@ -64,7 +67,7 @@ func TestPlaybook_URIStatusCodeFail(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Fail on unexpected status
     uri:
-      url: https://httpbin.org/status/500
+      url: http://httpbin:80/status/500
 `
 	output := runPlaybook(t, playbook)
 
@@ -77,7 +80,7 @@ func TestPlaybook_URIHeaders(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Request with custom headers
     uri:
-      url: https://httpbin.org/headers
+      url: http://httpbin:80/headers
       headers:
         X-Custom-Header: "test-value"
         Accept: "application/json"
@@ -100,7 +103,7 @@ func TestPlaybook_URIDownload(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Download file via URI
     uri:
-      url: https://httpbin.org/robots.txt
+      url: http://httpbin:80/robots.txt
       dest: /tmp/goansible-uri-download.txt
 `
 	output := runPlaybook(t, playbook)
@@ -130,7 +133,7 @@ func TestPlaybook_URICreates(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Skip request if file exists
     uri:
-      url: https://httpbin.org/get
+      url: http://httpbin:80/get
       creates: /tmp/goansible-uri-creates-marker
 `
 	output := runPlaybook(t, playbook)
@@ -150,7 +153,7 @@ func TestPlaybook_URITimeout(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Request with short timeout
     uri:
-      url: https://httpbin.org/delay/5
+      url: http://httpbin:80/delay/5
       timeout: 2
 `
 	output := runPlaybook(t, playbook)
@@ -167,7 +170,7 @@ func TestPlaybook_URIFollowRedirects(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Follow redirect
     uri:
-      url: https://httpbin.org/redirect/1
+      url: http://httpbin:80/redirect/1
       follow_redirects: all
       status_code:
         - 200
@@ -183,7 +186,7 @@ func TestPlaybook_URINoFollowRedirects(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Do not follow redirect
     uri:
-      url: https://httpbin.org/redirect/1
+      url: http://httpbin:80/redirect/1
       follow_redirects: none
       status_code:
         - 302
@@ -199,7 +202,7 @@ func TestPlaybook_URIPut(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Make PUT request
     uri:
-      url: https://httpbin.org/put
+      url: http://httpbin:80/put
       method: PUT
       body: '{"update": "data"}'
       body_format: json
@@ -219,7 +222,7 @@ func TestPlaybook_URIPatch(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Make PATCH request
     uri:
-      url: https://httpbin.org/patch
+      url: http://httpbin:80/patch
       method: PATCH
       body: '{"partial": "update"}'
       body_format: json
@@ -239,7 +242,7 @@ func TestPlaybook_URIDelete(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Make DELETE request
     uri:
-      url: https://httpbin.org/delete
+      url: http://httpbin:80/delete
       method: DELETE
       return_content: true
 `
@@ -257,7 +260,7 @@ func TestPlaybook_URIFormUrlencoded(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Make POST request with form data
     uri:
-      url: https://httpbin.org/post
+      url: http://httpbin:80/post
       method: POST
       body: "username=testuser&password=testpass"
       body_format: form-urlencoded
@@ -277,7 +280,7 @@ func TestPlaybook_URIBasicAuth(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Make request with basic auth
     uri:
-      url: https://httpbin.org/basic-auth/testuser/testpass
+      url: http://httpbin:80/basic-auth/testuser/testpass
       url_username: testuser
       url_password: testpass
       force_basic_auth: true
@@ -297,7 +300,7 @@ func TestPlaybook_URIBasicAuthFailed(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Make request with wrong credentials
     uri:
-      url: https://httpbin.org/basic-auth/testuser/testpass
+      url: http://httpbin:80/basic-auth/testuser/testpass
       url_username: wronguser
       url_password: wrongpass
       force_basic_auth: true
@@ -313,7 +316,7 @@ func TestPlaybook_URIMultipleStatusCodes(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Accept multiple status codes
     uri:
-      url: https://httpbin.org/status/201
+      url: http://httpbin:80/status/201
       status_code:
         - 200
         - 201
@@ -337,7 +340,7 @@ func TestPlaybook_URIDownloadToDirectory(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Download file to directory
     uri:
-      url: https://httpbin.org/robots.txt
+      url: http://httpbin:80/robots.txt
       dest: /tmp/goansible-uri-download-dir
 `
 	output := runPlaybook(t, playbook)
@@ -364,7 +367,7 @@ func TestPlaybook_URIDownloadCreatesParentDirs(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Download file to nested path
     uri:
-      url: https://httpbin.org/robots.txt
+      url: http://httpbin:80/robots.txt
       dest: /tmp/goansible-uri-nested/subdir/download.txt
 `
 	output := runPlaybook(t, playbook)
@@ -388,7 +391,7 @@ func TestPlaybook_URIGetNotChanged(t *testing.T) {
 	playbook := playbookHeader + `
   - name: GET request should not be changed
     uri:
-      url: https://httpbin.org/get
+      url: http://httpbin:80/get
 `
 	output := runPlaybook(t, playbook)
 
@@ -404,7 +407,7 @@ func TestPlaybook_URIHeadRequest(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Make HEAD request
     uri:
-      url: https://httpbin.org/get
+      url: http://httpbin:80/get
       method: HEAD
 `
 	output := runPlaybook(t, playbook)
@@ -422,7 +425,7 @@ func TestPlaybook_URISafeRedirectPost(t *testing.T) {
 	playbook := playbookHeader + `
   - name: POST with safe redirect mode
     uri:
-      url: https://httpbin.org/redirect-to?url=https://httpbin.org/post&status_code=307
+      url: http://httpbin:80/redirect-to?url=http://httpbin:80/post&status_code=307
       method: POST
       body: '{"test": "data"}'
       body_format: json
@@ -441,7 +444,7 @@ func TestPlaybook_URIMultipleRedirects(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Follow multiple redirects
     uri:
-      url: https://httpbin.org/redirect/3
+      url: http://httpbin:80/redirect/3
       follow_redirects: all
       status_code:
         - 200
@@ -457,7 +460,7 @@ func TestPlaybook_URIAbsoluteRedirect(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Follow absolute redirect
     uri:
-      url: https://httpbin.org/absolute-redirect/1
+      url: http://httpbin:80/absolute-redirect/1
       follow_redirects: all
       status_code:
         - 200
@@ -473,7 +476,7 @@ func TestPlaybook_URIUserAgent(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Request with custom User-Agent
     uri:
-      url: https://httpbin.org/user-agent
+      url: http://httpbin:80/user-agent
       headers:
         User-Agent: "CustomAgent/1.0"
       return_content: true
@@ -489,7 +492,7 @@ func TestPlaybook_URIAcceptHeader(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Request with Accept header
     uri:
-      url: https://httpbin.org/headers
+      url: http://httpbin:80/headers
       headers:
         Accept: "application/xml"
       return_content: true
@@ -505,7 +508,7 @@ func TestPlaybook_URIResponseHeaders(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Check response headers
     uri:
-      url: https://httpbin.org/response-headers?X-Test-Header=test-value
+      url: http://httpbin:80/response-headers?X-Test-Header=test-value
       return_content: true
 `
 	output := runPlaybook(t, playbook)
@@ -519,7 +522,7 @@ func TestPlaybook_URIGzip(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Request gzip endpoint
     uri:
-      url: https://httpbin.org/gzip
+      url: http://httpbin:80/gzip
       return_content: true
 `
 	output := runPlaybook(t, playbook)
@@ -533,7 +536,7 @@ func TestPlaybook_URIDeflate(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Request deflate endpoint
     uri:
-      url: https://httpbin.org/deflate
+      url: http://httpbin:80/deflate
       return_content: true
 `
 	output := runPlaybook(t, playbook)
@@ -547,7 +550,7 @@ func TestPlaybook_URIJsonResponse(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Get JSON response
     uri:
-      url: https://httpbin.org/json
+      url: http://httpbin:80/json
       return_content: true
 `
 	output := runPlaybook(t, playbook)
@@ -579,7 +582,7 @@ func TestPlaybook_URIStatusCodes(t *testing.T) {
 			playbook := playbookHeader + fmt.Sprintf(`
   - name: Test status code %d
     uri:
-      url: https://httpbin.org/status/%d
+      url: http://httpbin:80/status/%d
       status_code:
         - %d
 `, tc.code, tc.code, tc.code)
@@ -602,7 +605,7 @@ func TestPlaybook_URICreatesNonExistent(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Request when creates file does not exist
     uri:
-      url: https://httpbin.org/get
+      url: http://httpbin:80/get
       creates: /tmp/goansible-uri-creates-nonexistent
       return_content: true
 `
@@ -621,7 +624,7 @@ func TestPlaybook_URIBytes(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Request bytes endpoint
     uri:
-      url: https://httpbin.org/bytes/100
+      url: http://httpbin:80/bytes/100
 `
 	output := runPlaybook(t, playbook)
 
@@ -640,7 +643,7 @@ func TestPlaybook_URIImage(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Download image
     uri:
-      url: https://httpbin.org/image/png
+      url: http://httpbin:80/image/png
       dest: /tmp/goansible-uri-image.png
 `
 	output := runPlaybook(t, playbook)
@@ -660,7 +663,7 @@ func TestPlaybook_URIDelay(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Request with delay
     uri:
-      url: https://httpbin.org/delay/1
+      url: http://httpbin:80/delay/1
       timeout: 10
 `
 	output := runPlaybook(t, playbook)
@@ -674,7 +677,7 @@ func TestPlaybook_URIAnything(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Test anything endpoint
     uri:
-      url: https://httpbin.org/anything
+      url: http://httpbin:80/anything
       method: POST
       body: '{"anything": "works"}'
       body_format: json
@@ -694,7 +697,7 @@ func TestPlaybook_URIUuid(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Get UUID
     uri:
-      url: https://httpbin.org/uuid
+      url: http://httpbin:80/uuid
       return_content: true
 `
 	output := runPlaybook(t, playbook)
@@ -708,7 +711,7 @@ func TestPlaybook_URIIp(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Get IP address
     uri:
-      url: https://httpbin.org/ip
+      url: http://httpbin:80/ip
       return_content: true
 `
 	output := runPlaybook(t, playbook)
@@ -722,7 +725,7 @@ func TestPlaybook_URIQueryParams(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Request with query parameters
     uri:
-      url: "https://httpbin.org/get?param1=value1&param2=value2"
+      url: "http://httpbin:80/get?param1=value1&param2=value2"
       return_content: true
 `
 	output := runPlaybook(t, playbook)
@@ -736,7 +739,7 @@ func TestPlaybook_URIPostRawBody(t *testing.T) {
 	playbook := playbookHeader + `
   - name: POST with raw body
     uri:
-      url: https://httpbin.org/post
+      url: http://httpbin:80/post
       method: POST
       body: "This is raw text content"
       return_content: true
@@ -755,7 +758,7 @@ func TestPlaybook_URIEmptyBody(t *testing.T) {
 	playbook := playbookHeader + `
   - name: POST with empty body
     uri:
-      url: https://httpbin.org/post
+      url: http://httpbin:80/post
       method: POST
 `
 	output := runPlaybook(t, playbook)
@@ -772,7 +775,7 @@ func TestPlaybook_URILargeResponse(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Request large response
     uri:
-      url: https://httpbin.org/bytes/10000
+      url: http://httpbin:80/bytes/10000
 `
 	output := runPlaybook(t, playbook)
 
@@ -785,7 +788,7 @@ func TestPlaybook_URIContentTypeOverride(t *testing.T) {
 	playbook := playbookHeader + `
   - name: POST with custom Content-Type
     uri:
-      url: https://httpbin.org/post
+      url: http://httpbin:80/post
       method: POST
       body: "<xml>data</xml>"
       headers:
@@ -803,7 +806,7 @@ func TestPlaybook_URICookies(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Set cookies
     uri:
-      url: https://httpbin.org/cookies/set?name=value
+      url: http://httpbin:80/cookies/set?name=value
       follow_redirects: all
       return_content: true
 `
@@ -818,7 +821,7 @@ func TestPlaybook_URIBase64(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Decode base64
     uri:
-      url: https://httpbin.org/base64/SGVsbG8gV29ybGQ=
+      url: http://httpbin:80/base64/SGVsbG8gV29ybGQ=
       return_content: true
 `
 	output := runPlaybook(t, playbook)
@@ -832,7 +835,7 @@ func TestPlaybook_URIDrip(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Request drip endpoint (streaming)
     uri:
-      url: https://httpbin.org/drip?duration=1&numbytes=5&code=200
+      url: http://httpbin:80/drip?duration=1&numbytes=5&code=200
       timeout: 10
 `
 	output := runPlaybook(t, playbook)
@@ -852,7 +855,7 @@ func TestPlaybook_URIDownloadIdempotent(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Download file
     uri:
-      url: https://httpbin.org/robots.txt
+      url: http://httpbin:80/robots.txt
       dest: /tmp/goansible-uri-idempotent.txt
 `
 	// First run
