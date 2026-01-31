@@ -26,6 +26,7 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/shell"
 	"github.com/gjergjiramku/goansible/internal/modules/stat"
 	"github.com/gjergjiramku/goansible/internal/modules/systemd_service"
+	"github.com/gjergjiramku/goansible/internal/modules/tempfile"
 	"github.com/gjergjiramku/goansible/internal/modules/ufw"
 	"github.com/gjergjiramku/goansible/internal/modules/unarchive"
 	"github.com/gjergjiramku/goansible/internal/modules/uri"
@@ -241,6 +242,14 @@ func main() {
 			return
 		}
 		writeJSON(iptables_state.Execute(req))
+
+	case "tempfile":
+		var req tempfile.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse tempfile request: %v", err))
+			return
+		}
+		writeJSON(tempfile.Execute(req))
 
 	default:
 		writeError(fmt.Sprintf("unknown module: %s", modReq.Module))

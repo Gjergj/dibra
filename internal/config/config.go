@@ -49,9 +49,17 @@ type Task struct {
 	Blockinfile    *BlockinfileParams     `yaml:"blockinfile,omitempty"`
 	Iptables       *IptablesParams        `yaml:"iptables,omitempty"`
 	IptablesState  *IptablesStateParams   `yaml:"iptables_state,omitempty"`
+	Tempfile       *TempfileParams        `yaml:"tempfile,omitempty"`
 }
 
 type ServiceFactsParams struct {
+}
+
+type TempfileParams struct {
+	Path   string  `yaml:"path,omitempty"`
+	Prefix *string `yaml:"prefix,omitempty"`
+	Suffix string  `yaml:"suffix,omitempty"`
+	State  string  `yaml:"state,omitempty"`
 }
 
 type PingParams struct {
@@ -456,6 +464,10 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 				case "service_facts":
 					if t.ServiceFacts == nil {
 						t.ServiceFacts = &ServiceFactsParams{}
+					}
+				case "tempfile":
+					if t.Tempfile == nil {
+						t.Tempfile = &TempfileParams{}
 					}
 				}
 			}

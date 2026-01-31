@@ -615,6 +615,20 @@ func main() {
 					Args:   iptablesArgs,
 				}
 
+			case task.Tempfile != nil:
+				tempfileArgs := map[string]interface{}{
+					"path":   task.Tempfile.Path,
+					"suffix": task.Tempfile.Suffix,
+					"state":  task.Tempfile.State,
+				}
+				if task.Tempfile.Prefix != nil {
+					tempfileArgs["prefix"] = *task.Tempfile.Prefix
+				}
+				modReq = ModuleRequest{
+					Module: "tempfile",
+					Args:   tempfileArgs,
+				}
+
 			default:
 				fmt.Println("    ⚠ No module specified, skipping")
 				continue
