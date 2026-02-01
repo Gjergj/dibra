@@ -51,6 +51,7 @@ type Task struct {
 	Iptables       *IptablesParams        `yaml:"iptables,omitempty"`
 	IptablesState  *IptablesStateParams   `yaml:"iptables_state,omitempty"`
 	Tempfile       *TempfileParams        `yaml:"tempfile,omitempty"`
+	Reboot         *RebootParams          `yaml:"reboot,omitempty"`
 }
 
 type ServiceFactsParams struct {
@@ -61,6 +62,18 @@ type TempfileParams struct {
 	Prefix *string `yaml:"prefix,omitempty"`
 	Suffix string  `yaml:"suffix,omitempty"`
 	State  string  `yaml:"state,omitempty"`
+}
+
+type RebootParams struct {
+	PreRebootDelay  int      `yaml:"pre_reboot_delay,omitempty"`
+	PostRebootDelay int      `yaml:"post_reboot_delay,omitempty"`
+	RebootTimeout   int      `yaml:"reboot_timeout,omitempty"`
+	ConnectTimeout  int      `yaml:"connect_timeout,omitempty"`
+	TestCommand     string   `yaml:"test_command,omitempty"`
+	Msg             string   `yaml:"msg,omitempty"`
+	SearchPaths     []string `yaml:"search_paths,omitempty"`
+	BootTimeCommand string   `yaml:"boot_time_command,omitempty"`
+	RebootCommand   string   `yaml:"reboot_command,omitempty"`
 }
 
 type PingParams struct {
@@ -482,6 +495,10 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 				case "tempfile":
 					if t.Tempfile == nil {
 						t.Tempfile = &TempfileParams{}
+					}
+				case "reboot":
+					if t.Reboot == nil {
+						t.Reboot = &RebootParams{}
 					}
 				}
 			}

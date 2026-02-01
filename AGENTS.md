@@ -100,7 +100,8 @@ goansible/
 │       ├── service/          # Generic service management
 │       ├── user/             # User account management
 │       ├── group/            # Group management
-│       └── iptables/         # Iptables firewall rule management
+│       ├── iptables/         # Iptables firewall rule management
+│       └── reboot/           # Reboot machine and wait for it to come back
 ├── test/
 │   ├── Dockerfile            # Ubuntu 22.04 + systemd + SSH
 │   ├── docker-compose.yaml   # Test container orchestration
@@ -1824,6 +1825,96 @@ Saves iptables state to a file or restores from a file. Uses `iptables-save` and
 - When restoring a partial file (only some tables), only those tables are compared/restored
 - Use `table` parameter to work with specific tables without affecting others
 
+### reboot
+
+Reboots a machine, waits for it to go down, come back up, and respond to commands. The reboot operation is handled by the controller (not the agent) since it requires reconnecting after the reboot.
+
+```yaml
+# Unconditionally reboot with all defaults
+- name: Reboot the machine
+  reboot:
+
+# Reboot a slow machine that might have lots of updates to apply
+- name: Reboot with extended timeout
+  reboot:
+    reboot_timeout: 3600
+
+# Reboot with custom message
+- name: Reboot with message
+  reboot:
+    msg: "Rebooting for kernel update"
+
+# Reboot with delays
+- name: Reboot with delays
+  reboot:
+    pre_reboot_delay: 5
+    post_reboot_delay: 30
+
+# Reboot with custom test command
+- name: Reboot and verify with uptime
+  reboot:
+    test_command: uptime
+
+# Reboot with custom boot time command
+- name: Reboot with custom boot time check
+  reboot:
+    boot_time_command: "uptime | cut -d ' ' -f 5"
+
+# Reboot with custom search paths for shutdown command
+- name: Reboot with molly-guard
+  reboot:
+    search_paths:
+      - /lib/molly-guard
+      - /sbin
+      - /usr/sbin
+
+# Reboot using custom command
+- name: Reboot with systemctl
+  reboot:
+    reboot_command: "systemctl reboot"
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `pre_reboot_delay` | `0` | Seconds to wait before reboot. On Linux, this is passed to the shutdown command. |
+| `post_reboot_delay` | `0` | Seconds to wait after the reboot command before attempting to validate the system rebooted. |
+| `reboot_timeout` | `600` | Maximum seconds to wait for machine to reboot and respond to a test command. |
+| `connect_timeout` | `30` | Maximum seconds to wait for a successful SSH connection before retrying. |
+| `test_command` | `whoami` | Command to run on the rebooted host to determine the machine is ready for further tasks. |
+| `msg` | `Reboot initiated by GoAnsible` | Message to display to users before reboot. |
+| `search_paths` | `["/sbin", "/bin", "/usr/sbin", "/usr/bin", "/usr/local/sbin"]` | Paths to search on the remote machine for the `shutdown` command. |
+| `boot_time_command` | `cat /proc/sys/kernel/random/boot_id` | Command to run that returns a unique string indicating the last time the system was booted. |
+| `reboot_command` | `[determined based on target OS]` | Custom command to run that reboots the system. If set, ignores `pre_reboot_delay`, `msg`, and `search_paths`. |
+
+**Returns**:
+```json
+{
+  "changed": true,
+  "rebooted": true,
+  "elapsed": 45,
+  "msg": "system rebooted successfully (elapsed: 45s)"
+}
+```
+
+**Reboot Flow**:
+1. Controller gets current boot time from target using `boot_time_command`
+2. If `pre_reboot_delay` > 0, waits before issuing reboot
+3. Controller searches `search_paths` for `shutdown` or `reboot` command (unless `reboot_command` is specified)
+4. Controller issues reboot command via SSH
+5. SSH connection is closed (will be dropped by reboot anyway)
+6. If `post_reboot_delay` > 0, waits before checking
+7. Controller retries SSH connection until successful or timeout
+8. Controller verifies boot time has changed (new boot_id)
+9. Controller runs `test_command` to verify system is ready
+
+**Idempotency**: This module is NOT idempotent - it always reboots the system.
+
+**Notes**:
+- Cannot be used with containers (containers cannot be rebooted like VMs)
+- The boot_time_command must return a consistent value that changes on reboot
+- Use `reboot_command` for non-standard systems (e.g., `launchctl reboot userspace` on macOS)
+- Connection timeout retries with exponential backoff
+
 ## Playbook Format
 
 ```yaml
@@ -1967,6 +2058,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_FullDeployWorkflow` | Full app deployment: dirs, config, symlinks |
 | `TestPlaybook_Unarchive` | Unarchive module Basic tar extraction + idempotency |
 | `TestPlaybook_Tempfile` | Tempfile module: file/directory creation, prefix/suffix, custom path, permissions |
+| `TestPlaybook_Reboot` | Reboot module: boot time commands, search paths, test commands, shutdown detection |
 
 Each test:
 1. Runs a playbook via `go run ./cmd/controller`
