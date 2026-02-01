@@ -541,6 +541,23 @@ func main() {
 					},
 				}
 
+			case task.Replace != nil:
+				modReq = ModuleRequest{
+					Module: "replace",
+					Args: map[string]interface{}{
+						"path":     task.Replace.Path,
+						"regexp":   task.Replace.Regexp,
+						"replace":  task.Replace.Replace,
+						"after":    task.Replace.After,
+						"before":   task.Replace.Before,
+						"backup":   task.Replace.Backup,
+						"mode":     task.Replace.Mode,
+						"owner":    task.Replace.Owner,
+						"group":    task.Replace.Group,
+						"validate": task.Replace.Validate,
+					},
+				}
+
 			case task.IptablesState != nil:
 				modReq = ModuleRequest{
 					Module: "iptables_state",

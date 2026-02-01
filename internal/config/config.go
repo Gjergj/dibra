@@ -47,6 +47,7 @@ type Task struct {
 	Git            *GitParams             `yaml:"git,omitempty"`
 	Lineinfile     *LineinfileParams      `yaml:"lineinfile,omitempty"`
 	Blockinfile    *BlockinfileParams     `yaml:"blockinfile,omitempty"`
+	Replace        *ReplaceParams         `yaml:"replace,omitempty"`
 	Iptables       *IptablesParams        `yaml:"iptables,omitempty"`
 	IptablesState  *IptablesStateParams   `yaml:"iptables_state,omitempty"`
 	Tempfile       *TempfileParams        `yaml:"tempfile,omitempty"`
@@ -351,6 +352,19 @@ type BlockinfileParams struct {
 	Validate       string `yaml:"validate,omitempty"`
 	PrependNewline bool   `yaml:"prepend_newline"`
 	AppendNewline  bool   `yaml:"append_newline"`
+}
+
+type ReplaceParams struct {
+	Path     string `yaml:"path"`
+	Regexp   string `yaml:"regexp"`
+	Replace  string `yaml:"replace,omitempty"`
+	After    string `yaml:"after,omitempty"`
+	Before   string `yaml:"before,omitempty"`
+	Backup   bool   `yaml:"backup"`
+	Mode     string `yaml:"mode,omitempty"`
+	Owner    string `yaml:"owner,omitempty"`
+	Group    string `yaml:"group,omitempty"`
+	Validate string `yaml:"validate,omitempty"`
 }
 
 type TcpFlagsParams struct {

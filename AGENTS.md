@@ -593,6 +593,117 @@ Inserts, updates, or removes a block of multi-line text surrounded by customizab
 
 **Idempotency**: Compares block content with existing. Only changes if content differs.
 
+### replace
+
+Replaces all instances of a pattern within a file using regular expressions. Unlike `lineinfile` which manages single lines, `replace` operates on all matches throughout the file.
+
+```yaml
+# Basic replacement
+- name: Replace old hostname
+  replace:
+    path: /etc/hosts
+    regexp: 'old\.example\.com'
+    replace: 'new.example.com'
+
+# Replace with backreferences
+- name: Update ServerName with captured groups
+  replace:
+    path: /etc/apache2/sites-available/default.conf
+    regexp: '(ServerName\s+)old\.host\.name'
+    replace: '\1new.host.name'
+
+# Replace after a pattern (till end of file)
+- name: Comment out everything after marker
+  replace:
+    path: /etc/config
+    after: '# BEGIN MANAGED'
+    regexp: '^(.+)$'
+    replace: '# \1'
+
+# Replace before a pattern (from beginning of file)
+- name: Comment out everything before marker
+  replace:
+    path: /etc/config
+    before: '# END HEADER'
+    regexp: '^(.+)$'
+    replace: '# \1'
+
+# Replace between two markers
+- name: Update config between markers
+  replace:
+    path: /etc/config
+    after: '# BEGIN MANAGED'
+    before: '# END MANAGED'
+    regexp: 'old_value'
+    replace: 'new_value'
+
+# Remove matches (empty replace)
+- name: Remove comments
+  replace:
+    path: /etc/config
+    regexp: '#.*$'
+
+# Case-insensitive replacement
+- name: Replace all variants of word
+  replace:
+    path: /var/www/html/index.html
+    regexp: '(?i)oldword'
+    replace: 'newword'
+
+# Create backup before modification
+- name: Replace with backup
+  replace:
+    path: /etc/important.conf
+    regexp: 'setting=old'
+    replace: 'setting=new'
+    backup: true
+
+# Validate before applying
+- name: Modify sudoers safely
+  replace:
+    path: /etc/sudoers
+    regexp: '^#\s*(Defaults\s+env_reset)'
+    replace: '\1'
+    validate: 'visudo -cf %s'
+
+# Set file permissions
+- name: Replace with mode
+  replace:
+    path: /etc/secure.conf
+    regexp: 'password=.*'
+    replace: 'password=secret'
+    mode: "0600"
+    owner: root
+    group: root
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `path` | required | Path to the file to modify. |
+| `regexp` | required | Regular expression to search for (uses MULTILINE mode: `^` and `$` match line boundaries). |
+| `replace` | `""` | String to replace matches with. Supports backreferences (`\1`, `\2`). Empty string removes matches. |
+| `after` | | Only replace content after this pattern (uses DOTALL mode: `.` matches newlines). |
+| `before` | | Only replace content before this pattern (uses DOTALL mode: `.` matches newlines). |
+| `backup` | `false` | Create timestamped backup before modifying. |
+| `validate` | | Command to validate file before applying. Use `%s` for temp file path. |
+| `mode` | | File mode (e.g., `"0644"`). |
+| `owner` | | File owner. |
+| `group` | | File group. |
+
+**Regex Modes**:
+- `regexp` uses MULTILINE mode: `^` and `$` match at line boundaries
+- `after`/`before` use DOTALL mode: `.` can match newlines
+- Use `(?i)` flag for case-insensitive matching
+- Use `(?s)` flag in regexp for DOTALL mode
+
+**Behavior Notes**:
+- Replaces ALL matches in the file (or section if after/before used)
+- If `after` and `before` are both specified, only content between them is modified
+- If `after`/`before` pattern doesn't match, file is unchanged
+- Backreferences: `\1`, `\2`, etc. refer to captured groups
+
+**Idempotency**: Compares content before/after. Returns unchanged if no matches found or content identical after replacement.
+
 ### apt
 
 Manages Debian/Ubuntu packages via apt-get.
@@ -1850,6 +1961,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_Group` | Group Module |
 | `TestPlaybook_Lineinfile` | Lineinfile Module: line add, replace, remove, backrefs, firstmatch |
 | `TestPlaybook_Blockinfile` | Blockinfile Module: block insert, update, remove, markers, insertafter/before |
+| `TestPlaybook_Replace` | Replace Module: regex replace, before/after, backrefs, backup, validate |
 | `TestPlaybook_Iptables` | Iptables Module: rules, chains, tables, NAT, policies, flush |
 | `TestPlaybook_IptablesState` | Iptables State Module: save, restore, tables, idempotency |
 | `TestPlaybook_FullDeployWorkflow` | Full app deployment: dirs, config, symlinks |
