@@ -102,7 +102,8 @@ goansible/
 │       ├── group/            # Group management
 │       ├── iptables/         # Iptables firewall rule management
 │       ├── reboot/           # Reboot machine and wait for it to come back
-│       └── script/           # Run local scripts on remote hosts
+│       ├── script/           # Run local scripts on remote hosts
+       └── docker_container/ # Docker container management
 ├── test/
 │   ├── Dockerfile            # Ubuntu 22.04 + systemd + SSH
 │   ├── docker-compose.yaml   # Test container orchestration
@@ -142,6 +143,365 @@ A trivial test module to verify SSH connectivity. Returns "pong" on success.
 **Returns**: `{"changed": false, "ping": "<data>"}`
 
 **Note**: Unlike Ansible's ping which checks Python availability, this module only verifies SSH connectivity and agent execution.
+
+### docker_container
+
+Manages the lifecycle of Docker containers.
+
+```yaml
+- name: Start a container
+  docker_container:
+    name: my-container
+    image: alpine:latest
+    state: started
+    command: ["sleep", "infinity"]
+
+- name: Create a container with port bindings
+  docker_container:
+    name: web
+    image: nginx
+    state: started
+    ports:
+      - "8080:80"
+
+- name: Remove a container
+  docker_container:
+    name: old-container
+    state: absent
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `name` | required | Name of the container. |
+| `image` | | Image to use for the container. |
+| `state` | `started` | `started`, `stopped`, `present`, `absent`. |
+| `command` | | Command to execute at startup. |
+| `ports` | | List of port bindings (`host:container`). |
+| `volumes` | | List of volume bindings (`host:container:ro`). |
+| `env` | | Dictionary of environment variables. |
+| `network_mode` | | Network mode (e.g., `host`, `bridge`). |
+| `networks` | | List of networks to connect to. |
+| `pull` | `false` | Pull image if missing (currently simplified). |
+
+### docker_image
+
+Manages Docker images.
+
+```yaml
+- name: Pull an image
+  docker_image:
+    name: alpine
+    tag: latest
+    source: pull
+
+- name: Remove an image
+  docker_image:
+    name: alpine
+    tag: 3.14
+    state: absent
+```
+
+### docker_network
+
+Manages Docker networks.
+
+```yaml
+- name: Create a network
+  docker_network:
+    name: my-network
+    driver: bridge
+
+- name: Remove a network
+  docker_network:
+    name: my-network
+    state: absent
+```
+
+### docker_volume
+
+Manages Docker volumes.
+
+```yaml
+- name: Create a volume
+  docker_volume:
+    name: my-data
+    driver: local
+
+- name: Remove a volume
+  docker_volume:
+    name: my-data
+    state: absent
+```
+
+### docker_prune
+
+Prunes unused Docker resources (system prune, or specific types).
+
+```yaml
+- name: Prune everything
+  docker_prune:
+    containers: true
+    images: true
+    networks: true
+    volumes: true
+    builder: true
+
+- name: Prune only dangling images
+  docker_prune:
+    images: true
+    images_filters:
+      dangling: "true"
+```
+
+### docker_login
+
+Log into a Docker registry.
+
+```yaml
+- name: Login to Docker Hub
+  docker_login:
+    username: myuser
+    password: mypassword
+
+- name: Login to private registry
+  docker_login:
+    registry: https://myregistry.com
+    username: myuser
+    password: mypassword
+```
+
+### docker_swarm
+
+Initialize or leave a Swarm.
+
+```yaml
+- name: Init Swarm
+  docker_swarm:
+    state: present
+    advertise_addr: 192.168.1.10
+
+- name: Join Swarm
+  docker_swarm:
+    state: join
+    remote_addrs: [192.168.1.10:2377]
+    join_token: SWMTKN-...
+
+- name: Leave Swarm
+  docker_swarm:
+    state: absent
+    force: true
+```
+
+### docker_swarm_service
+
+Manage Swarm Services.
+
+```yaml
+- name: Create nginx service
+  docker_swarm_service:
+    name: my-web
+    image: nginx:alpine
+    replicas: 3
+    publish:
+      - published_port: 80
+        target_port: 80
+
+- name: Update replicas
+  docker_swarm_service:
+    name: my-web
+    replicas: 5
+
+- name: Remove service
+  docker_swarm_service:
+    name: my-web
+    state: absent
+```
+
+### docker_node
+
+Manage Swarm Nodes.
+
+```yaml
+- name: Add Label to Node
+  docker_node:
+    hostname: my-worker-1
+    labels:
+      tier: frontend
+
+- name: Drain Node
+  docker_node:
+    self: true
+    availability: drain
+
+- name: Promote Node
+  docker_node:
+    hostname: my-worker-1
+    role: manager
+```
+
+### docker_compose
+
+Manage Docker Compose projects.
+
+```yaml
+- name: Deploy Stack
+  docker_compose:
+    project_src: /opt/my-project
+    state: present
+    build: true
+    pull: true
+    env:
+      DB_PASSWORD: secret
+
+- name: Scale Service
+  docker_compose:
+    project_src: /opt/my-project
+    scale:
+      web: 3
+
+- name: Remove Stack
+  docker_compose:
+    project_src: /opt/my-project
+    state: absent
+```
+
+### docker_secret
+
+Manage Docker Swarm secrets.
+
+```yaml
+- name: Create Secret
+  docker_secret:
+    name: my-secret
+    data: "supersecretpassword"
+    state: present
+    labels:
+      env: prod
+
+- name: Remove Secret
+  docker_secret:
+    name: my-secret
+    state: absent
+```
+
+### docker_config
+
+Manage Docker Swarm configs.
+
+```yaml
+- name: Create Config
+  docker_config:
+    name: my-config
+    data: "server { listen 80; }"
+    state: present
+
+- name: Remove Config
+  docker_config:
+    name: my-config
+    state: absent
+```
+
+### docker_stack
+
+Deploy Docker Swarm stacks.
+
+```yaml
+- name: Deploy Stack
+  docker_stack:
+    name: my-app
+    compose_file: /path/to/docker-compose.yml
+    state: present
+
+- name: Remove Stack
+  docker_stack:
+    name: my-app
+    state: absent
+```
+
+### docker_container_exec
+
+Execute a command in a running Docker container.
+
+```yaml
+- name: Run command in container
+  docker_container_exec:
+    container: my-container
+    command: echo hello world
+
+- name: Run with argv
+  docker_container_exec:
+    container: my-container
+    argv:
+      - /bin/sh
+      - -c
+      - "ls -la"
+    user: root
+    chdir: /app
+```
+
+### docker_container_copy_into
+
+Copy files or content into a Docker container.
+
+```yaml
+- name: Copy content into container
+  docker_container_copy_into:
+    container: my-container
+    content: "Hello World"
+    container_path: /tmp/hello.txt
+    mode: "0644"
+
+- name: Copy local file into container
+  docker_container_copy_into:
+    container: my-container
+    path: /local/path/file.txt
+    container_path: /app/file.txt
+    owner_id: 1000
+    group_id: 1000
+
+### docker_image_build
+
+Build Docker images using Docker's buildx plugin (BuildKit).
+
+```yaml
+- name: Build image
+  docker_image_build:
+    name: my-app
+    tag: v1.0.0
+    path: /path/to/app
+    dockerfile: Dockerfile.prod
+    args:
+        VERSION: "1.0.0"
+```
+
+### docker_image_load
+
+Load Docker image(s) from archives.
+
+```yaml
+- name: Load image from tar
+  docker_image_load:
+    path: /tmp/image.tar
+
+### docker_image_export
+
+Export (archive) one or more Docker images to a tarball.
+
+```yaml
+- name: Export an image
+  docker_image_export:
+    name: alpine:latest
+    path: /tmp/alpine.tar
+
+- name: Export multiple images
+  docker_image_export:
+    names:
+      - alpine:latest
+      - redis:latest
+    path: /tmp/images.tar
+```
+```
+```
 
 ### command
 
