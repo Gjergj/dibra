@@ -23,6 +23,7 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/ping"
 	"github.com/gjergjiramku/goansible/internal/modules/reboot"
 	"github.com/gjergjiramku/goansible/internal/modules/replace"
+	"github.com/gjergjiramku/goansible/internal/modules/script"
 	"github.com/gjergjiramku/goansible/internal/modules/service"
 	"github.com/gjergjiramku/goansible/internal/modules/service_facts"
 	"github.com/gjergjiramku/goansible/internal/modules/shell"
@@ -204,6 +205,14 @@ func main() {
 			return
 		}
 		writeJSON(shell.Execute(req))
+
+	case "script":
+		var req script.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse script request: %v", err))
+			return
+		}
+		writeJSON(script.Execute(req))
 
 	case "unarchive":
 		var req unarchive.Request

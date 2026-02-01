@@ -423,6 +423,11 @@ func main() {
 					},
 				}
 
+			case task.Script != nil:
+				resp := executeScript(client, remoteAgentPath, task.Script, *verbose)
+				printResponse(resp, *verbose)
+				continue
+
 			case task.Unarchive != nil:
 				unarchiveArgs := map[string]interface{}{
 					"dest":       task.Unarchive.Dest,
@@ -893,6 +898,112 @@ func printResponse(resp GenericResponse, verbose bool) {
 		}
 		fmt.Println()
 	}
+}
+
+func executeScript(client *ssh.Client, agentPath string, params *config.ScriptParams, verbose bool) GenericResponse {
+	if params.Cmd == "" {
+		return GenericResponse{Failed: true, Msg: "no script path specified (cmd parameter required)"}
+	}
+
+	scriptPath, scriptArgs := parseScriptCmd(params.Cmd)
+
+	localFile, err := os.Stat(scriptPath)
+	if err != nil {
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to stat local script: %v", err)}
+	}
+	if localFile.IsDir() {
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("script path is a directory: %s", scriptPath)}
+	}
+
+	localChecksum, err := sha1File(scriptPath)
+	if err != nil {
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to compute script checksum: %v", err)}
+	}
+
+	remoteTmpPath := fmt.Sprintf("/tmp/.goansible-script-%s", localChecksum[:12])
+
+	if verbose {
+		fmt.Printf("    Uploading script %s -> %s\n", scriptPath, remoteTmpPath)
+	}
+
+	if err := client.UploadFile(scriptPath, remoteTmpPath); err != nil {
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to upload script: %v", err)}
+	}
+
+	_, _, err = client.RunWithSudo(fmt.Sprintf("chmod +x %s", remoteTmpPath))
+	if err != nil {
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to chmod script: %v", err)}
+	}
+
+	stripEmptyEnds := true
+	if params.StripEmptyEnds != nil {
+		stripEmptyEnds = *params.StripEmptyEnds
+	}
+
+	scriptReq := ModuleRequest{
+		Module: "script",
+		Args: map[string]interface{}{
+			"script_path":      remoteTmpPath,
+			"args":             scriptArgs,
+			"chdir":            params.Chdir,
+			"creates":          params.Creates,
+			"removes":          params.Removes,
+			"executable":       params.Executable,
+			"strip_empty_ends": stripEmptyEnds,
+		},
+	}
+	reqData, _ := json.Marshal(scriptReq)
+	if verbose {
+		fmt.Printf("    Script request: %s\n", string(reqData))
+	}
+
+	output, err := client.ExecuteAgent(agentPath, reqData)
+	if err != nil {
+		cleanupScript(client, remoteTmpPath)
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to execute script: %v", err)}
+	}
+
+	outputStr := strings.TrimSpace(string(output))
+	lines := strings.Split(outputStr, "\n")
+	jsonOutput := lines[len(lines)-1]
+
+	var resp GenericResponse
+	if err := json.Unmarshal([]byte(jsonOutput), &resp); err != nil {
+		cleanupScript(client, remoteTmpPath)
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to parse script response: %v", err)}
+	}
+
+	cleanupScript(client, remoteTmpPath)
+
+	return resp
+}
+
+func parseScriptCmd(cmd string) (scriptPath string, args string) {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return "", ""
+	}
+
+	if cmd[0] == '"' || cmd[0] == '\'' {
+		quoteChar := cmd[0]
+		endIdx := strings.IndexByte(cmd[1:], quoteChar)
+		if endIdx != -1 {
+			scriptPath = cmd[1 : endIdx+1]
+			args = strings.TrimSpace(cmd[endIdx+2:])
+			return
+		}
+	}
+
+	parts := strings.SplitN(cmd, " ", 2)
+	scriptPath = parts[0]
+	if len(parts) > 1 {
+		args = parts[1]
+	}
+	return
+}
+
+func cleanupScript(client *ssh.Client, remotePath string) {
+	client.Run(fmt.Sprintf("rm -f %s", remotePath))
 }
 
 func executeReboot(client *ssh.Client, agentPath string, host config.Host, params *config.RebootParams, verbose bool) GenericResponse {
