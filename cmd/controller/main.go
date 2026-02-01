@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/gjergjiramku/goansible/internal/builder"
 	"github.com/gjergjiramku/goansible/internal/config"
@@ -646,6 +647,11 @@ func main() {
 					Args:   tempfileArgs,
 				}
 
+			case task.Reboot != nil:
+				resp := executeReboot(client, remoteAgentPath, host, task.Reboot, *verbose)
+				printResponse(resp, *verbose)
+				continue
+
 			default:
 				fmt.Println("    ⚠ No module specified, skipping")
 				continue
@@ -886,5 +892,262 @@ func printResponse(resp GenericResponse, verbose bool) {
 			fmt.Printf(" - %s", resp.Msg)
 		}
 		fmt.Println()
+	}
+}
+
+func executeReboot(client *ssh.Client, agentPath string, host config.Host, params *config.RebootParams, verbose bool) GenericResponse {
+	startTime := time.Now()
+
+	rebootTimeout := params.RebootTimeout
+	if rebootTimeout == 0 {
+		rebootTimeout = 600
+	}
+	connectTimeout := params.ConnectTimeout
+	if connectTimeout == 0 {
+		connectTimeout = 30
+	}
+	testCommand := params.TestCommand
+	if testCommand == "" {
+		testCommand = "whoami"
+	}
+	bootTimeCommand := params.BootTimeCommand
+	if bootTimeCommand == "" {
+		bootTimeCommand = "cat /proc/sys/kernel/random/boot_id"
+	}
+	msg := params.Msg
+	if msg == "" {
+		msg = "Reboot initiated by GoAnsible"
+	}
+	searchPaths := params.SearchPaths
+	if len(searchPaths) == 0 {
+		searchPaths = []string{"/sbin", "/bin", "/usr/sbin", "/usr/bin", "/usr/local/sbin"}
+	}
+
+	bootTimeReq := ModuleRequest{
+		Module: "shell",
+		Args: map[string]interface{}{
+			"cmd": bootTimeCommand,
+		},
+	}
+	reqData, _ := json.Marshal(bootTimeReq)
+	if verbose {
+		fmt.Printf("    Getting boot time: %s\n", bootTimeCommand)
+	}
+
+	output, err := client.ExecuteAgent(agentPath, reqData)
+	if err != nil {
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to get boot time: %v", err)}
+	}
+
+	var bootTimeResp struct {
+		Stdout string `json:"stdout"`
+		RC     int    `json:"rc"`
+		Failed bool   `json:"failed"`
+		Msg    string `json:"msg"`
+	}
+	outputStr := strings.TrimSpace(string(output))
+	lines := strings.Split(outputStr, "\n")
+	jsonOutput := lines[len(lines)-1]
+
+	if err := json.Unmarshal([]byte(jsonOutput), &bootTimeResp); err != nil {
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to parse boot time response: %v", err)}
+	}
+	if bootTimeResp.Failed || bootTimeResp.RC != 0 {
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to get boot time: %s", bootTimeResp.Msg)}
+	}
+
+	previousBootTime := strings.TrimSpace(bootTimeResp.Stdout)
+	if verbose {
+		fmt.Printf("    Previous boot time: %s\n", previousBootTime)
+	}
+
+	if params.PreRebootDelay > 0 {
+		if verbose {
+			fmt.Printf("    Waiting %d seconds before reboot...\n", params.PreRebootDelay)
+		}
+		time.Sleep(time.Duration(params.PreRebootDelay) * time.Second)
+	}
+
+	rebootCmd := params.RebootCommand
+	if rebootCmd == "" {
+		for _, path := range searchPaths {
+			checkReq := ModuleRequest{
+				Module: "shell",
+				Args: map[string]interface{}{
+					"cmd": fmt.Sprintf("test -x %s/shutdown && echo found", path),
+				},
+			}
+			reqData, _ := json.Marshal(checkReq)
+			output, err := client.ExecuteAgent(agentPath, reqData)
+			if err == nil {
+				outputStr := strings.TrimSpace(string(output))
+				lines := strings.Split(outputStr, "\n")
+				jsonOutput := lines[len(lines)-1]
+				var resp struct {
+					Stdout string `json:"stdout"`
+					RC     int    `json:"rc"`
+				}
+				if json.Unmarshal([]byte(jsonOutput), &resp) == nil && resp.RC == 0 && strings.Contains(resp.Stdout, "found") {
+					rebootCmd = fmt.Sprintf("%s/shutdown -r +0 \"%s\"", path, msg)
+					break
+				}
+			}
+		}
+		if rebootCmd == "" {
+			for _, path := range searchPaths {
+				checkReq := ModuleRequest{
+					Module: "shell",
+					Args: map[string]interface{}{
+						"cmd": fmt.Sprintf("test -x %s/reboot && echo found", path),
+					},
+				}
+				reqData, _ := json.Marshal(checkReq)
+				output, err := client.ExecuteAgent(agentPath, reqData)
+				if err == nil {
+					outputStr := strings.TrimSpace(string(output))
+					lines := strings.Split(outputStr, "\n")
+					jsonOutput := lines[len(lines)-1]
+					var resp struct {
+						Stdout string `json:"stdout"`
+						RC     int    `json:"rc"`
+					}
+					if json.Unmarshal([]byte(jsonOutput), &resp) == nil && resp.RC == 0 && strings.Contains(resp.Stdout, "found") {
+						rebootCmd = fmt.Sprintf("%s/reboot", path)
+						break
+					}
+				}
+			}
+		}
+		if rebootCmd == "" {
+			return GenericResponse{Failed: true, Msg: "shutdown/reboot command not found in search paths"}
+		}
+	}
+
+	if verbose {
+		fmt.Printf("    Executing reboot command: %s\n", rebootCmd)
+	}
+
+	rebootReq := ModuleRequest{
+		Module: "shell",
+		Args: map[string]interface{}{
+			"cmd": rebootCmd,
+		},
+	}
+	reqData, _ = json.Marshal(rebootReq)
+
+	_, _ = client.ExecuteAgent(agentPath, reqData)
+
+	client.Close()
+
+	if params.PostRebootDelay > 0 {
+		if verbose {
+			fmt.Printf("    Waiting %d seconds after reboot command...\n", params.PostRebootDelay)
+		}
+		time.Sleep(time.Duration(params.PostRebootDelay) * time.Second)
+	}
+
+	if verbose {
+		fmt.Println("    Waiting for system to come back up...")
+	}
+
+	deadline := time.Now().Add(time.Duration(rebootTimeout) * time.Second)
+	var newClient *ssh.Client
+
+	for time.Now().Before(deadline) {
+		time.Sleep(5 * time.Second)
+
+		var err error
+		newClient, err = ssh.Connect(ssh.Config{
+			Host:           host.Host,
+			Port:           host.Port,
+			User:           host.User,
+			Password:       host.Password,
+			SSHKeyPath:     host.SSHKeyPath,
+			Become:         host.Become,
+			BecomePassword: host.BecomePassword,
+		})
+		if err != nil {
+			if verbose {
+				fmt.Printf("    Reconnect attempt failed: %v\n", err)
+			}
+			continue
+		}
+
+		bootTimeReq := ModuleRequest{
+			Module: "shell",
+			Args: map[string]interface{}{
+				"cmd": bootTimeCommand,
+			},
+		}
+		reqData, _ := json.Marshal(bootTimeReq)
+		output, err := newClient.ExecuteAgent(agentPath, reqData)
+		if err != nil {
+			newClient.Close()
+			continue
+		}
+
+		outputStr := strings.TrimSpace(string(output))
+		lines := strings.Split(outputStr, "\n")
+		jsonOutput := lines[len(lines)-1]
+
+		var resp struct {
+			Stdout string `json:"stdout"`
+			RC     int    `json:"rc"`
+		}
+		if err := json.Unmarshal([]byte(jsonOutput), &resp); err != nil {
+			newClient.Close()
+			continue
+		}
+
+		currentBootTime := strings.TrimSpace(resp.Stdout)
+		if currentBootTime == "" || currentBootTime == previousBootTime {
+			if verbose {
+				fmt.Printf("    Boot time unchanged (%s), still waiting...\n", currentBootTime)
+			}
+			newClient.Close()
+			continue
+		}
+
+		if verbose {
+			fmt.Printf("    New boot time: %s\n", currentBootTime)
+		}
+
+		testReq := ModuleRequest{
+			Module: "shell",
+			Args: map[string]interface{}{
+				"cmd": testCommand,
+			},
+		}
+		reqData, _ = json.Marshal(testReq)
+		output, err = newClient.ExecuteAgent(agentPath, reqData)
+		newClient.Close()
+
+		if err != nil {
+			continue
+		}
+
+		outputStr = strings.TrimSpace(string(output))
+		lines = strings.Split(outputStr, "\n")
+		jsonOutput = lines[len(lines)-1]
+
+		var testResp struct {
+			RC     int  `json:"rc"`
+			Failed bool `json:"failed"`
+		}
+		if err := json.Unmarshal([]byte(jsonOutput), &testResp); err != nil || testResp.Failed || testResp.RC != 0 {
+			continue
+		}
+
+		elapsed := int(time.Since(startTime).Seconds())
+		return GenericResponse{
+			Changed: true,
+			Msg:     fmt.Sprintf("system rebooted successfully (elapsed: %ds)", elapsed),
+		}
+	}
+
+	elapsed := int(time.Since(startTime).Seconds())
+	return GenericResponse{
+		Failed: true,
+		Msg:    fmt.Sprintf("timed out waiting for system to reboot (timeout=%ds, elapsed=%ds)", rebootTimeout, elapsed),
 	}
 }

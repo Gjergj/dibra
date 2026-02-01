@@ -21,6 +21,7 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/iptables_state"
 	"github.com/gjergjiramku/goansible/internal/modules/lineinfile"
 	"github.com/gjergjiramku/goansible/internal/modules/ping"
+	"github.com/gjergjiramku/goansible/internal/modules/reboot"
 	"github.com/gjergjiramku/goansible/internal/modules/replace"
 	"github.com/gjergjiramku/goansible/internal/modules/service"
 	"github.com/gjergjiramku/goansible/internal/modules/service_facts"
@@ -179,6 +180,14 @@ func main() {
 			return
 		}
 		writeJSON(ping.Execute(req))
+
+	case "reboot":
+		var req reboot.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse reboot request: %v", err))
+			return
+		}
+		writeJSON(reboot.Execute(req))
 
 	case "command":
 		var req command.Request
