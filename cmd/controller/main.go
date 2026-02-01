@@ -469,21 +469,21 @@ func main() {
 
 			case task.Git != nil:
 				gitArgs := map[string]interface{}{
-					"repo":             task.Git.Repo,
-					"dest":             task.Git.Dest,
-					"version":          task.Git.Version,
-					"remote":           task.Git.Remote,
-					"force":            task.Git.Force,
-					"bare":             task.Git.Bare,
-					"track_submodules": task.Git.TrackSubmodules,
-					"single_branch":    task.Git.SingleBranch,
-					"accept_hostkey":   task.Git.AcceptHostkey,
+					"repo":              task.Git.Repo,
+					"dest":              task.Git.Dest,
+					"version":           task.Git.Version,
+					"remote":            task.Git.Remote,
+					"force":             task.Git.Force,
+					"bare":              task.Git.Bare,
+					"track_submodules":  task.Git.TrackSubmodules,
+					"single_branch":     task.Git.SingleBranch,
+					"accept_hostkey":    task.Git.AcceptHostkey,
 					"accept_newhostkey": task.Git.AcceptNewhostkey,
-					"key_file":         task.Git.KeyFile,
-					"ssh_opts":         task.Git.SSHOpts,
-					"refspec":          task.Git.Refspec,
-					"executable":       task.Git.Executable,
-					"separate_git_dir": task.Git.SeparateGitDir,
+					"key_file":          task.Git.KeyFile,
+					"ssh_opts":          task.Git.SSHOpts,
+					"refspec":           task.Git.Refspec,
+					"executable":        task.Git.Executable,
+					"separate_git_dir":  task.Git.SeparateGitDir,
 				}
 				if task.Git.Clone != nil {
 					gitArgs["clone"] = *task.Git.Clone
@@ -581,51 +581,51 @@ func main() {
 
 			case task.Iptables != nil:
 				iptablesArgs := map[string]interface{}{
-					"table":              task.Iptables.Table,
-					"chain":              task.Iptables.Chain,
-					"state":              task.Iptables.State,
-					"action":             task.Iptables.Action,
-					"rule_num":           task.Iptables.RuleNum,
-					"protocol":           task.Iptables.Protocol,
-					"source":             task.Iptables.Source,
-					"destination":        task.Iptables.Destination,
-					"match":              task.Iptables.Match,
-					"jump":               task.Iptables.Jump,
-					"goto":               task.Iptables.Goto,
-					"in_interface":       task.Iptables.InInterface,
-					"out_interface":      task.Iptables.OutInterface,
-					"source_port":        task.Iptables.SourcePort,
-					"destination_port":   task.Iptables.DestinationPort,
-					"destination_ports":  task.Iptables.DestinationPorts,
-					"ctstate":            task.Iptables.Ctstate,
-					"comment":            task.Iptables.Comment,
-					"icmp_type":          task.Iptables.IcmpType,
-					"fragment":           task.Iptables.Fragment,
-					"syn":                task.Iptables.Syn,
-					"limit":              task.Iptables.Limit,
-					"limit_burst":        task.Iptables.LimitBurst,
-					"log_prefix":         task.Iptables.LogPrefix,
-					"log_level":          task.Iptables.LogLevel,
-					"reject_with":        task.Iptables.RejectWith,
-					"to_destination":     task.Iptables.ToDestination,
-					"to_source":          task.Iptables.ToSource,
-					"to_ports":           task.Iptables.ToPorts,
-					"gateway":            task.Iptables.Gateway,
-					"src_range":          task.Iptables.SrcRange,
-					"dst_range":          task.Iptables.DstRange,
-					"set_counters":       task.Iptables.SetCounters,
-					"set_dscp_mark":      task.Iptables.SetDscpMark,
+					"table":               task.Iptables.Table,
+					"chain":               task.Iptables.Chain,
+					"state":               task.Iptables.State,
+					"action":              task.Iptables.Action,
+					"rule_num":            task.Iptables.RuleNum,
+					"protocol":            task.Iptables.Protocol,
+					"source":              task.Iptables.Source,
+					"destination":         task.Iptables.Destination,
+					"match":               task.Iptables.Match,
+					"jump":                task.Iptables.Jump,
+					"goto":                task.Iptables.Goto,
+					"in_interface":        task.Iptables.InInterface,
+					"out_interface":       task.Iptables.OutInterface,
+					"source_port":         task.Iptables.SourcePort,
+					"destination_port":    task.Iptables.DestinationPort,
+					"destination_ports":   task.Iptables.DestinationPorts,
+					"ctstate":             task.Iptables.Ctstate,
+					"comment":             task.Iptables.Comment,
+					"icmp_type":           task.Iptables.IcmpType,
+					"fragment":            task.Iptables.Fragment,
+					"syn":                 task.Iptables.Syn,
+					"limit":               task.Iptables.Limit,
+					"limit_burst":         task.Iptables.LimitBurst,
+					"log_prefix":          task.Iptables.LogPrefix,
+					"log_level":           task.Iptables.LogLevel,
+					"reject_with":         task.Iptables.RejectWith,
+					"to_destination":      task.Iptables.ToDestination,
+					"to_source":           task.Iptables.ToSource,
+					"to_ports":            task.Iptables.ToPorts,
+					"gateway":             task.Iptables.Gateway,
+					"src_range":           task.Iptables.SrcRange,
+					"dst_range":           task.Iptables.DstRange,
+					"set_counters":        task.Iptables.SetCounters,
+					"set_dscp_mark":       task.Iptables.SetDscpMark,
 					"set_dscp_mark_class": task.Iptables.SetDscpMarkClass,
-					"uid_owner":          task.Iptables.UidOwner,
-					"gid_owner":          task.Iptables.GidOwner,
-					"match_set":          task.Iptables.MatchSet,
-					"match_set_flags":    task.Iptables.MatchSetFlags,
-					"flush":              task.Iptables.Flush,
-					"policy":             task.Iptables.Policy,
-					"chain_management":   task.Iptables.ChainManagement,
-					"ip_version":         task.Iptables.IPVersion,
-					"wait":               task.Iptables.Wait,
-					"numeric":            task.Iptables.Numeric,
+					"uid_owner":           task.Iptables.UidOwner,
+					"gid_owner":           task.Iptables.GidOwner,
+					"match_set":           task.Iptables.MatchSet,
+					"match_set_flags":     task.Iptables.MatchSetFlags,
+					"flush":               task.Iptables.Flush,
+					"policy":              task.Iptables.Policy,
+					"chain_management":    task.Iptables.ChainManagement,
+					"ip_version":          task.Iptables.IPVersion,
+					"wait":                task.Iptables.Wait,
+					"numeric":             task.Iptables.Numeric,
 				}
 				if task.Iptables.TcpFlags != nil {
 					iptablesArgs["tcp_flags"] = map[string]interface{}{
@@ -650,6 +650,392 @@ func main() {
 				modReq = ModuleRequest{
 					Module: "tempfile",
 					Args:   tempfileArgs,
+				}
+
+			case task.DockerContainer != nil:
+				modReq = ModuleRequest{
+					Module: "docker_container",
+					Args: map[string]interface{}{
+						"name":           task.DockerContainer.Name,
+						"image":          task.DockerContainer.Image,
+						"state":          task.DockerContainer.State,
+						"command":        task.DockerContainer.Command,
+						"entrypoint":     task.DockerContainer.Entrypoint,
+						"args":           task.DockerContainer.Args,
+						"env":            task.DockerContainer.Env,
+						"exposed_ports":  task.DockerContainer.ExposedPorts,
+						"ports":          task.DockerContainer.Ports,
+						"volumes":        task.DockerContainer.Volumes,
+						"network_mode":   task.DockerContainer.NetworkMode,
+						"networks":       task.DockerContainer.Networks,
+						"restart_policy": task.DockerContainer.RestartPolicy,
+						"auto_remove":    task.DockerContainer.AutoRemove,
+						"privileged":     task.DockerContainer.Privileged,
+						"user":           task.DockerContainer.User,
+						"working_dir":    task.DockerContainer.WorkingDir,
+						"hostname":       task.DockerContainer.Hostname,
+						"domainname":     task.DockerContainer.Domainname,
+						"labels":         task.DockerContainer.Labels,
+						"links":          task.DockerContainer.Links,
+						"log_driver":     task.DockerContainer.LogDriver,
+						"log_options":    task.DockerContainer.LogOptions,
+						"comparisons":    task.DockerContainer.Comparisons,
+						"recreate":       task.DockerContainer.Recreate,
+						"force_kill":     task.DockerContainer.ForceKill,
+						"keep_volumes":   task.DockerContainer.KeepVolumes,
+						"pull":           task.DockerContainer.Pull,
+						"docker_host":    task.DockerContainer.DockerHost,
+						"tls":            task.DockerContainer.TLS,
+						"validate_certs": task.DockerContainer.ValidateCerts,
+						"ca_path":        task.DockerContainer.CAPath,
+						"client_cert":    task.DockerContainer.ClientCert,
+						"client_key":     task.DockerContainer.ClientKey,
+						"api_version":    task.DockerContainer.APIVersion,
+						"timeout":        task.DockerContainer.Timeout,
+						"debug":          task.DockerContainer.Debug,
+					},
+				}
+
+			case task.DockerImage != nil:
+				modReq = ModuleRequest{
+					Module: "docker_image",
+					Args: map[string]interface{}{
+						"name":           task.DockerImage.Name,
+						"tag":            task.DockerImage.Tag,
+						"repository":     task.DockerImage.Repository,
+						"state":          task.DockerImage.State,
+						"source":         task.DockerImage.Source,
+						"force_source":   task.DockerImage.ForceSource,
+						"push":           task.DockerImage.Push,
+						"archive_path":   task.DockerImage.ArchivePath,
+						"dockerfile":     task.DockerImage.DockerFile,
+						"build.path":     task.DockerImage.BuildPath,
+						"force_tag":      task.DockerImage.ForceTag,
+						"keep_image":     task.DockerImage.KeepImage,
+						"docker_host":    task.DockerImage.DockerHost,
+						"tls":            task.DockerImage.TLS,
+						"validate_certs": task.DockerImage.ValidateCerts,
+						"ca_path":        task.DockerImage.CAPath,
+						"client_cert":    task.DockerImage.ClientCert,
+						"client_key":     task.DockerImage.ClientKey,
+						"api_version":    task.DockerImage.APIVersion,
+						"timeout":        task.DockerImage.Timeout,
+						"debug":          task.DockerImage.Debug,
+					},
+				}
+
+			case task.DockerNetwork != nil:
+				// Convert config types to module request args
+				ipamConfigs := []map[string]string{}
+				for _, cfg := range task.DockerNetwork.IPAMConfig {
+					ipamConfigs = append(ipamConfigs, map[string]string{
+						"subnet":   cfg.Subnet,
+						"gateway":  cfg.Gateway,
+						"ip_range": cfg.IPRange,
+					})
+				}
+
+				modReq = ModuleRequest{
+					Module: "docker_network",
+					Args: map[string]interface{}{
+						"name":           task.DockerNetwork.Name,
+						"state":          task.DockerNetwork.State,
+						"driver":         task.DockerNetwork.Driver,
+						"options":        task.DockerNetwork.Options,
+						"ipam_config":    ipamConfigs,
+						"labels":         task.DockerNetwork.Labels,
+						"internal":       task.DockerNetwork.Internal,
+						"attachable":     task.DockerNetwork.Attachable,
+						"scope":          task.DockerNetwork.Scope,
+						"force":          task.DockerNetwork.Force,
+						"docker_host":    task.DockerNetwork.DockerHost,
+						"tls":            task.DockerNetwork.TLS,
+						"validate_certs": task.DockerNetwork.ValidateCerts,
+						"ca_path":        task.DockerNetwork.CAPath,
+						"client_cert":    task.DockerNetwork.ClientCert,
+						"client_key":     task.DockerNetwork.ClientKey,
+						"api_version":    task.DockerNetwork.APIVersion,
+						"timeout":        task.DockerNetwork.Timeout,
+						"debug":          task.DockerNetwork.Debug,
+					},
+				}
+
+			case task.DockerVolume != nil:
+				modReq = ModuleRequest{
+					Module: "docker_volume",
+					Args: map[string]interface{}{
+						"name":           task.DockerVolume.Name,
+						"state":          task.DockerVolume.State,
+						"driver":         task.DockerVolume.Driver,
+						"driver_options": task.DockerVolume.DriverOptions,
+						"labels":         task.DockerVolume.Labels,
+						"recreate":       task.DockerVolume.Recreate,
+						"force":          task.DockerVolume.Force,
+						"docker_host":    task.DockerVolume.DockerHost,
+						"tls":            task.DockerVolume.TLS,
+						"validate_certs": task.DockerVolume.ValidateCerts,
+						"ca_path":        task.DockerVolume.CAPath,
+						"client_cert":    task.DockerVolume.ClientCert,
+						"client_key":     task.DockerVolume.ClientKey,
+						"api_version":    task.DockerVolume.APIVersion,
+						"timeout":        task.DockerVolume.Timeout,
+						"debug":          task.DockerVolume.Debug,
+					},
+				}
+
+			case task.DockerPrune != nil:
+				modReq = ModuleRequest{
+					Module: "docker_prune",
+					Args: map[string]interface{}{
+						"containers":     task.DockerPrune.Containers,
+						"images":         task.DockerPrune.Images,
+						"networks":       task.DockerPrune.Networks,
+						"volumes":        task.DockerPrune.Volumes,
+						"builder":        task.DockerPrune.Builder,
+						"images_filters": task.DockerPrune.ImagesFilters,
+						"docker_host":    task.DockerPrune.DockerHost,
+						"tls":            task.DockerPrune.TLS,
+					},
+				}
+
+			case task.DockerLogin != nil:
+				modReq = ModuleRequest{
+					Module: "docker_login",
+					Args: map[string]interface{}{
+						"username":    task.DockerLogin.Username,
+						"password":    task.DockerLogin.Password,
+						"registry":    task.DockerLogin.Registry,
+						"email":       task.DockerLogin.Email,
+						"config_path": task.DockerLogin.ConfigPath,
+						"state":       task.DockerLogin.State,
+						"relogin":     task.DockerLogin.Relogin,
+						"docker_host": task.DockerLogin.DockerHost,
+						"tls":         task.DockerLogin.TLS,
+					},
+				}
+
+			case task.DockerSwarm != nil:
+				modReq = ModuleRequest{
+					Module: "docker_swarm",
+					Args: map[string]interface{}{
+						"state":             task.DockerSwarm.State,
+						"advertise_addr":    task.DockerSwarm.AdvertiseAddr,
+						"listen_addr":       task.DockerSwarm.ListenAddr,
+						"force_new_cluster": task.DockerSwarm.ForceNewCluster,
+						"remote_addrs":      task.DockerSwarm.RemoteAddrs,
+						"join_token":        task.DockerSwarm.JoinToken,
+						"node_id":           task.DockerSwarm.NodeID,
+						"force":             task.DockerSwarm.Force,
+						"docker_host":       task.DockerSwarm.DockerHost,
+						"tls":               task.DockerSwarm.TLS,
+					},
+				}
+
+			case task.DockerSwarmService != nil:
+				// Convert PortPublish params
+				publishes := []map[string]interface{}{}
+				for _, p := range task.DockerSwarmService.Publish {
+					publishes = append(publishes, map[string]interface{}{
+						"published_port": p.PublishedPort,
+						"target_port":    p.TargetPort,
+						"protocol":       p.Protocol,
+						"mode":           p.Mode,
+					})
+				}
+
+				modReq = ModuleRequest{
+					Module: "docker_swarm_service",
+					Args: map[string]interface{}{
+						"name":           task.DockerSwarmService.Name,
+						"image":          task.DockerSwarmService.Image,
+						"state":          task.DockerSwarmService.State,
+						"replicas":       task.DockerSwarmService.Replicas,
+						"args":           task.DockerSwarmService.Args,
+						"command":        task.DockerSwarmService.Command,
+						"env":            task.DockerSwarmService.Env,
+						"publish":        publishes,
+						"networks":       task.DockerSwarmService.Networks,
+						"labels":         task.DockerSwarmService.Labels,
+						"limit_cpu":      task.DockerSwarmService.LimitCPU,
+						"limit_memory":   task.DockerSwarmService.LimitMemory,
+						"constraint":     task.DockerSwarmService.Constraint,
+						"restart_policy": task.DockerSwarmService.RestartPolicy,
+						"force_update":   task.DockerSwarmService.ForceUpdate,
+						"docker_host":    task.DockerSwarmService.DockerHost,
+						"tls":            task.DockerSwarmService.TLS,
+					},
+				}
+
+			case task.DockerNode != nil:
+				modReq = ModuleRequest{
+					Module: "docker_node",
+					Args: map[string]interface{}{
+						"hostname":     task.DockerNode.Hostname,
+						"self":         task.DockerNode.Self,
+						"availability": task.DockerNode.Availability,
+						"role":         task.DockerNode.Role,
+						"labels":       task.DockerNode.Labels,
+						"labels_state": task.DockerNode.LabelsState,
+						"docker_host":  task.DockerNode.DockerHost,
+						"tls":          task.DockerNode.TLS,
+					},
+				}
+
+			case task.DockerCompose != nil:
+				modReq = ModuleRequest{
+					Module: "docker_compose",
+					Args: map[string]interface{}{
+						"project_src":    task.DockerCompose.ProjectSrc,
+						"project_name":   task.DockerCompose.ProjectName,
+						"files":          task.DockerCompose.Files,
+						"state":          task.DockerCompose.State,
+						"services":       task.DockerCompose.Services,
+						"scale":          task.DockerCompose.Scale,
+						"build":          task.DockerCompose.Build,
+						"pull":           task.DockerCompose.Pull,
+						"remove_orphans": task.DockerCompose.RemoveOrphans,
+						"env":            task.DockerCompose.Env,
+						"profiles":       task.DockerCompose.Profiles,
+						"docker_host":    task.DockerCompose.DockerHost,
+						"tls":            task.DockerCompose.TLS,
+					},
+				}
+
+			case task.DockerSecret != nil:
+				modReq = ModuleRequest{
+					Module: "docker_secret",
+					Args: map[string]interface{}{
+						"name":        task.DockerSecret.Name,
+						"data":        task.DockerSecret.Data,
+						"data_is_b64": task.DockerSecret.DataIsB64,
+						"labels":      task.DockerSecret.Labels,
+						"force":       task.DockerSecret.Force,
+						"state":       task.DockerSecret.State,
+						"docker_host": task.DockerSecret.DockerHost,
+						"tls":         task.DockerSecret.TLS,
+					},
+				}
+
+			case task.DockerConfig != nil:
+				modReq = ModuleRequest{
+					Module: "docker_config",
+					Args: map[string]interface{}{
+						"name":        task.DockerConfig.Name,
+						"data":        task.DockerConfig.Data,
+						"data_is_b64": task.DockerConfig.DataIsB64,
+						"labels":      task.DockerConfig.Labels,
+						"force":       task.DockerConfig.Force,
+						"state":       task.DockerConfig.State,
+						"docker_host": task.DockerConfig.DockerHost,
+						"tls":         task.DockerConfig.TLS,
+					},
+				}
+
+			case task.DockerStack != nil:
+				modReq = ModuleRequest{
+					Module: "docker_stack",
+					Args: map[string]interface{}{
+						"name":               task.DockerStack.Name,
+						"compose_file":       task.DockerStack.ComposeFile,
+						"state":              task.DockerStack.State,
+						"with_registry_auth": task.DockerStack.WithRegistryAuth,
+						"prune":              task.DockerStack.Prune,
+						"resolve_image":      task.DockerStack.ResolveImage,
+						"docker_host":        task.DockerStack.DockerHost,
+						"tls":                task.DockerStack.TLS,
+					},
+				}
+
+			case task.DockerContainerExec != nil:
+				modReq = ModuleRequest{
+					Module: "docker_container_exec",
+					Args: map[string]interface{}{
+						"container":         task.DockerContainerExec.Container,
+						"argv":              task.DockerContainerExec.Argv,
+						"command":           task.DockerContainerExec.Command,
+						"chdir":             task.DockerContainerExec.Chdir,
+						"detach":            task.DockerContainerExec.Detach,
+						"user":              task.DockerContainerExec.User,
+						"stdin":             task.DockerContainerExec.Stdin,
+						"stdin_add_newline": task.DockerContainerExec.StdinAddNewline,
+						"strip_empty_ends":  task.DockerContainerExec.StripEmptyEnds,
+						"tty":               task.DockerContainerExec.TTY,
+						"env":               task.DockerContainerExec.Env,
+						"docker_host":       task.DockerContainerExec.DockerHost,
+						"tls":               task.DockerContainerExec.TLS,
+					},
+				}
+			case task.DockerContainerCopyInto != nil:
+				modReq = ModuleRequest{
+					Module: "docker_container_copy_into",
+					Args: map[string]interface{}{
+						"container":      task.DockerContainerCopyInto.Container,
+						"path":           task.DockerContainerCopyInto.Path,
+						"content":        task.DockerContainerCopyInto.Content,
+						"content_is_b64": task.DockerContainerCopyInto.ContentIsB64,
+						"container_path": task.DockerContainerCopyInto.ContainerPath,
+						"follow":         task.DockerContainerCopyInto.Follow,
+						"local_follow":   task.DockerContainerCopyInto.LocalFollow,
+						"owner_id":       task.DockerContainerCopyInto.OwnerID,
+						"group_id":       task.DockerContainerCopyInto.GroupID,
+						"mode":           task.DockerContainerCopyInto.Mode,
+						"force":          task.DockerContainerCopyInto.Force,
+						"docker_host":    task.DockerContainerCopyInto.DockerHost,
+						"tls":            task.DockerContainerCopyInto.TLS,
+					},
+				}
+
+			case task.DockerImageBuild != nil:
+				modReq = ModuleRequest{
+					Module: "docker_image_build",
+					Args: map[string]interface{}{
+						"name":        task.DockerImageBuild.Name,
+						"tag":         task.DockerImageBuild.Tag,
+						"path":        task.DockerImageBuild.Path,
+						"dockerfile":  task.DockerImageBuild.Dockerfile,
+						"cache_from":  task.DockerImageBuild.CacheFrom,
+						"pull":        task.DockerImageBuild.Pull,
+						"network":     task.DockerImageBuild.Network,
+						"nocache":     task.DockerImageBuild.NoCache,
+						"etc_hosts":   task.DockerImageBuild.EtcHosts,
+						"args":        task.DockerImageBuild.Args,
+						"target":      task.DockerImageBuild.Target,
+						"platform":    task.DockerImageBuild.Platform,
+						"shm_size":    task.DockerImageBuild.ShmSize,
+						"labels":      task.DockerImageBuild.Labels,
+						"rebuild":     task.DockerImageBuild.Rebuild,
+						"push":        task.DockerImageBuild.Push,
+						"docker_host": task.DockerImageBuild.DockerHost,
+						"tls":         task.DockerImageBuild.TLS,
+					},
+				}
+
+			case task.DockerImageLoad != nil:
+				modReq = ModuleRequest{
+					Module: "docker_image_load",
+					Args: map[string]interface{}{
+						"path":        task.DockerImageLoad.Path,
+						"docker_host": task.DockerImageLoad.DockerHost,
+						"tls":         task.DockerImageLoad.TLS,
+					},
+				}
+
+			case task.DockerImageExport != nil:
+				// Handle names/name alias
+				names := task.DockerImageExport.Names
+				if len(names) == 0 && task.DockerImageExport.Name != "" {
+					names = []string{task.DockerImageExport.Name}
+				}
+				modReq = ModuleRequest{
+					Module: "docker_image_export",
+					Args: map[string]interface{}{
+						"names":       names,
+						"tag":         task.DockerImageExport.Tag,
+						"path":        task.DockerImageExport.Path,
+						"force":       task.DockerImageExport.Force,
+						"docker_host": task.DockerImageExport.DockerHost,
+						"tls":         task.DockerImageExport.TLS,
+					},
 				}
 
 			case task.Reboot != nil:

@@ -22,7 +22,14 @@ RUN apt-get update && apt-get install -y \
     xz-utils \
     cowsay \
     nginx \
+    docker.io \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Docker Plugins manually
+RUN mkdir -p /usr/local/lib/docker/cli-plugins && \
+    curl -SL https://github.com/docker/compose/releases/download/v2.24.6/docker-compose-linux-$(uname -m) -o /usr/local/lib/docker/cli-plugins/docker-compose && \
+    curl -SL https://github.com/docker/buildx/releases/download/v0.13.1/buildx-v0.13.1.linux-$(uname -m | sed s/x86_64/amd64/ | sed s/aarch64/arm64/) -o /usr/local/lib/docker/cli-plugins/docker-buildx && \
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/lib/docker/cli-plugins/docker-buildx
 
 RUN cd /lib/systemd/system/sysinit.target.wants/ && \
     ls | grep -v systemd-tmpfiles-setup | xargs rm -f && \

@@ -24,35 +24,93 @@ type Host struct {
 }
 
 type Task struct {
-	Name           string                 `yaml:"name"`
-	Apt            *AptParams             `yaml:"apt,omitempty"`
-	AptKey         *AptKeyParams          `yaml:"apt_key,omitempty"`
-	AptRepository  *AptRepositoryParams   `yaml:"apt_repository,omitempty"`
-	File           *FileParams            `yaml:"file,omitempty"`
-	Copy           *CopyParams            `yaml:"copy,omitempty"`
-	Fetch          *FetchParams           `yaml:"fetch,omitempty"`
-	URI            *URIParams             `yaml:"uri,omitempty"`
-	Cron           *CronParams            `yaml:"cron,omitempty"`
-	UFW            *UFWParams             `yaml:"ufw,omitempty"`
-	User           *UserParams            `yaml:"user,omitempty"`
-	Group          *GroupParams           `yaml:"group,omitempty"`
-	SystemdService *SystemdServiceParams  `yaml:"systemd_service,omitempty"`
-	Systemd        *SystemdServiceParams  `yaml:"systemd,omitempty"`
-	Service        *ServiceParams         `yaml:"service,omitempty"`
-	ServiceFacts   *ServiceFactsParams    `yaml:"service_facts,omitempty"`
-	Ping           *PingParams            `yaml:"ping,omitempty"`
-	Command        *CommandParams         `yaml:"command,omitempty"`
-	Shell          *ShellParams           `yaml:"shell,omitempty"`
-	Script         *ScriptParams          `yaml:"script,omitempty"`
-	Unarchive      *UnarchiveParams       `yaml:"unarchive,omitempty"`
-	Git            *GitParams             `yaml:"git,omitempty"`
-	Lineinfile     *LineinfileParams      `yaml:"lineinfile,omitempty"`
-	Blockinfile    *BlockinfileParams     `yaml:"blockinfile,omitempty"`
-	Replace        *ReplaceParams         `yaml:"replace,omitempty"`
-	Iptables       *IptablesParams        `yaml:"iptables,omitempty"`
-	IptablesState  *IptablesStateParams   `yaml:"iptables_state,omitempty"`
-	Tempfile       *TempfileParams        `yaml:"tempfile,omitempty"`
-	Reboot         *RebootParams          `yaml:"reboot,omitempty"`
+	Name                    string                         `yaml:"name"`
+	Apt                     *AptParams                     `yaml:"apt,omitempty"`
+	AptKey                  *AptKeyParams                  `yaml:"apt_key,omitempty"`
+	AptRepository           *AptRepositoryParams           `yaml:"apt_repository,omitempty"`
+	File                    *FileParams                    `yaml:"file,omitempty"`
+	Copy                    *CopyParams                    `yaml:"copy,omitempty"`
+	Fetch                   *FetchParams                   `yaml:"fetch,omitempty"`
+	URI                     *URIParams                     `yaml:"uri,omitempty"`
+	Cron                    *CronParams                    `yaml:"cron,omitempty"`
+	UFW                     *UFWParams                     `yaml:"ufw,omitempty"`
+	User                    *UserParams                    `yaml:"user,omitempty"`
+	Group                   *GroupParams                   `yaml:"group,omitempty"`
+	SystemdService          *SystemdServiceParams          `yaml:"systemd_service,omitempty"`
+	Systemd                 *SystemdServiceParams          `yaml:"systemd,omitempty"`
+	Service                 *ServiceParams                 `yaml:"service,omitempty"`
+	ServiceFacts            *ServiceFactsParams            `yaml:"service_facts,omitempty"`
+	Ping                    *PingParams                    `yaml:"ping,omitempty"`
+	Command                 *CommandParams                 `yaml:"command,omitempty"`
+	Shell                   *ShellParams                   `yaml:"shell,omitempty"`
+	Script                  *ScriptParams                  `yaml:"script,omitempty"`
+	Unarchive               *UnarchiveParams               `yaml:"unarchive,omitempty"`
+	Git                     *GitParams                     `yaml:"git,omitempty"`
+	Lineinfile              *LineinfileParams              `yaml:"lineinfile,omitempty"`
+	Blockinfile             *BlockinfileParams             `yaml:"blockinfile,omitempty"`
+	Replace                 *ReplaceParams                 `yaml:"replace,omitempty"`
+	Iptables                *IptablesParams                `yaml:"iptables,omitempty"`
+	IptablesState           *IptablesStateParams           `yaml:"iptables_state,omitempty"`
+	Tempfile                *TempfileParams                `yaml:"tempfile,omitempty"`
+	Reboot                  *RebootParams                  `yaml:"reboot,omitempty"`
+	DockerContainer         *DockerContainerParams         `yaml:"docker_container,omitempty"`
+	DockerImage             *DockerImageParams             `yaml:"docker_image,omitempty"`
+	DockerNetwork           *DockerNetworkParams           `yaml:"docker_network,omitempty"`
+	DockerVolume            *DockerVolumeParams            `yaml:"docker_volume,omitempty"`
+	DockerPrune             *DockerPruneParams             `yaml:"docker_prune,omitempty"`
+	DockerLogin             *DockerLoginParams             `yaml:"docker_login,omitempty"`
+	DockerSwarm             *DockerSwarmParams             `yaml:"docker_swarm,omitempty"`
+	DockerSwarmService      *DockerSwarmServiceParams      `yaml:"docker_swarm_service,omitempty"`
+	DockerNode              *DockerNodeParams              `yaml:"docker_node,omitempty"`
+	DockerCompose           *DockerComposeParams           `yaml:"docker_compose,omitempty"`
+	DockerSecret            *DockerSecretParams            `yaml:"docker_secret,omitempty"`
+	DockerConfig            *DockerConfigParams            `yaml:"docker_config,omitempty"`
+	DockerStack             *DockerStackParams             `yaml:"docker_stack,omitempty"`
+	DockerContainerExec     *DockerContainerExecParams     `yaml:"docker_container_exec,omitempty"`
+	DockerContainerCopyInto *DockerContainerCopyIntoParams `yaml:"docker_container_copy_into,omitempty"`
+	DockerImageBuild        *DockerImageBuildParams        `yaml:"docker_image_build,omitempty"`
+	DockerImageLoad         *DockerImageLoadParams         `yaml:"docker_image_load,omitempty"`
+	DockerImageExport       *DockerImageExportParams       `yaml:"docker_image_export,omitempty"`
+}
+
+type DockerSwarmServiceParams struct {
+	Name          string            `yaml:"name"`
+	Image         string            `yaml:"image"`
+	State         string            `yaml:"state,omitempty"`
+	Replicas      *uint64           `yaml:"replicas,omitempty"`
+	Args          []string          `yaml:"args,omitempty"`
+	Command       interface{}       `yaml:"command,omitempty"`
+	Env           map[string]string `yaml:"env,omitempty"`
+	Publish       []PortPublish     `yaml:"publish,omitempty"`
+	Networks      []string          `yaml:"networks,omitempty"`
+	Labels        map[string]string `yaml:"labels,omitempty"`
+	LimitCPU      float64           `yaml:"limit_cpu,omitempty"`
+	LimitMemory   int64             `yaml:"limit_memory,omitempty"`
+	Constraint    []string          `yaml:"constraint,omitempty"`
+	RestartPolicy string            `yaml:"restart_policy,omitempty"`
+	ForceUpdate   bool              `yaml:"force_update,omitempty"`
+
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type PortPublish struct {
+	PublishedPort uint32 `yaml:"published_port"`
+	TargetPort    uint32 `yaml:"target_port"`
+	Protocol      string `yaml:"protocol,omitempty"`
+	Mode          string `yaml:"mode,omitempty"`
+}
+
+type DockerNodeParams struct {
+	Hostname     string            `yaml:"hostname,omitempty"`
+	Self         bool              `yaml:"self,omitempty"`
+	Availability string            `yaml:"availability,omitempty"`
+	Role         string            `yaml:"role,omitempty"`
+	Labels       map[string]string `yaml:"labels,omitempty"`
+	LabelsState  string            `yaml:"labels_state,omitempty"`
+
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
 }
 
 type ServiceFactsParams struct {
@@ -453,6 +511,296 @@ type IptablesParams struct {
 	IPVersion        string          `yaml:"ip_version,omitempty"`
 	Wait             int             `yaml:"wait,omitempty"`
 	Numeric          bool            `yaml:"numeric,omitempty"`
+}
+
+type DockerContainerParams struct {
+	Name          string            `yaml:"name"`
+	Image         string            `yaml:"image,omitempty"`
+	State         string            `yaml:"state,omitempty"`
+	Command       interface{}       `yaml:"command,omitempty"`
+	Entrypoint    interface{}       `yaml:"entrypoint,omitempty"`
+	Args          []string          `yaml:"args,omitempty"`
+	Env           map[string]string `yaml:"env,omitempty"`
+	ExposedPorts  []string          `yaml:"exposed_ports,omitempty"`
+	Ports         []string          `yaml:"ports,omitempty"`
+	Volumes       []string          `yaml:"volumes,omitempty"`
+	NetworkMode   string            `yaml:"network_mode,omitempty"`
+	Networks      []DockerNetwork   `yaml:"networks,omitempty"`
+	RestartPolicy string            `yaml:"restart_policy,omitempty"`
+	AutoRemove    bool              `yaml:"auto_remove,omitempty"`
+	Privileged    bool              `yaml:"privileged,omitempty"`
+	User          string            `yaml:"user,omitempty"`
+	WorkingDir    string            `yaml:"working_dir,omitempty"`
+	Hostname      string            `yaml:"hostname,omitempty"`
+	Domainname    string            `yaml:"domainname,omitempty"`
+	Labels        map[string]string `yaml:"labels,omitempty"`
+	Links         []string          `yaml:"links,omitempty"`
+	LogDriver     string            `yaml:"log_driver,omitempty"`
+	LogOptions    map[string]string `yaml:"log_options,omitempty"`
+	Comparisons   map[string]string `yaml:"comparisons,omitempty"`
+	Recreate      bool              `yaml:"recreate,omitempty"`
+	ForceKill     bool              `yaml:"force_kill,omitempty"`
+	KeepVolumes   bool              `yaml:"keep_volumes,omitempty"`
+	Pull          bool              `yaml:"pull,omitempty"`
+
+	// Common options
+	DockerHost    string `yaml:"docker_host,omitempty"`
+	TLS           bool   `yaml:"tls,omitempty"`
+	ValidateCerts bool   `yaml:"validate_certs,omitempty"`
+	CAPath        string `yaml:"ca_path,omitempty"`
+	ClientCert    string `yaml:"client_cert,omitempty"`
+	ClientKey     string `yaml:"client_key,omitempty"`
+	APIVersion    string `yaml:"api_version,omitempty"`
+	Timeout       int    `yaml:"timeout,omitempty"`
+	Debug         bool   `yaml:"debug,omitempty"`
+}
+
+type DockerNetwork struct {
+	Name        string   `yaml:"name"`
+	IPv4Address string   `yaml:"ipv4_address,omitempty"`
+	IPv6Address string   `yaml:"ipv6_address,omitempty"`
+	Links       []string `yaml:"links,omitempty"`
+	Aliases     []string `yaml:"aliases,omitempty"`
+}
+
+type DockerImageParams struct {
+	Name        string `yaml:"name"`
+	Tag         string `yaml:"tag,omitempty"`
+	Repository  string `yaml:"repository,omitempty"`
+	State       string `yaml:"state,omitempty"`
+	Source      string `yaml:"source,omitempty"`
+	ForceSource bool   `yaml:"force_source,omitempty"`
+	Push        bool   `yaml:"push,omitempty"`
+	ArchivePath string `yaml:"archive_path,omitempty"`
+	DockerFile  string `yaml:"dockerfile,omitempty"`
+	BuildPath   string `yaml:"build_path,omitempty"`
+	ForceTag    bool   `yaml:"force_tag,omitempty"`
+	KeepImage   bool   `yaml:"keep_image,omitempty"`
+
+	DockerHost    string `yaml:"docker_host,omitempty"`
+	TLS           bool   `yaml:"tls,omitempty"`
+	ValidateCerts bool   `yaml:"validate_certs,omitempty"`
+	CAPath        string `yaml:"ca_path,omitempty"`
+	ClientCert    string `yaml:"client_cert,omitempty"`
+	ClientKey     string `yaml:"client_key,omitempty"`
+	APIVersion    string `yaml:"api_version,omitempty"`
+	Timeout       int    `yaml:"timeout,omitempty"`
+	Debug         bool   `yaml:"debug,omitempty"`
+}
+
+type DockerNetworkParams struct {
+	Name       string            `yaml:"name"`
+	State      string            `yaml:"state,omitempty"`
+	Driver     string            `yaml:"driver,omitempty"`
+	Options    map[string]string `yaml:"options,omitempty"`
+	IPAMConfig []IPAMConfig      `yaml:"ipam_config,omitempty"`
+	Labels     map[string]string `yaml:"labels,omitempty"`
+	Internal   bool              `yaml:"internal,omitempty"`
+	Attachable bool              `yaml:"attachable,omitempty"`
+	Scope      string            `yaml:"scope,omitempty"`
+	Force      bool              `yaml:"force,omitempty"`
+
+	DockerHost    string `yaml:"docker_host,omitempty"`
+	TLS           bool   `yaml:"tls,omitempty"`
+	ValidateCerts bool   `yaml:"validate_certs,omitempty"`
+	CAPath        string `yaml:"ca_path,omitempty"`
+	ClientCert    string `yaml:"client_cert,omitempty"`
+	ClientKey     string `yaml:"client_key,omitempty"`
+	APIVersion    string `yaml:"api_version,omitempty"`
+	Timeout       int    `yaml:"timeout,omitempty"`
+	Debug         bool   `yaml:"debug,omitempty"`
+}
+
+type IPAMConfig struct {
+	Subnet  string `yaml:"subnet,omitempty"`
+	Gateway string `yaml:"gateway,omitempty"`
+	IPRange string `yaml:"ip_range,omitempty"`
+}
+
+type DockerVolumeParams struct {
+	Name          string            `yaml:"name"`
+	State         string            `yaml:"state,omitempty"`
+	Driver        string            `yaml:"driver,omitempty"`
+	DriverOptions map[string]string `yaml:"driver_options,omitempty"`
+	Labels        map[string]string `yaml:"labels,omitempty"`
+	Recreate      string            `yaml:"recreate,omitempty"`
+	Force         bool              `yaml:"force,omitempty"`
+
+	DockerHost    string `yaml:"docker_host,omitempty"`
+	TLS           bool   `yaml:"tls,omitempty"`
+	ValidateCerts bool   `yaml:"validate_certs,omitempty"`
+	CAPath        string `yaml:"ca_path,omitempty"`
+	ClientCert    string `yaml:"client_cert,omitempty"`
+	ClientKey     string `yaml:"client_key,omitempty"`
+	APIVersion    string `yaml:"api_version,omitempty"`
+	Timeout       int    `yaml:"timeout,omitempty"`
+	Debug         bool   `yaml:"debug,omitempty"`
+}
+
+type DockerPruneParams struct {
+	Containers    bool              `yaml:"containers,omitempty"`
+	Images        bool              `yaml:"images,omitempty"`
+	Networks      bool              `yaml:"networks,omitempty"`
+	Volumes       bool              `yaml:"volumes,omitempty"`
+	Builder       bool              `yaml:"builder,omitempty"`
+	ImagesFilters map[string]string `yaml:"images_filters,omitempty"`
+
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type DockerLoginParams struct {
+	Username   string `yaml:"username"`
+	Password   string `yaml:"password"`
+	Registry   string `yaml:"registry,omitempty"`
+	Email      string `yaml:"email,omitempty"`
+	ConfigPath string `yaml:"config_path,omitempty"`
+	State      string `yaml:"state,omitempty"`
+	Relogin    bool   `yaml:"relogin,omitempty"`
+
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type DockerSwarmParams struct {
+	State           string   `yaml:"state,omitempty"`
+	AdvertiseAddr   string   `yaml:"advertise_addr,omitempty"`
+	ListenAddr      string   `yaml:"listen_addr,omitempty"`
+	ForceNewCluster bool     `yaml:"force_new_cluster,omitempty"`
+	RemoteAddrs     []string `yaml:"remote_addrs,omitempty"`
+	JoinToken       string   `yaml:"join_token,omitempty"`
+	NodeID          string   `yaml:"node_id,omitempty"`
+	Force           bool     `yaml:"force,omitempty"`
+
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type DockerComposeParams struct {
+	ProjectSrc    string            `yaml:"project_src"`
+	ProjectName   string            `yaml:"project_name,omitempty"`
+	Files         []string          `yaml:"files,omitempty"`
+	State         string            `yaml:"state,omitempty"`
+	Services      []string          `yaml:"services,omitempty"`
+	Scale         map[string]int    `yaml:"scale,omitempty"`
+	Build         bool              `yaml:"build,omitempty"`
+	Pull          bool              `yaml:"pull,omitempty"`
+	RemoveOrphans bool              `yaml:"remove_orphans,omitempty"`
+	Env           map[string]string `yaml:"env,omitempty"`
+	Profiles      []string          `yaml:"profiles,omitempty"`
+
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type DockerSecretParams struct {
+	Name      string            `yaml:"name"`
+	Data      string            `yaml:"data,omitempty"`
+	DataIsB64 bool              `yaml:"data_is_b64,omitempty"`
+	Labels    map[string]string `yaml:"labels,omitempty"`
+	Force     bool              `yaml:"force,omitempty"`
+	State     string            `yaml:"state,omitempty"`
+
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type DockerConfigParams struct {
+	Name      string            `yaml:"name"`
+	Data      string            `yaml:"data,omitempty"`
+	DataIsB64 bool              `yaml:"data_is_b64,omitempty"`
+	Labels    map[string]string `yaml:"labels,omitempty"`
+	Force     bool              `yaml:"force,omitempty"`
+	State     string            `yaml:"state,omitempty"`
+
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type DockerStackParams struct {
+	Name             string `yaml:"name"`
+	ComposeFile      string `yaml:"compose_file,omitempty"`
+	State            string `yaml:"state,omitempty"`
+	WithRegistryAuth bool   `yaml:"with_registry_auth,omitempty"`
+	Prune            bool   `yaml:"prune,omitempty"`
+	ResolveImage     string `yaml:"resolve_image,omitempty"`
+
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type DockerContainerExecParams struct {
+	Container       string            `yaml:"container"`
+	Argv            []string          `yaml:"argv,omitempty"`
+	Command         string            `yaml:"command,omitempty"`
+	Chdir           string            `yaml:"chdir,omitempty"`
+	Detach          bool              `yaml:"detach,omitempty"`
+	User            string            `yaml:"user,omitempty"`
+	Stdin           string            `yaml:"stdin,omitempty"`
+	StdinAddNewline bool              `yaml:"stdin_add_newline,omitempty"`
+	StripEmptyEnds  bool              `yaml:"strip_empty_ends,omitempty"`
+	TTY             bool              `yaml:"tty,omitempty"`
+	Env             map[string]string `yaml:"env,omitempty"`
+
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type DockerContainerCopyIntoParams struct {
+	Container     string `yaml:"container"`
+	Path          string `yaml:"path,omitempty"`
+	Content       string `yaml:"content,omitempty"`
+	ContentIsB64  bool   `yaml:"content_is_b64,omitempty"`
+	ContainerPath string `yaml:"container_path"`
+	Follow        bool   `yaml:"follow,omitempty"`
+	LocalFollow   bool   `yaml:"local_follow,omitempty"`
+	OwnerID       *int   `yaml:"owner_id,omitempty"`
+	GroupID       *int   `yaml:"group_id,omitempty"`
+	Mode          string `yaml:"mode,omitempty"`
+	Force         *bool  `yaml:"force,omitempty"`
+
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type DockerImageBuildParams struct {
+	Name       string            `yaml:"name"`
+	Tag        string            `yaml:"tag,omitempty"`
+	Path       string            `yaml:"path"`
+	Dockerfile string            `yaml:"dockerfile,omitempty"`
+	CacheFrom  []string          `yaml:"cache_from,omitempty"`
+	Pull       bool              `yaml:"pull,omitempty"`
+	Network    string            `yaml:"network,omitempty"`
+	NoCache    bool              `yaml:"nocache,omitempty"`
+	EtcHosts   map[string]string `yaml:"etc_hosts,omitempty"`
+	Args       map[string]string `yaml:"args,omitempty"`
+	Target     string            `yaml:"target,omitempty"`
+	Platform   []string          `yaml:"platform,omitempty"`
+	ShmSize    string            `yaml:"shm_size,omitempty"`
+	Labels     map[string]string `yaml:"labels,omitempty"`
+	Rebuild    string            `yaml:"rebuild,omitempty"`
+	Push       bool              `yaml:"push,omitempty"`
+
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type DockerImageLoadParams struct {
+	Path string `yaml:"path"`
+
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type DockerImageExportParams struct {
+	Names []string `yaml:"names,omitempty"`
+	Name  string   `yaml:"name,omitempty"` // Alias
+	Tag   string   `yaml:"tag,omitempty"`
+	Path  string   `yaml:"path"`
+	Force bool     `yaml:"force,omitempty"`
+
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
 }
 
 func (a *AptParams) GetPackages() []string {
