@@ -21,6 +21,7 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/iptables_state"
 	"github.com/gjergjiramku/goansible/internal/modules/lineinfile"
 	"github.com/gjergjiramku/goansible/internal/modules/ping"
+	"github.com/gjergjiramku/goansible/internal/modules/replace"
 	"github.com/gjergjiramku/goansible/internal/modules/service"
 	"github.com/gjergjiramku/goansible/internal/modules/service_facts"
 	"github.com/gjergjiramku/goansible/internal/modules/shell"
@@ -226,6 +227,14 @@ func main() {
 			return
 		}
 		writeJSON(blockinfile.Execute(req))
+
+	case "replace":
+		var req replace.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse replace request: %v", err))
+			return
+		}
+		writeJSON(replace.Execute(req))
 
 	case "iptables":
 		var req iptables.Request
