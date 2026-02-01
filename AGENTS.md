@@ -101,7 +101,8 @@ goansible/
 │       ├── user/             # User account management
 │       ├── group/            # Group management
 │       ├── iptables/         # Iptables firewall rule management
-│       └── reboot/           # Reboot machine and wait for it to come back
+│       ├── reboot/           # Reboot machine and wait for it to come back
+│       └── script/           # Run local scripts on remote hosts
 ├── test/
 │   ├── Dockerfile            # Ubuntu 22.04 + systemd + SSH
 │   ├── docker-compose.yaml   # Test container orchestration
