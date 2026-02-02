@@ -1,0 +1,38 @@
+hosts:
+  - name: testhost
+    host: 127.0.0.1
+    port: 2222
+    user: testuser
+    password: "testpass"
+    become: true
+    become_password: "testpass"
+    # private_key: "test/id_rsa" # if needed, but testuser usually has password in Dockerfile?
+    # Let's check Dockerfile if we fail auth.
+    # Usually standard test user is testuser:testpassword or similar.
+    # AGENTS.md example shows password usage.
+
+tasks:
+  - name: Ping
+    ping:
+
+  - name: Pull and Start alpine container
+    docker_container:
+      name: test-alpine
+      image: alpine:latest
+      state: started
+      command: ["sleep", "300"]
+      pull: true
+
+  - name: Verify container is running (using shell)
+    shell:
+      cmd: "docker ps | grep test-alpine"
+
+  - name: Remove alpine container
+    docker_container:
+      name: test-alpine
+      state: absent
+      force_kill: true
+
+  - name: Verify container is gone
+    shell:
+      cmd: "docker ps -a | grep test-alpine || echo 'Gone'"

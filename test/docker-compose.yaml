@@ -1,0 +1,48 @@
+services:
+  testhost:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "2222:22"
+    privileged: true
+    cgroup: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+    tmpfs:
+      - /run
+      - /run/lock
+    networks:
+      - testnet
+    extra_hosts:
+      - "httpbin:${HTTPBIN_IP:-172.28.0.10}"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    healthcheck:
+      test: ["CMD", "systemctl", "is-active", "ssh"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
+    depends_on:
+      httpbin:
+        condition: service_started
+
+  httpbin:
+    image: mccutchen/go-httpbin:latest
+    ports:
+      - "8080:80"
+    environment:
+      - PORT=80
+    networks:
+      testnet:
+        ipv4_address: 172.28.0.10
+
+networks:
+  testnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
