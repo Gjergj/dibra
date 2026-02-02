@@ -98,6 +98,22 @@ func Execute(req Request) Response {
 		groupID = *req.GroupID
 	}
 
+	// If not explicitly provided, try to detect container default user IDs
+	if req.OwnerID == nil || req.GroupID == nil {
+		user, err := docker.GetContainerUser(ctx, cli, req.Container)
+		if err == nil {
+			uid, gid, err := docker.GetContainerUserIDs(ctx, cli, req.Container, user)
+			if err == nil {
+				if req.OwnerID == nil {
+					ownerID = uid
+				}
+				if req.GroupID == nil {
+					groupID = gid
+				}
+			}
+		}
+	}
+
 	// Create tar archive with the file
 	var tarBuf bytes.Buffer
 	tw := tar.NewWriter(&tarBuf)

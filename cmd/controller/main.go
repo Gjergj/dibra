@@ -901,6 +901,45 @@ func main() {
 					},
 				}
 
+			case task.DockerComposeV2Run != nil:
+				modReq = ModuleRequest{
+					Module: "docker_compose_v2_run",
+					Args: map[string]interface{}{
+						"project_src":       task.DockerComposeV2Run.ProjectSrc,
+						"project_name":      task.DockerComposeV2Run.ProjectName,
+						"files":             task.DockerComposeV2Run.Files,
+						"service":           task.DockerComposeV2Run.Service,
+						"argv":              task.DockerComposeV2Run.Argv,
+						"command":           task.DockerComposeV2Run.Command,
+						"build":             task.DockerComposeV2Run.Build,
+						"cap_add":           task.DockerComposeV2Run.CapAdd,
+						"cap_drop":          task.DockerComposeV2Run.CapDrop,
+						"entrypoint":        task.DockerComposeV2Run.EntryPoint,
+						"interactive":       task.DockerComposeV2Run.Interactive,
+						"labels":            task.DockerComposeV2Run.Labels,
+						"name":              task.DockerComposeV2Run.Name,
+						"no_deps":           task.DockerComposeV2Run.NoDeps,
+						"publish":           task.DockerComposeV2Run.Publish,
+						"quiet_pull":        task.DockerComposeV2Run.QuietPull,
+						"remove_orphans":    task.DockerComposeV2Run.RemoveOrphans,
+						"cleanup":           task.DockerComposeV2Run.Cleanup,
+						"service_ports":     task.DockerComposeV2Run.ServicePorts,
+						"use_aliases":       task.DockerComposeV2Run.UseAliases,
+						"volumes":           task.DockerComposeV2Run.Volumes,
+						"chdir":             task.DockerComposeV2Run.Chdir,
+						"detach":            task.DockerComposeV2Run.Detach,
+						"user":              task.DockerComposeV2Run.User,
+						"stdin":             task.DockerComposeV2Run.Stdin,
+						"stdin_add_newline": task.DockerComposeV2Run.StdinAddNewline,
+						"strip_empty_ends":  task.DockerComposeV2Run.StripEmptyEnds,
+						"tty":               task.DockerComposeV2Run.TTY,
+						"env":               task.DockerComposeV2Run.Env,
+						"profiles":          task.DockerComposeV2Run.Profiles,
+						"docker_host":       task.DockerComposeV2Run.DockerHost,
+						"tls":               task.DockerComposeV2Run.TLS,
+					},
+				}
+
 			case task.DockerSecret != nil:
 				modReq = ModuleRequest{
 					Module: "docker_secret",

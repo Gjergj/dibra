@@ -72,7 +72,7 @@ func runPlaybook(t *testing.T, playbook string) string {
 	}
 
 	projectRoot := getProjectRoot()
-	cmd := exec.Command("go", "run", "./cmd/controller", "-config", tmpFile, "-v")
+	cmd := exec.Command("go", "run", "./cmd/controller", "-config", tmpFile, "-v", "-force-agent-upload")
 	cmd.Dir = projectRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
