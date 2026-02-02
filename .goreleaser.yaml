@@ -1,0 +1,169 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: goansible
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: controller
+    main: ./cmd/controller
+    binary: goansible
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/gjergjiramku/goansible/internal/version.Version={{.Version}}
+      - -X github.com/gjergjiramku/goansible/internal/version.Commit={{.Commit}}
+      - -X github.com/gjergjiramku/goansible/internal/version.Date={{.Date}}
+
+  - id: agent
+    main: ./cmd/agent
+    binary: goansible-agent
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/gjergjiramku/goansible/internal/version.Version={{.Version}}
+      - -X github.com/gjergjiramku/goansible/internal/version.Commit={{.Commit}}
+      - -X github.com/gjergjiramku/goansible/internal/version.Date={{.Date}}
+
+archives:
+  - id: controller-archive
+    ids:
+      - controller
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE*
+
+  - id: agent-archive
+    ids:
+      - agent
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}-agent_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - none*
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - Merge pull request
+      - Merge branch
+
+# Homebrew tap
+brews:
+  - name: goansible
+    ids:
+      - controller-archive
+    repository:
+      owner: Gjergj
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/Gjergj/goansible"
+    description: "A minimal Ansible-like configuration management tool written in Go"
+    license: "MIT"
+    test: |
+      system "#{bin}/goansible", "--version"
+    install: |
+      bin.install "goansible"
+    # Note: brews is deprecated in favor of homebrew_casks for GUI apps,
+    # but for CLI tools, brews is still the correct approach
+
+# Scoop (Windows package manager)
+scoops:
+  - name: goansible
+    ids:
+      - controller-archive
+    repository:
+      owner: Gjergj
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+    homepage: "https://github.com/Gjergj/goansible"
+    description: "A minimal Ansible-like configuration management tool written in Go"
+    license: "MIT"
+
+# Chocolatey (Windows)
+chocolateys:
+  - name: goansible
+    ids:
+      - controller-archive
+    owners: Gjergj
+    authors: Gjergj Ramku
+    project_url: "https://github.com/Gjergj/goansible"
+    license_url: "https://github.com/Gjergj/goansible/blob/main/LICENSE"
+    require_license_acceptance: false
+    bug_tracker_url: "https://github.com/Gjergj/goansible/issues"
+    description: "A minimal Ansible-like configuration management tool written in Go"
+    summary: "GoAnsible - Ansible-like configuration management in Go"
+    release_notes: "https://github.com/Gjergj/goansible/releases/tag/v{{ .Version }}"
+    tags: "automation configuration-management devops infrastructure ansible"
+    skip_publish: false
+    api_key: "{{ .Env.CHOCOLATEY_API_KEY }}"
+
+# Linux packages (deb/rpm)
+nfpms:
+  - id: goansible
+    package_name: goansible
+    ids:
+      - controller
+    vendor: Gjergj Ramku
+    homepage: "https://github.com/Gjergj/goansible"
+    maintainer: "Gjergj Ramku <gjergj@example.com>"
+    description: "A minimal Ansible-like configuration management tool written in Go"
+    license: "MIT"
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    section: admin
+    priority: optional
+    contents:
+      - src: ./README.md
+        dst: /usr/share/doc/goansible/README.md
+
+release:
+  github:
+    owner: Gjergj
+    name: goansible
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
+
+# Announce (optional - uncomment if you want Discord/Slack notifications)
+# announce:
+#   discord:
+#     enabled: true
+#     message_template: "GoAnsible {{ .Tag }} is out! Check it out: {{ .ReleaseURL }}"

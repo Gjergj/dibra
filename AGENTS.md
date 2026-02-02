@@ -8,6 +8,15 @@ A minimal Ansible-like configuration management tool written in Go.
 # Build
 go build ./...
 
+# Build with version info (outputs to bin/)
+make build-dev
+
+# Install to $GOPATH/bin
+make install
+
+# Check version
+./bin/goansible --version
+
 # Run playbook
 go run ./cmd/controller -config playbook.yaml
 
@@ -27,6 +36,70 @@ make test-integration-only
 make test-integration-up
 make test-integration-down
 ```
+
+## Distribution & Releases
+
+### Versioning
+
+Version info is embedded at build time via ldflags. The `internal/version` package provides:
+- `Version` - Semantic version (e.g., `v1.2.3`)
+- `Commit` - Git commit hash
+- `Date` - Build timestamp
+
+### Local Development Builds
+
+```bash
+make build-dev          # Build with version info → bin/
+make install            # Install to $GOPATH/bin
+make snapshot           # GoReleaser snapshot (all platforms)
+make release-dry        # GoReleaser dry-run release
+make release-check      # Validate .goreleaser.yaml
+```
+
+### Creating a Release
+
+1. Tag the release: `git tag v0.1.0`
+2. Push the tag: `git push origin v0.1.0`
+3. GitHub Actions runs `.github/workflows/release.yml` which:
+   - Cross-compiles for Windows/macOS/Linux (amd64/arm64)
+   - Creates `.tar.gz` (Unix) and `.zip` (Windows) archives
+   - Generates `.deb` and `.rpm` packages
+   - Publishes to GitHub Releases
+   - Updates Homebrew tap formula
+   - Updates Scoop bucket manifest
+   - Publishes to Chocolatey (if configured)
+
+### Installation Methods
+
+| Platform | Method |
+|----------|--------|
+| **macOS** | `brew install Gjergj/tap/goansible` |
+| **macOS/Linux** | `curl -fsSL https://raw.githubusercontent.com/Gjergj/goansible/main/scripts/install.sh \| sh` |
+| **Linux (deb)** | Download `.deb` from releases, `sudo dpkg -i goansible_*.deb` |
+| **Linux (rpm)** | Download `.rpm` from releases, `sudo rpm -i goansible_*.rpm` |
+| **Windows** | `scoop bucket add goansible https://github.com/Gjergj/scoop-bucket && scoop install goansible` |
+| **Windows** | `choco install goansible` |
+| **Any** | Download binary from [GitHub Releases](https://github.com/Gjergj/goansible/releases) |
+
+### Required GitHub Secrets
+
+For automated releases, configure these secrets in the repo settings:
+
+| Secret | Purpose | How to get |
+|--------|---------|------------|
+| `HOMEBREW_TAP_TOKEN` | Push to `Gjergj/homebrew-tap` | GitHub PAT with Contents:write on homebrew-tap repo |
+| `SCOOP_BUCKET_TOKEN` | Push to `Gjergj/scoop-bucket` | GitHub PAT with Contents:write on scoop-bucket repo |
+| `CHOCOLATEY_API_KEY` | Publish to Chocolatey | From https://community.chocolatey.org/account |
+
+### GoReleaser Configuration
+
+The `.goreleaser.yaml` configures:
+- **Builds**: `controller` (all platforms) and `agent` (Linux/macOS only)
+- **Archives**: Separate archives for controller and agent
+- **Packages**: `.deb` and `.rpm` via nfpm
+- **Homebrew**: Auto-updates `Gjergj/homebrew-tap`
+- **Scoop**: Auto-updates `Gjergj/scoop-bucket`
+- **Chocolatey**: Auto-publishes to community repo
 
 ## Architecture
 
