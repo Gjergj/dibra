@@ -16,6 +16,7 @@ import (
 	"github.com/gjergjiramku/goansible/internal/builder"
 	"github.com/gjergjiramku/goansible/internal/config"
 	"github.com/gjergjiramku/goansible/internal/ssh"
+	"github.com/gjergjiramku/goansible/internal/version"
 )
 
 const (
@@ -44,7 +45,13 @@ func main() {
 	configPath := flag.String("config", "playbook.yaml", "Path to playbook YAML file")
 	forceUpload := flag.Bool("force-agent-upload", false, "Force upload of agent binary")
 	verbose := flag.Bool("v", false, "Verbose output")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("goansible %s (commit: %s, built: %s)\n", version.Version, version.Commit, version.Date)
+		os.Exit(0)
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {

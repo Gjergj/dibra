@@ -7,6 +7,7 @@ toolchain go1.24.3
 require (
 	github.com/docker/docker v24.0.7+incompatible
 	github.com/docker/go-connections v0.4.0
+	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	golang.org/x/crypto v0.28.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -17,7 +18,6 @@ require (
 	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/morikuni/aec v1.1.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect

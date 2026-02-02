@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 
+	"github.com/gjergjiramku/goansible/internal/version"
+
 	"github.com/gjergjiramku/goansible/internal/modules/apt"
 	"github.com/gjergjiramku/goansible/internal/modules/apt_key"
 	"github.com/gjergjiramku/goansible/internal/modules/apt_repository"
@@ -61,6 +63,12 @@ type ModuleRequest struct {
 }
 
 func main() {
+	// Check for --version flag
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-version") {
+		fmt.Printf("goansible-agent %s (commit: %s, built: %s)\n", version.Version, version.Commit, version.Date)
+		os.Exit(0)
+	}
+
 	input, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		writeError(fmt.Sprintf("failed to read stdin: %v", err))
