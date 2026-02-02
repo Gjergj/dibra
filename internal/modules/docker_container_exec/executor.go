@@ -51,7 +51,7 @@ func Execute(req Request) Response {
 	// Create exec configuration
 	execConfig := types.ExecConfig{
 		User:         req.User,
-		Privileged:   false,
+		Privileged:   req.Privileged,
 		Tty:          req.TTY,
 		AttachStdin:  req.Stdin != "",
 		AttachStdout: true,

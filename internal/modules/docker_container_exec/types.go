@@ -13,6 +13,7 @@ type Request struct {
 	Chdir           string            `json:"chdir"`
 	Detach          bool              `json:"detach"`
 	User            string            `json:"user"`
+	Privileged      bool              `json:"privileged"`
 	Stdin           string            `json:"stdin"`
 	StdinAddNewline bool              `json:"stdin_add_newline"`
 	StripEmptyEnds  bool              `json:"strip_empty_ends"`

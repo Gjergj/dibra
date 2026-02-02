@@ -15,6 +15,7 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/copy"
 	"github.com/gjergjiramku/goansible/internal/modules/cron"
 	"github.com/gjergjiramku/goansible/internal/modules/docker_compose"
+	"github.com/gjergjiramku/goansible/internal/modules/docker_compose_v2_run"
 	"github.com/gjergjiramku/goansible/internal/modules/docker_config"
 	"github.com/gjergjiramku/goansible/internal/modules/docker_container"
 	"github.com/gjergjiramku/goansible/internal/modules/docker_container_copy_into"
@@ -375,6 +376,14 @@ func main() {
 			return
 		}
 		writeJSON(docker_compose.Execute(req))
+
+	case "docker_compose_v2_run":
+		var req docker_compose_v2_run.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse docker_compose_v2_run request: %v", err))
+			return
+		}
+		writeJSON(docker_compose_v2_run.Execute(req))
 
 	case "docker_secret":
 		var req docker_secret.Request

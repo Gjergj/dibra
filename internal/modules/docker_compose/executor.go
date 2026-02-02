@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/gjergjiramku/goansible/internal/modules/docker"
 )
 
 func Execute(req Request) Response {
@@ -25,40 +27,13 @@ func Execute(req Request) Response {
 	// We might need to select context, but CommonArgs handles client connection, not necessarily CLI context.
 	// For CLI wrapping, we must rely on DOCKER_HOST env var being passed to the process.
 
-	cmdEnv := os.Environ()
-
-	// Apply connection args to Env
-	if req.DockerHost != "" {
-		cmdEnv = append(cmdEnv, fmt.Sprintf("DOCKER_HOST=%s", req.DockerHost))
-	}
-	if req.TLS {
-		cmdEnv = append(cmdEnv, "DOCKER_TLS_VERIFY=1")
-		if req.CAPath != "" {
-			cmdEnv = append(cmdEnv, fmt.Sprintf("DOCKER_CERT_PATH=%s", req.CAPath))
-		}
-	}
-	// Add user envs
-	for k, v := range req.Env {
-		cmdEnv = append(cmdEnv, fmt.Sprintf("%s=%s", k, v))
-	}
-	// COMPOSE_PROFILES
-	if len(req.Profiles) > 0 {
-		cmdEnv = append(cmdEnv, fmt.Sprintf("COMPOSE_PROFILES=%s", strings.Join(req.Profiles, ",")))
-	}
+	cmdEnv := docker.GetComposeEnv(req.ComposeCommonArgs, req.CommonArgs)
 
 	// Base args
-	args := []string{"compose"}
-
-	if req.ProjectName != "" {
-		args = append(args, "--project-name", req.ProjectName)
-	}
+	args := docker.GetComposeBaseArgs(req.ComposeCommonArgs)
 
 	// Use cmd.Dir for project directory context
 	runDir := req.ProjectSrc
-	// If files are provided, they are relative to runDir (or absolute)
-	for _, f := range req.Files {
-		args = append(args, "--file", f)
-	}
 
 	// Main action
 	var actionArgs []string

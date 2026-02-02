@@ -71,6 +71,7 @@ type Task struct {
 	DockerImageBuild        *DockerImageBuildParams        `yaml:"docker_image_build,omitempty"`
 	DockerImageLoad         *DockerImageLoadParams         `yaml:"docker_image_load,omitempty"`
 	DockerImageExport       *DockerImageExportParams       `yaml:"docker_image_export,omitempty"`
+	DockerComposeV2Run      *DockerComposeV2RunParams      `yaml:"docker_compose_v2_run,omitempty"`
 }
 
 type DockerSwarmServiceParams struct {
@@ -688,6 +689,42 @@ type DockerComposeParams struct {
 	RemoveOrphans bool              `yaml:"remove_orphans,omitempty"`
 	Env           map[string]string `yaml:"env,omitempty"`
 	Profiles      []string          `yaml:"profiles,omitempty"`
+
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type DockerComposeV2RunParams struct {
+	ProjectSrc      string            `yaml:"project_src"`
+	ProjectName     string            `yaml:"project_name,omitempty"`
+	Files           []string          `yaml:"files,omitempty"`
+	Service         string            `yaml:"service"`
+	Argv            []string          `yaml:"argv,omitempty"`
+	Command         string            `yaml:"command,omitempty"`
+	Build           bool              `yaml:"build,omitempty"`
+	CapAdd          []string          `yaml:"cap_add,omitempty"`
+	CapDrop         []string          `yaml:"cap_drop,omitempty"`
+	EntryPoint      string            `yaml:"entrypoint,omitempty"`
+	Interactive     *bool             `yaml:"interactive,omitempty"`
+	Labels          []string          `yaml:"labels,omitempty"`
+	Name            string            `yaml:"name,omitempty"`
+	NoDeps          bool              `yaml:"no_deps,omitempty"`
+	Publish         []string          `yaml:"publish,omitempty"`
+	QuietPull       bool              `yaml:"quiet_pull,omitempty"`
+	RemoveOrphans   bool              `yaml:"remove_orphans,omitempty"`
+	Cleanup         bool              `yaml:"cleanup,omitempty"`
+	ServicePorts    bool              `yaml:"service_ports,omitempty"`
+	UseAliases      bool              `yaml:"use_aliases,omitempty"`
+	Volumes         []string          `yaml:"volumes,omitempty"`
+	Chdir           string            `yaml:"chdir,omitempty"`
+	Detach          bool              `yaml:"detach,omitempty"`
+	User            string            `yaml:"user,omitempty"`
+	Stdin           string            `yaml:"stdin,omitempty"`
+	StdinAddNewline *bool             `yaml:"stdin_add_newline,omitempty"`
+	StripEmptyEnds  *bool             `yaml:"strip_empty_ends,omitempty"`
+	TTY             *bool             `yaml:"tty,omitempty"`
+	Env             map[string]string `yaml:"env,omitempty"`
+	Profiles        []string          `yaml:"profiles,omitempty"`
 
 	DockerHost string `yaml:"docker_host,omitempty"`
 	TLS        bool   `yaml:"tls,omitempty"`
