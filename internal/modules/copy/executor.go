@@ -206,7 +206,7 @@ func copyDirectory(req Request) Response {
 			Force: req.Force,
 		})
 		if resp.Failed {
-			return fmt.Errorf(resp.Msg)
+			return fmt.Errorf("%s", resp.Msg)
 		}
 		if resp.Changed {
 			changed = true

@@ -83,7 +83,7 @@ changelog:
       - Merge branch
 
 # Homebrew tap
-brews:
+homebrew:
   - name: goansible
     ids:
       - controller-archive
@@ -99,8 +99,6 @@ brews:
       system "#{bin}/goansible", "--version"
     install: |
       bin.install "goansible"
-    # Note: brews is deprecated in favor of homebrew_casks for GUI apps,
-    # but for CLI tools, brews is still the correct approach
 
 # Scoop (Windows package manager)
 scoops:
