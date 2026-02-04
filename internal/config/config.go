@@ -527,6 +527,7 @@ type DockerContainerParams struct {
 	Volumes       []string          `yaml:"volumes,omitempty"`
 	NetworkMode   string            `yaml:"network_mode,omitempty"`
 	Networks      []DockerNetwork   `yaml:"networks,omitempty"`
+	NetworksAppend bool             `yaml:"networks_append,omitempty"`
 	RestartPolicy string            `yaml:"restart_policy,omitempty"`
 	AutoRemove    bool              `yaml:"auto_remove,omitempty"`
 	Privileged    bool              `yaml:"privileged,omitempty"`
@@ -538,11 +539,43 @@ type DockerContainerParams struct {
 	Links         []string          `yaml:"links,omitempty"`
 	LogDriver     string            `yaml:"log_driver,omitempty"`
 	LogOptions    map[string]string `yaml:"log_options,omitempty"`
-	Comparisons   map[string]string `yaml:"comparisons,omitempty"`
-	Recreate      bool              `yaml:"recreate,omitempty"`
-	ForceKill     bool              `yaml:"force_kill,omitempty"`
-	KeepVolumes   bool              `yaml:"keep_volumes,omitempty"`
-	Pull          bool              `yaml:"pull,omitempty"`
+
+	// Capabilities (Tier 1)
+	CapAdd  []string `yaml:"cap_add,omitempty"`
+	CapDrop []string `yaml:"cap_drop,omitempty"`
+
+	// Devices (Tier 1)
+	Devices []string `yaml:"devices,omitempty"`
+
+	// Healthcheck (Tier 1)
+	Healthcheck *DockerHealthcheck `yaml:"healthcheck,omitempty"`
+
+	// Other Tier 1 options
+	Init    bool     `yaml:"init,omitempty"`
+	Tmpfs   []string `yaml:"tmpfs,omitempty"`
+	ShmSize string   `yaml:"shm_size,omitempty"`
+
+	// Resource limits (Tier 2)
+	Ulimits     []DockerUlimit    `yaml:"ulimits,omitempty"`
+	Sysctls     map[string]string `yaml:"sysctls,omitempty"`
+	SecurityOpt []string          `yaml:"security_opt,omitempty"`
+	CPUs        float64           `yaml:"cpus,omitempty"`
+	Memory      string            `yaml:"memory,omitempty"`
+	MemorySwap  string            `yaml:"memory_swap,omitempty"`
+	PidsLimit   int64             `yaml:"pids_limit,omitempty"`
+
+	// Idempotency control
+	Comparisons map[string]string `yaml:"comparisons,omitempty"`
+	Recreate    interface{}       `yaml:"recreate,omitempty"` // bool or string (auto/always/never)
+	ForceKill   bool              `yaml:"force_kill,omitempty"`
+	KeepVolumes bool              `yaml:"keep_volumes,omitempty"`
+
+	// Image pull behavior
+	Pull interface{} `yaml:"pull,omitempty"` // bool or string (missing/always/never)
+
+	// Registry authentication
+	RegistryUsername string `yaml:"registry_username,omitempty"`
+	RegistryPassword string `yaml:"registry_password,omitempty"`
 
 	// Common options
 	DockerHost    string `yaml:"docker_host,omitempty"`
@@ -554,6 +587,20 @@ type DockerContainerParams struct {
 	APIVersion    string `yaml:"api_version,omitempty"`
 	Timeout       int    `yaml:"timeout,omitempty"`
 	Debug         bool   `yaml:"debug,omitempty"`
+}
+
+type DockerHealthcheck struct {
+	Test        []string `yaml:"test"`
+	Interval    string   `yaml:"interval,omitempty"`
+	Timeout     string   `yaml:"timeout,omitempty"`
+	StartPeriod string   `yaml:"start_period,omitempty"`
+	Retries     int      `yaml:"retries,omitempty"`
+}
+
+type DockerUlimit struct {
+	Name string `yaml:"name"`
+	Soft int64  `yaml:"soft"`
+	Hard int64  `yaml:"hard"`
 }
 
 type DockerNetwork struct {
@@ -570,13 +617,24 @@ type DockerImageParams struct {
 	Repository  string `yaml:"repository,omitempty"`
 	State       string `yaml:"state,omitempty"`
 	Source      string `yaml:"source,omitempty"`
-	ForceSource bool   `yaml:"force_source,omitempty"`
 	Push        bool   `yaml:"push,omitempty"`
 	ArchivePath string `yaml:"archive_path,omitempty"`
 	DockerFile  string `yaml:"dockerfile,omitempty"`
 	BuildPath   string `yaml:"build_path,omitempty"`
-	ForceTag    bool   `yaml:"force_tag,omitempty"`
 	KeepImage   bool   `yaml:"keep_image,omitempty"`
+
+	// Pull behavior
+	Pull interface{} `yaml:"pull,omitempty"` // string (missing/always/never) or bool for backward compat
+
+	// Force flags (separated for clarity)
+	ForcePull   bool `yaml:"force_pull,omitempty"`   // Force pull even if image exists
+	ForceRemove bool `yaml:"force_remove,omitempty"` // Force remove (removes containers using the image)
+	ForceTag    bool `yaml:"force_tag,omitempty"`    // Force tag even if target exists
+	ForceSource bool `yaml:"force_source,omitempty"` // Deprecated: use force_pull or force_remove
+
+	// Registry authentication
+	RegistryUsername string `yaml:"registry_username,omitempty"`
+	RegistryPassword string `yaml:"registry_password,omitempty"`
 
 	DockerHost    string `yaml:"docker_host,omitempty"`
 	TLS           bool   `yaml:"tls,omitempty"`

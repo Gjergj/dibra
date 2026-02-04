@@ -1,7 +1,6 @@
 package docker_node
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -17,7 +16,8 @@ func Execute(req Request) Response {
 	}
 	defer cli.Close()
 
-	ctx := context.Background()
+	ctx, cancel := docker.GetContext(req.CommonArgs)
+	defer cancel()
 
 	// 1. Identify the node
 	var targetNode swarm.Node

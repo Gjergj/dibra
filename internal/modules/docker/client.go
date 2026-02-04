@@ -3,6 +3,8 @@ package docker
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/tlsconfig"
@@ -183,4 +186,49 @@ func GetContainerUserIDs(ctx context.Context, cli *client.Client, containerID st
 func Ping(ctx context.Context, cli *client.Client) error {
 	_, err := cli.Ping(ctx)
 	return err
+}
+
+// EncodeRegistryAuth encodes username and password for Docker registry authentication.
+// Returns an empty string if both username and password are empty.
+func EncodeRegistryAuth(username, password string) string {
+	if username == "" && password == "" {
+		return ""
+	}
+	authConfig := registry.AuthConfig{
+		Username: username,
+		Password: password,
+	}
+	encodedJSON, err := json.Marshal(authConfig)
+	if err != nil {
+		return ""
+	}
+	return base64.URLEncoding.EncodeToString(encodedJSON)
+}
+
+// ExtractRegistry extracts the registry hostname from an image reference.
+// Returns "docker.io" for images without an explicit registry.
+func ExtractRegistry(image string) string {
+	// Remove tag/digest
+	ref := image
+	if idx := strings.LastIndex(ref, ":"); idx != -1 {
+		// Check if this is a port or a tag
+		afterColon := ref[idx+1:]
+		if !strings.Contains(afterColon, "/") {
+			ref = ref[:idx]
+		}
+	}
+	if idx := strings.Index(ref, "@"); idx != -1 {
+		ref = ref[:idx]
+	}
+
+	// Check if there's a registry prefix
+	parts := strings.Split(ref, "/")
+	if len(parts) > 1 {
+		// Check if first part looks like a registry (contains . or :)
+		if strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":") {
+			return parts[0]
+		}
+	}
+
+	return "docker.io"
 }

@@ -249,30 +249,110 @@ Manages the lifecycle of Docker containers.
 | `image` | | Image to use for the container. |
 | `state` | `started` | `started`, `stopped`, `present`, `absent`. |
 | `command` | | Command to execute at startup. |
-| `ports` | | List of port bindings (`host:container`). |
-| `volumes` | | List of volume bindings (`host:container:ro`). |
+| `entrypoint` | | Override default entrypoint. |
+| `ports` | | List of port bindings (`host:container` or `ip:host:container`). |
+| `exposed_ports` | | List of ports to expose without host binding. |
+| `volumes` | | List of volume bindings (`host:container:mode`). |
 | `env` | | Dictionary of environment variables. |
 | `network_mode` | | Network mode (e.g., `host`, `bridge`). |
-| `networks` | | List of networks to connect to. |
-| `pull` | `false` | Pull image if missing (currently simplified). |
+| `networks` | | List of networks to connect to (with `name`, `ipv4_address`, `ipv6_address`, `aliases`). |
+| `networks_append` | `false` | If true, don't disconnect from networks not in list. |
+| `pull` | `missing` | Image pull policy: `missing`, `always`, `never`. Also accepts boolean for backward compat. |
+| `recreate` | `auto` | Container recreate policy: `auto`, `always`, `never`. |
+| `restart_policy` | | Restart policy: `no`, `always`, `on-failure[:max]`, `unless-stopped`. |
+| `cap_add` | | List of capabilities to add. |
+| `cap_drop` | | List of capabilities to drop. |
+| `devices` | | Device mappings: `/dev/sda:/dev/xvda:rwm`. |
+| `healthcheck` | | Healthcheck config with `test`, `interval`, `timeout`, `start_period`, `retries`. |
+| `init` | `false` | Run init inside container. |
+| `tmpfs` | | Tmpfs mounts: `/run:rw,noexec,nosuid,size=65536k`. |
+| `shm_size` | | /dev/shm size: `64m`. |
+| `ulimits` | | Ulimit options with `name`, `soft`, `hard`. |
+| `sysctls` | | Sysctl options as key-value pairs. |
+| `security_opt` | | Security options. |
+| `cpus` | | CPU limit (e.g., `1.5`). |
+| `memory` | | Memory limit: `512m`. |
+| `memory_swap` | | Swap limit: `1g` or `-1` for unlimited. |
+| `pids_limit` | | PID limit. |
+| `log_driver` | | Logging driver. |
+| `log_options` | | Logging driver options. |
+| `registry_username` | | Username for registry auth (for private images). |
+| `registry_password` | | Password for registry auth (for private images). |
 
 ### docker_image
 
-Manages Docker images.
+Manages Docker images with pull, tag, and push operations.
 
 ```yaml
-- name: Pull an image
+# Pull an image (default: pull if missing)
+- name: Pull alpine image
   docker_image:
     name: alpine
     tag: latest
-    source: pull
+    state: present
 
-- name: Remove an image
+# Always pull to check for updates
+- name: Pull latest with update check
+  docker_image:
+    name: nginx
+    tag: latest
+    pull: always
+
+# Never pull (fail if not present locally)
+- name: Use local image only
+  docker_image:
+    name: myapp
+    tag: v1.0
+    pull: never
+
+# Tag an existing image
+- name: Tag image for registry
+  docker_image:
+    name: alpine:latest
+    source: local
+    repository: myregistry.com/alpine:prod
+
+# Tag and push to registry with authentication
+- name: Tag and push image
+  docker_image:
+    name: myapp:latest
+    source: local
+    repository: docker.io/myuser/myapp:v1.0
+    push: true
+    registry_username: myuser
+    registry_password: mypassword
+
+# Remove an image
+- name: Remove old image
   docker_image:
     name: alpine
     tag: 3.14
     state: absent
+
+# Force remove (even if container uses it)
+- name: Force remove image
+  docker_image:
+    name: myapp
+    tag: old
+    state: absent
+    force_remove: true
 ```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `name` | required | Image name (can include tag like `alpine:3.19`). |
+| `tag` | | Image tag (alternative to including in name). |
+| `state` | `present` | `present` to ensure image exists, `absent` to remove. |
+| `source` | `pull` | `pull` to pull from registry, `local` for tag/push operations. |
+| `pull` | `missing` | Pull policy: `missing`, `always`, `never`. |
+| `repository` | | Target repository for tagging (used with `source: local`). |
+| `push` | `false` | Push image after tagging. |
+| `registry_username` | | Username for registry authentication. |
+| `registry_password` | | Password for registry authentication. |
+| `force_pull` | `false` | Force pull even if image exists (deprecated, use `pull: always`). |
+| `force_remove` | `false` | Force remove image even if containers use it. |
+| `force_tag` | `false` | Force tag even if target already exists with same ID. |
+| `force_source` | `false` | Deprecated: use `force_pull` or `force_remove`. |
 
 ### docker_network
 

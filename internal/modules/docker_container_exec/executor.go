@@ -2,7 +2,6 @@ package docker_container_exec
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -19,7 +18,8 @@ func Execute(req Request) Response {
 	}
 	defer cli.Close()
 
-	ctx := context.Background()
+	ctx, cancel := docker.GetContext(req.CommonArgs)
+	defer cancel()
 
 	if req.Container == "" {
 		return Response{Failed: true, Msg: "container is required"}
