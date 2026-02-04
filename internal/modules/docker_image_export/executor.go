@@ -1,7 +1,6 @@
 package docker_image_export
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -24,7 +23,8 @@ func Execute(req Request) Response {
 	}
 	defer cli.Close()
 
-	ctx := context.Background()
+	ctx, cancel := docker.GetContext(req.CommonArgs)
+	defer cancel()
 
 	// Default tag
 	tag := req.Tag

@@ -3,7 +3,6 @@ package docker_container_copy_into
 import (
 	"archive/tar"
 	"bytes"
-	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -23,7 +22,8 @@ func Execute(req Request) Response {
 	}
 	defer cli.Close()
 
-	ctx := context.Background()
+	ctx, cancel := docker.GetContext(req.CommonArgs)
+	defer cancel()
 
 	if req.Container == "" {
 		return Response{Failed: true, Msg: "container is required"}

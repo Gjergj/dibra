@@ -1,7 +1,6 @@
 package docker_secret
 
 import (
-	"context"
 	"encoding/base64"
 	"fmt"
 
@@ -17,7 +16,8 @@ func Execute(req Request) Response {
 	}
 	defer cli.Close()
 
-	ctx := context.Background()
+	ctx, cancel := docker.GetContext(req.CommonArgs)
+	defer cancel()
 
 	// 1. Check if Secret exists
 	secrets, err := cli.SecretList(ctx, types.SecretListOptions{})

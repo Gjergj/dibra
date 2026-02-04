@@ -1,7 +1,6 @@
 package docker_volume
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/docker/docker/api/types/volume"
@@ -16,7 +15,8 @@ func Execute(req Request) Response {
 	}
 	defer cli.Close()
 
-	ctx := context.Background()
+	ctx, cancel := docker.GetContext(req.CommonArgs)
+	defer cancel()
 
 	state := req.State
 	if state == "" {
