@@ -72,6 +72,12 @@ type Task struct {
 	DockerImageLoad         *DockerImageLoadParams         `yaml:"docker_image_load,omitempty"`
 	DockerImageExport       *DockerImageExportParams       `yaml:"docker_image_export,omitempty"`
 	DockerComposeV2Run      *DockerComposeV2RunParams      `yaml:"docker_compose_v2_run,omitempty"`
+	DockerContainerInfo     *DockerContainerInfoParams     `yaml:"docker_container_info,omitempty"`
+	DockerImageInfo         *DockerImageInfoParams         `yaml:"docker_image_info,omitempty"`
+	DockerNetworkInfo       *DockerNetworkInfoParams       `yaml:"docker_network_info,omitempty"`
+	DockerVolumeInfo        *DockerVolumeInfoParams        `yaml:"docker_volume_info,omitempty"`
+	DockerHostInfo          *DockerHostInfoParams          `yaml:"docker_host_info,omitempty"`
+	DockerSwarmInfo         *DockerSwarmInfoParams         `yaml:"docker_swarm_info,omitempty"`
 }
 
 type DockerSwarmServiceParams struct {
@@ -981,6 +987,96 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 	}
 
 	return nil
+}
+
+// Docker Info Modules (Phase 5)
+
+type DockerContainerInfoParams struct {
+	Name string `yaml:"name"`
+
+	DockerHost    string `yaml:"docker_host,omitempty"`
+	TLS           bool   `yaml:"tls,omitempty"`
+	ValidateCerts bool   `yaml:"validate_certs,omitempty"`
+	CAPath        string `yaml:"ca_path,omitempty"`
+	ClientCert    string `yaml:"client_cert,omitempty"`
+	ClientKey     string `yaml:"client_key,omitempty"`
+	APIVersion    string `yaml:"api_version,omitempty"`
+	Timeout       int    `yaml:"timeout,omitempty"`
+	Debug         bool   `yaml:"debug,omitempty"`
+}
+
+type DockerImageInfoParams struct {
+	Name string `yaml:"name"`
+
+	DockerHost    string `yaml:"docker_host,omitempty"`
+	TLS           bool   `yaml:"tls,omitempty"`
+	ValidateCerts bool   `yaml:"validate_certs,omitempty"`
+	CAPath        string `yaml:"ca_path,omitempty"`
+	ClientCert    string `yaml:"client_cert,omitempty"`
+	ClientKey     string `yaml:"client_key,omitempty"`
+	APIVersion    string `yaml:"api_version,omitempty"`
+	Timeout       int    `yaml:"timeout,omitempty"`
+	Debug         bool   `yaml:"debug,omitempty"`
+}
+
+type DockerNetworkInfoParams struct {
+	Name string `yaml:"name"`
+
+	DockerHost    string `yaml:"docker_host,omitempty"`
+	TLS           bool   `yaml:"tls,omitempty"`
+	ValidateCerts bool   `yaml:"validate_certs,omitempty"`
+	CAPath        string `yaml:"ca_path,omitempty"`
+	ClientCert    string `yaml:"client_cert,omitempty"`
+	ClientKey     string `yaml:"client_key,omitempty"`
+	APIVersion    string `yaml:"api_version,omitempty"`
+	Timeout       int    `yaml:"timeout,omitempty"`
+	Debug         bool   `yaml:"debug,omitempty"`
+}
+
+type DockerVolumeInfoParams struct {
+	Name string `yaml:"name"`
+
+	DockerHost    string `yaml:"docker_host,omitempty"`
+	TLS           bool   `yaml:"tls,omitempty"`
+	ValidateCerts bool   `yaml:"validate_certs,omitempty"`
+	CAPath        string `yaml:"ca_path,omitempty"`
+	ClientCert    string `yaml:"client_cert,omitempty"`
+	ClientKey     string `yaml:"client_key,omitempty"`
+	APIVersion    string `yaml:"api_version,omitempty"`
+	Timeout       int    `yaml:"timeout,omitempty"`
+	Debug         bool   `yaml:"debug,omitempty"`
+}
+
+type DockerHostInfoParams struct {
+	Containers bool `yaml:"containers,omitempty"`
+	Images     bool `yaml:"images,omitempty"`
+	Volumes    bool `yaml:"volumes,omitempty"`
+	DiskUsage  bool `yaml:"disk_usage,omitempty"`
+
+	DockerHost    string `yaml:"docker_host,omitempty"`
+	TLS           bool   `yaml:"tls,omitempty"`
+	ValidateCerts bool   `yaml:"validate_certs,omitempty"`
+	CAPath        string `yaml:"ca_path,omitempty"`
+	ClientCert    string `yaml:"client_cert,omitempty"`
+	ClientKey     string `yaml:"client_key,omitempty"`
+	APIVersion    string `yaml:"api_version,omitempty"`
+	Timeout       int    `yaml:"timeout,omitempty"`
+	Debug         bool   `yaml:"debug,omitempty"`
+}
+
+type DockerSwarmInfoParams struct {
+	Nodes   bool `yaml:"nodes,omitempty"`
+	Verbose bool `yaml:"verbose,omitempty"`
+
+	DockerHost    string `yaml:"docker_host,omitempty"`
+	TLS           bool   `yaml:"tls,omitempty"`
+	ValidateCerts bool   `yaml:"validate_certs,omitempty"`
+	CAPath        string `yaml:"ca_path,omitempty"`
+	ClientCert    string `yaml:"client_cert,omitempty"`
+	ClientKey     string `yaml:"client_key,omitempty"`
+	APIVersion    string `yaml:"api_version,omitempty"`
+	Timeout       int    `yaml:"timeout,omitempty"`
+	Debug         bool   `yaml:"debug,omitempty"`
 }
 
 func Load(path string) (*Config, error) {

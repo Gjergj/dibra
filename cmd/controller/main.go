@@ -1148,6 +1148,112 @@ func main() {
 					},
 				}
 
+			case task.DockerContainerInfo != nil:
+				modReq = ModuleRequest{
+					Module: "docker_container_info",
+					Args: map[string]interface{}{
+						"name":          task.DockerContainerInfo.Name,
+						"docker_host":   task.DockerContainerInfo.DockerHost,
+						"tls":           task.DockerContainerInfo.TLS,
+						"validate_certs": task.DockerContainerInfo.ValidateCerts,
+						"ca_path":       task.DockerContainerInfo.CAPath,
+						"client_cert":   task.DockerContainerInfo.ClientCert,
+						"client_key":    task.DockerContainerInfo.ClientKey,
+						"api_version":   task.DockerContainerInfo.APIVersion,
+						"timeout":       task.DockerContainerInfo.Timeout,
+						"debug":         task.DockerContainerInfo.Debug,
+					},
+				}
+
+			case task.DockerImageInfo != nil:
+				modReq = ModuleRequest{
+					Module: "docker_image_info",
+					Args: map[string]interface{}{
+						"name":          task.DockerImageInfo.Name,
+						"docker_host":   task.DockerImageInfo.DockerHost,
+						"tls":           task.DockerImageInfo.TLS,
+						"validate_certs": task.DockerImageInfo.ValidateCerts,
+						"ca_path":       task.DockerImageInfo.CAPath,
+						"client_cert":   task.DockerImageInfo.ClientCert,
+						"client_key":    task.DockerImageInfo.ClientKey,
+						"api_version":   task.DockerImageInfo.APIVersion,
+						"timeout":       task.DockerImageInfo.Timeout,
+						"debug":         task.DockerImageInfo.Debug,
+					},
+				}
+
+			case task.DockerNetworkInfo != nil:
+				modReq = ModuleRequest{
+					Module: "docker_network_info",
+					Args: map[string]interface{}{
+						"name":          task.DockerNetworkInfo.Name,
+						"docker_host":   task.DockerNetworkInfo.DockerHost,
+						"tls":           task.DockerNetworkInfo.TLS,
+						"validate_certs": task.DockerNetworkInfo.ValidateCerts,
+						"ca_path":       task.DockerNetworkInfo.CAPath,
+						"client_cert":   task.DockerNetworkInfo.ClientCert,
+						"client_key":    task.DockerNetworkInfo.ClientKey,
+						"api_version":   task.DockerNetworkInfo.APIVersion,
+						"timeout":       task.DockerNetworkInfo.Timeout,
+						"debug":         task.DockerNetworkInfo.Debug,
+					},
+				}
+
+			case task.DockerVolumeInfo != nil:
+				modReq = ModuleRequest{
+					Module: "docker_volume_info",
+					Args: map[string]interface{}{
+						"name":          task.DockerVolumeInfo.Name,
+						"docker_host":   task.DockerVolumeInfo.DockerHost,
+						"tls":           task.DockerVolumeInfo.TLS,
+						"validate_certs": task.DockerVolumeInfo.ValidateCerts,
+						"ca_path":       task.DockerVolumeInfo.CAPath,
+						"client_cert":   task.DockerVolumeInfo.ClientCert,
+						"client_key":    task.DockerVolumeInfo.ClientKey,
+						"api_version":   task.DockerVolumeInfo.APIVersion,
+						"timeout":       task.DockerVolumeInfo.Timeout,
+						"debug":         task.DockerVolumeInfo.Debug,
+					},
+				}
+
+			case task.DockerHostInfo != nil:
+				modReq = ModuleRequest{
+					Module: "docker_host_info",
+					Args: map[string]interface{}{
+						"containers":    task.DockerHostInfo.Containers,
+						"images":        task.DockerHostInfo.Images,
+						"volumes":       task.DockerHostInfo.Volumes,
+						"disk_usage":    task.DockerHostInfo.DiskUsage,
+						"docker_host":   task.DockerHostInfo.DockerHost,
+						"tls":           task.DockerHostInfo.TLS,
+						"validate_certs": task.DockerHostInfo.ValidateCerts,
+						"ca_path":       task.DockerHostInfo.CAPath,
+						"client_cert":   task.DockerHostInfo.ClientCert,
+						"client_key":    task.DockerHostInfo.ClientKey,
+						"api_version":   task.DockerHostInfo.APIVersion,
+						"timeout":       task.DockerHostInfo.Timeout,
+						"debug":         task.DockerHostInfo.Debug,
+					},
+				}
+
+			case task.DockerSwarmInfo != nil:
+				modReq = ModuleRequest{
+					Module: "docker_swarm_info",
+					Args: map[string]interface{}{
+						"nodes":         task.DockerSwarmInfo.Nodes,
+						"verbose":       task.DockerSwarmInfo.Verbose,
+						"docker_host":   task.DockerSwarmInfo.DockerHost,
+						"tls":           task.DockerSwarmInfo.TLS,
+						"validate_certs": task.DockerSwarmInfo.ValidateCerts,
+						"ca_path":       task.DockerSwarmInfo.CAPath,
+						"client_cert":   task.DockerSwarmInfo.ClientCert,
+						"client_key":    task.DockerSwarmInfo.ClientKey,
+						"api_version":   task.DockerSwarmInfo.APIVersion,
+						"timeout":       task.DockerSwarmInfo.Timeout,
+						"debug":         task.DockerSwarmInfo.Debug,
+					},
+				}
+
 			case task.Reboot != nil:
 				resp := executeReboot(client, remoteAgentPath, host, task.Reboot, *verbose)
 				printResponse(resp, *verbose)
