@@ -35,6 +35,12 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/docker_swarm"
 	"github.com/gjergjiramku/goansible/internal/modules/docker_swarm_service"
 	"github.com/gjergjiramku/goansible/internal/modules/docker_volume"
+	"github.com/gjergjiramku/goansible/internal/modules/docker_container_info"
+	"github.com/gjergjiramku/goansible/internal/modules/docker_image_info"
+	"github.com/gjergjiramku/goansible/internal/modules/docker_network_info"
+	"github.com/gjergjiramku/goansible/internal/modules/docker_volume_info"
+	"github.com/gjergjiramku/goansible/internal/modules/docker_host_info"
+	"github.com/gjergjiramku/goansible/internal/modules/docker_swarm_info"
 	"github.com/gjergjiramku/goansible/internal/modules/file"
 	"github.com/gjergjiramku/goansible/internal/modules/git"
 	"github.com/gjergjiramku/goansible/internal/modules/group"
@@ -456,6 +462,54 @@ func main() {
 			return
 		}
 		writeJSON(docker_image_export.Execute(req))
+
+	case "docker_container_info":
+		var req docker_container_info.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse docker_container_info request: %v", err))
+			return
+		}
+		writeJSON(docker_container_info.Execute(req))
+
+	case "docker_image_info":
+		var req docker_image_info.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse docker_image_info request: %v", err))
+			return
+		}
+		writeJSON(docker_image_info.Execute(req))
+
+	case "docker_network_info":
+		var req docker_network_info.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse docker_network_info request: %v", err))
+			return
+		}
+		writeJSON(docker_network_info.Execute(req))
+
+	case "docker_volume_info":
+		var req docker_volume_info.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse docker_volume_info request: %v", err))
+			return
+		}
+		writeJSON(docker_volume_info.Execute(req))
+
+	case "docker_host_info":
+		var req docker_host_info.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse docker_host_info request: %v", err))
+			return
+		}
+		writeJSON(docker_host_info.Execute(req))
+
+	case "docker_swarm_info":
+		var req docker_swarm_info.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse docker_swarm_info request: %v", err))
+			return
+		}
+		writeJSON(docker_swarm_info.Execute(req))
 
 	default:
 		writeError(fmt.Sprintf("unknown module: %s", modReq.Module))

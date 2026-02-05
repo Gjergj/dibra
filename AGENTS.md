@@ -764,8 +764,97 @@ Export (archive) one or more Docker images to a tarball.
       - redis:latest
     path: /tmp/images.tar
 ```
+
+### docker_container_info
+
+Inspect a Docker container and return its full configuration. Read-only module.
+
+```yaml
+- name: Get container info
+  docker_container_info:
+    name: my-container
 ```
+
+**Returns**: Full container inspection including state, config, network settings, mounts. Sets `exists: false` if container not found (does not fail).
+
+### docker_image_info
+
+Inspect a Docker image and return its full configuration. Read-only module.
+
+```yaml
+- name: Get image info
+  docker_image_info:
+    name: alpine:latest
 ```
+
+**Returns**: Full image inspection including config, layers, metadata. Sets `exists: false` if image not found (does not fail).
+
+### docker_network_info
+
+Inspect a Docker network and return its full configuration. Read-only module.
+
+```yaml
+- name: Get network info
+  docker_network_info:
+    name: my-network
+```
+
+**Returns**: Full network inspection including IPAM config, connected containers. Sets `exists: false` if network not found (does not fail).
+
+### docker_volume_info
+
+Inspect a Docker volume and return its full configuration. Read-only module.
+
+```yaml
+- name: Get volume info
+  docker_volume_info:
+    name: my-volume
+```
+
+**Returns**: Full volume inspection including driver, mountpoint, labels. Sets `exists: false` if volume not found (does not fail).
+
+### docker_host_info
+
+Get Docker daemon information and optionally disk usage. Read-only module.
+
+```yaml
+- name: Get Docker host info
+  docker_host_info:
+
+- name: Get Docker host info with disk usage
+  docker_host_info:
+    disk_usage: true
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `containers` | `false` | Include container count in response. |
+| `images` | `false` | Include image count in response. |
+| `volumes` | `false` | Include volume count in response. |
+| `disk_usage` | `false` | Include disk usage statistics (can be slow). |
+
+**Returns**: Docker daemon info including version, OS, architecture, container/image counts, swarm status, plugins.
+
+### docker_swarm_info
+
+Get Docker Swarm information. Read-only module.
+
+```yaml
+- name: Get swarm info
+  docker_swarm_info:
+
+- name: Get swarm info with node list
+  docker_swarm_info:
+    nodes: true
+    verbose: true
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `nodes` | `false` | Include list of nodes (manager only). |
+| `verbose` | `false` | Include detailed node information. |
+
+**Returns**: Swarm state, join tokens (if manager), node list. Sets `in_swarm: false` if not part of a swarm.
 
 ### command
 
