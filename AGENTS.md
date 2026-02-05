@@ -356,19 +356,130 @@ Manages Docker images with pull, tag, and push operations.
 
 ### docker_network
 
-Manages Docker networks.
+Manages Docker networks with full idempotency, container connection management, and IPv6 support.
 
 ```yaml
+# Create a basic bridge network
 - name: Create a network
   docker_network:
     name: my-network
     driver: bridge
 
-- name: Remove a network
+# Create network with IPAM configuration
+- name: Create network with custom subnet
+  docker_network:
+    name: app-network
+    driver: bridge
+    ipam_config:
+      - subnet: "172.28.0.0/16"
+        gateway: "172.28.0.1"
+    labels:
+      environment: production
+
+# Create IPv6-enabled network
+- name: Create dual-stack network
+  docker_network:
+    name: ipv6-network
+    driver: bridge
+    enable_ipv6: true
+    ipam_config:
+      - subnet: "10.100.0.0/16"
+        gateway: "10.100.0.1"
+      - subnet: "fd12:3456:789a::/64"
+        gateway: "fd12:3456:789a::1"
+
+# Create network and connect containers
+- name: Create network with connected containers
+  docker_network:
+    name: app-network
+    driver: bridge
+    connected:
+      - name: web-container
+        aliases:
+          - web
+          - frontend
+      - name: api-container
+        ipv4_address: "172.28.0.100"
+
+# Connect additional container (keep existing connections)
+- name: Add container to network
+  docker_network:
+    name: app-network
+    appends: true
+    connected:
+      - name: new-container
+
+# Replace all connected containers
+- name: Replace connected containers
+  docker_network:
+    name: app-network
+    appends: false
+    connected:
+      - name: only-this-container
+
+# Create internal network (no external access)
+- name: Create internal network
+  docker_network:
+    name: internal-net
+    driver: bridge
+    internal: true
+
+# Create attachable network (for swarm services)
+- name: Create attachable network
+  docker_network:
+    name: attachable-net
+    driver: bridge
+    attachable: true
+
+# Force recreate network with new config
+- name: Recreate network with different IPAM
+  docker_network:
+    name: my-network
+    driver: bridge
+    force: true
+    ipam_config:
+      - subnet: "172.29.0.0/16"
+
+# Remove a network
+- name: Remove network
   docker_network:
     name: my-network
     state: absent
 ```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `name` | required | Name of the network. |
+| `state` | `present` | `present` to create/update, `absent` to remove. |
+| `driver` | `bridge` | Network driver (bridge, overlay, macvlan, etc.). |
+| `options` | | Driver-specific options as key-value pairs. |
+| `ipam_config` | | List of IPAM configurations with `subnet`, `gateway`, `ip_range`, `aux_address`. |
+| `ipam_driver` | `default` | IPAM driver name. |
+| `ipam_driver_options` | | IPAM driver options as key-value pairs. |
+| `labels` | | Labels to apply to the network. |
+| `internal` | `false` | Restrict external access to the network. |
+| `attachable` | `false` | Enable manual container attachment (for overlay networks). |
+| `enable_ipv6` | `false` | Enable IPv6 on the network. |
+| `config_only` | `false` | Create a config-only network (for swarm). |
+| `config_from` | | Name of network to copy configuration from. |
+| `ingress` | `false` | Create an ingress network (swarm). |
+| `scope` | | Network scope (local, swarm, global). |
+| `connected` | | List of containers to connect with optional endpoint settings. |
+| `appends` | `false` | If true, don't disconnect existing containers not in the list. |
+| `force` | `false` | Force recreate if immutable fields differ. |
+
+**Connected Container Options**:
+
+| Field | Description |
+|-------|-------------|
+| `name` | Container name or ID (required). |
+| `ipv4_address` | Static IPv4 address for the container. |
+| `ipv6_address` | Static IPv6 address for the container. |
+| `aliases` | Network-scoped aliases for the container. |
+| `links` | Legacy container links. |
+| `driver_opts` | Per-container driver options. |
+
+**Idempotency**: The module checks if the network exists with matching configuration. Immutable fields (driver, internal, ipam_config, etc.) require `force: true` to recreate. Container connections can be updated without recreating the network.
 
 ### docker_volume
 

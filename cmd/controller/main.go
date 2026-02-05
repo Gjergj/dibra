@@ -761,37 +761,73 @@ func main() {
 
 			case task.DockerNetwork != nil:
 				// Convert config types to module request args
-				ipamConfigs := []map[string]string{}
+				ipamConfigs := []map[string]interface{}{}
 				for _, cfg := range task.DockerNetwork.IPAMConfig {
-					ipamConfigs = append(ipamConfigs, map[string]string{
+					ipamCfg := map[string]interface{}{
 						"subnet":   cfg.Subnet,
 						"gateway":  cfg.Gateway,
 						"ip_range": cfg.IPRange,
-					})
+					}
+					if len(cfg.AuxAddress) > 0 {
+						ipamCfg["aux_address"] = cfg.AuxAddress
+					}
+					ipamConfigs = append(ipamConfigs, ipamCfg)
+				}
+
+				// Convert connected containers
+				connected := []map[string]interface{}{}
+				for _, c := range task.DockerNetwork.Connected {
+					connCfg := map[string]interface{}{
+						"name": c.Name,
+					}
+					if c.IPv4Address != "" {
+						connCfg["ipv4_address"] = c.IPv4Address
+					}
+					if c.IPv6Address != "" {
+						connCfg["ipv6_address"] = c.IPv6Address
+					}
+					if len(c.Aliases) > 0 {
+						connCfg["aliases"] = c.Aliases
+					}
+					if len(c.Links) > 0 {
+						connCfg["links"] = c.Links
+					}
+					if len(c.DriverOpts) > 0 {
+						connCfg["driver_opts"] = c.DriverOpts
+					}
+					connected = append(connected, connCfg)
 				}
 
 				modReq = ModuleRequest{
 					Module: "docker_network",
 					Args: map[string]interface{}{
-						"name":           task.DockerNetwork.Name,
-						"state":          task.DockerNetwork.State,
-						"driver":         task.DockerNetwork.Driver,
-						"options":        task.DockerNetwork.Options,
-						"ipam_config":    ipamConfigs,
-						"labels":         task.DockerNetwork.Labels,
-						"internal":       task.DockerNetwork.Internal,
-						"attachable":     task.DockerNetwork.Attachable,
-						"scope":          task.DockerNetwork.Scope,
-						"force":          task.DockerNetwork.Force,
-						"docker_host":    task.DockerNetwork.DockerHost,
-						"tls":            task.DockerNetwork.TLS,
-						"validate_certs": task.DockerNetwork.ValidateCerts,
-						"ca_path":        task.DockerNetwork.CAPath,
-						"client_cert":    task.DockerNetwork.ClientCert,
-						"client_key":     task.DockerNetwork.ClientKey,
-						"api_version":    task.DockerNetwork.APIVersion,
-						"timeout":        task.DockerNetwork.Timeout,
-						"debug":          task.DockerNetwork.Debug,
+						"name":                task.DockerNetwork.Name,
+						"state":               task.DockerNetwork.State,
+						"driver":              task.DockerNetwork.Driver,
+						"options":             task.DockerNetwork.Options,
+						"ipam_config":         ipamConfigs,
+						"labels":              task.DockerNetwork.Labels,
+						"internal":            task.DockerNetwork.Internal,
+						"attachable":          task.DockerNetwork.Attachable,
+						"scope":               task.DockerNetwork.Scope,
+						"force":               task.DockerNetwork.Force,
+						"connected":           connected,
+						"appends":             task.DockerNetwork.Appends,
+						"enable_ipv6":         task.DockerNetwork.EnableIPv6,
+						"config_only":         task.DockerNetwork.ConfigOnly,
+						"config_from":         task.DockerNetwork.ConfigFrom,
+						"ingress":             task.DockerNetwork.Ingress,
+						"ipam_driver":         task.DockerNetwork.IPAMDriver,
+						"ipam_driver_options": task.DockerNetwork.IPAMDriverOptions,
+						"docker_host":         task.DockerNetwork.DockerHost,
+						"tls":                 task.DockerNetwork.TLS,
+						"validate_certs":      task.DockerNetwork.ValidateCerts,
+						"ca_path":             task.DockerNetwork.CAPath,
+						"client_cert":         task.DockerNetwork.ClientCert,
+						"client_key":          task.DockerNetwork.ClientKey,
+						"api_version":         task.DockerNetwork.APIVersion,
+						"timeout":             task.DockerNetwork.Timeout,
+						"debug":               task.DockerNetwork.Debug,
 					},
 				}
 
