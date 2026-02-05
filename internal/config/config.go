@@ -659,6 +659,18 @@ type DockerNetworkParams struct {
 	Scope      string            `yaml:"scope,omitempty"`
 	Force      bool              `yaml:"force,omitempty"`
 
+	// Phase 4.1: Connected Containers Management
+	Connected []NetworkConnectedContainer `yaml:"connected,omitempty"`
+	Appends   bool                        `yaml:"appends,omitempty"`
+
+	// Phase 4.2: Additional Options
+	EnableIPv6        bool              `yaml:"enable_ipv6,omitempty"`
+	ConfigOnly        bool              `yaml:"config_only,omitempty"`
+	ConfigFrom        string            `yaml:"config_from,omitempty"`
+	Ingress           bool              `yaml:"ingress,omitempty"`
+	IPAMDriver        string            `yaml:"ipam_driver,omitempty"`
+	IPAMDriverOptions map[string]string `yaml:"ipam_driver_options,omitempty"`
+
 	DockerHost    string `yaml:"docker_host,omitempty"`
 	TLS           bool   `yaml:"tls,omitempty"`
 	ValidateCerts bool   `yaml:"validate_certs,omitempty"`
@@ -670,10 +682,20 @@ type DockerNetworkParams struct {
 	Debug         bool   `yaml:"debug,omitempty"`
 }
 
+type NetworkConnectedContainer struct {
+	Name        string            `yaml:"name"`
+	IPv4Address string            `yaml:"ipv4_address,omitempty"`
+	IPv6Address string            `yaml:"ipv6_address,omitempty"`
+	Aliases     []string          `yaml:"aliases,omitempty"`
+	Links       []string          `yaml:"links,omitempty"`
+	DriverOpts  map[string]string `yaml:"driver_opts,omitempty"`
+}
+
 type IPAMConfig struct {
-	Subnet  string `yaml:"subnet,omitempty"`
-	Gateway string `yaml:"gateway,omitempty"`
-	IPRange string `yaml:"ip_range,omitempty"`
+	Subnet     string            `yaml:"subnet,omitempty"`
+	Gateway    string            `yaml:"gateway,omitempty"`
+	IPRange    string            `yaml:"ip_range,omitempty"`
+	AuxAddress map[string]string `yaml:"aux_address,omitempty"`
 }
 
 type DockerVolumeParams struct {
