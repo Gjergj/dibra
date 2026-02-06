@@ -89,7 +89,7 @@ homebrew_casks:
       - controller-archive
     repository:
       owner: Gjergj
-      name: homebrew-tap
+      name: dibra
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
     homepage: "https://github.com/Gjergj/dibra"
@@ -107,7 +107,7 @@ scoops:
       - controller-archive
     repository:
       owner: Gjergj
-      name: scoop-bucket
+      name: dibra
       token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
     homepage: "https://github.com/Gjergj/dibra"
     description: "A minimal Ansible-like configuration management tool written in Go"
