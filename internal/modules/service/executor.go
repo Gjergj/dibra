@@ -334,7 +334,7 @@ func (m *systemdManager) ServiceExists(name string) bool {
 		}
 	}
 
-	rc, stdout, _ = m.runSystemctl("is-enabled", unitName)
+	_, stdout, _ = m.runSystemctl("is-enabled", unitName)
 	validStates := []string{
 		"enabled", "enabled-runtime", "linked", "linked-runtime",
 		"masked", "masked-runtime", "static", "indirect",
@@ -454,8 +454,9 @@ func (m *sysvinitManager) Restart(name string, args string, sleep int) error {
 }
 
 func (m *sysvinitManager) Reload(name string) error {
-	rc, _, stderr := m.runService(name, "reload")
+	rc, _, _ := m.runService(name, "reload")
 	if rc != 0 {
+		var stderr string
 		rc, _, stderr = m.runService(name, "force-reload")
 		if rc != 0 {
 			return &serviceError{msg: stderr}

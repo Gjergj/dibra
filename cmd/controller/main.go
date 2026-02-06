@@ -1650,7 +1650,7 @@ func parseScriptCmd(cmd string) (scriptPath string, args string) {
 }
 
 func cleanupScript(client *ssh.Client, remotePath string) {
-	client.Run(fmt.Sprintf("rm -f %s", remotePath))
+	_, _, _ = client.Run(fmt.Sprintf("rm -f %s", remotePath))
 }
 
 func executeReboot(client *ssh.Client, agentPath string, host config.Host, params *config.RebootParams, verbose bool) GenericResponse {
@@ -1659,10 +1659,6 @@ func executeReboot(client *ssh.Client, agentPath string, host config.Host, param
 	rebootTimeout := params.RebootTimeout
 	if rebootTimeout == 0 {
 		rebootTimeout = 600
-	}
-	connectTimeout := params.ConnectTimeout
-	if connectTimeout == 0 {
-		connectTimeout = 30
 	}
 	testCommand := params.TestCommand
 	if testCommand == "" {

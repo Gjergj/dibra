@@ -124,7 +124,7 @@ func Execute(req Request) Response {
 
 		// Validate credentials via registry login (default: true)
 		validate := true
-		if req.Validate == false && req.State != "" {
+		if !req.Validate && req.State != "" {
 			// Only skip validation if explicitly set to false
 			// Note: Go unmarshals missing bool as false, so we check if State was provided
 			// to distinguish between explicit false and default

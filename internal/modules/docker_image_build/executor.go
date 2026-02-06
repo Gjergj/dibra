@@ -54,8 +54,7 @@ func Execute(req Request) Response {
 			defer cli.Close()
 			inspect, _, err := cli.ImageInspectWithRaw(context.Background(), fullImageName)
 			if err == nil {
-				existingImageID = inspect.ID
-				// Image exists, no change needed (unless we need to compare build context)
+					// Image exists, no change needed (unless we need to compare build context)
 				return Response{
 					Changed: false,
 					Msg:     "image already exists",

@@ -97,7 +97,7 @@ func (c *Client) UploadFile(localPath, remotePath string) error {
 
 		filename := filepath.Base(remotePath)
 		fmt.Fprintf(w, "C0755 %d %s\n", len(data), filename)
-		w.Write(data)
+		_, _ = w.Write(data)
 		fmt.Fprint(w, "\x00")
 	}()
 
@@ -156,7 +156,7 @@ func (c *Client) ExecuteAgent(agentPath string, input []byte) ([]byte, error) {
 	}
 
 	go func() {
-		stdin.Write(stdinData)
+		_, _ = stdin.Write(stdinData)
 		stdin.Close()
 	}()
 
@@ -204,7 +204,7 @@ func (c *Client) RunWithSudo(cmd string) (string, string, error) {
 
 	go func() {
 		if c.becomePassword != "" {
-			io.WriteString(stdin, c.becomePassword+"\n")
+			_, _ = io.WriteString(stdin, c.becomePassword+"\n")
 		}
 		stdin.Close()
 	}()

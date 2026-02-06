@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -160,31 +159,3 @@ func Execute(req Request) Response {
 	}
 }
 
-// Helper to create tar from io.Reader (not used currently but useful for streaming)
-func createTarFromReader(r io.Reader, name string, size int64, mode os.FileMode, uid, gid int) (*bytes.Buffer, error) {
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-
-	hdr := &tar.Header{
-		Name:    name,
-		Mode:    int64(mode),
-		Size:    size,
-		Uid:     uid,
-		Gid:     gid,
-		ModTime: time.Now(),
-	}
-
-	if err := tw.WriteHeader(hdr); err != nil {
-		return nil, err
-	}
-
-	if _, err := io.Copy(tw, r); err != nil {
-		return nil, err
-	}
-
-	if err := tw.Close(); err != nil {
-		return nil, err
-	}
-
-	return &buf, nil
-}

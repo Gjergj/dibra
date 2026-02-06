@@ -92,9 +92,7 @@ func ParsePortBinding(spec string) (PortBinding, error) {
 		}
 		result.HostIP = spec[1:closeBracket]
 		spec = spec[closeBracket+1:]
-		if strings.HasPrefix(spec, ":") {
-			spec = spec[1:]
-		}
+		spec = strings.TrimPrefix(spec, ":")
 	}
 
 	// Split remaining by colon

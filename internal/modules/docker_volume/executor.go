@@ -82,12 +82,12 @@ func Execute(req Request) Response {
 
 				// Deep compare driver options
 				if req.DriverOptions != nil && !docker.CompareMaps(existing.Options, req.DriverOptions) {
-					return Response{Failed: true, Msg: fmt.Sprintf("volume exists with different driver options: cannot modify in-place; use recreate=always to recreate")}
+					return Response{Failed: true, Msg: "volume exists with different driver options: cannot modify in-place; use recreate=always to recreate"}
 				}
 
 				// Labels can't be updated on existing volumes
 				if req.Labels != nil && !docker.CompareMaps(existing.Labels, req.Labels) {
-					return Response{Failed: true, Msg: fmt.Sprintf("volume exists with different labels: cannot modify in-place; use recreate=always to recreate")}
+					return Response{Failed: true, Msg: "volume exists with different labels: cannot modify in-place; use recreate=always to recreate"}
 				}
 
 				return Response{

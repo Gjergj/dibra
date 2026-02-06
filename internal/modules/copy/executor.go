@@ -132,7 +132,7 @@ func copySingleFile(src, dest string, req Request) Response {
 
 	if destExists && destInfo.IsDir() {
 		dest = filepath.Join(dest, filepath.Base(src))
-		destInfo, err = os.Stat(dest)
+		_, err = os.Stat(dest)
 		destExists = err == nil
 	}
 

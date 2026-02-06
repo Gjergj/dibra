@@ -313,7 +313,7 @@ func unitExists(scope, unitName string) bool {
 		}
 	}
 
-	rc, stdout, _ = runSystemctl(scope, "is-enabled", unitName)
+	_, stdout, _ = runSystemctl(scope, "is-enabled", unitName)
 	validStates := []string{
 		"enabled", "enabled-runtime", "linked", "linked-runtime",
 		"masked", "masked-runtime", "static", "indirect",

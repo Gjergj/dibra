@@ -1,4 +1,4 @@
-.PHONY: build build-dev test test-integration test-integration-up test-integration-down clean snapshot release-dry install
+.PHONY: build build-dev test lint test-integration test-integration-up test-integration-down clean snapshot release-dry install
 
 # Version info for local builds
 VERSION ?= dev
@@ -25,6 +25,10 @@ install:
 
 test:
 	go test ./... -v
+
+# Run golangci-lint (same as CI)
+lint:
+	golangci-lint run ./...
 
 # Start test container
 test-integration-up:

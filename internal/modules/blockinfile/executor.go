@@ -101,9 +101,7 @@ func Execute(req Request) Response {
 		}
 
 		blockLines = append(blockLines, marker0)
-		for _, line := range splitLinesKeepEndings(block) {
-			blockLines = append(blockLines, line)
-		}
+		blockLines = append(blockLines, splitLinesKeepEndings(block)...)
 		blockLines = append(blockLines, marker1)
 	}
 
