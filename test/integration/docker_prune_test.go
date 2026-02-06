@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestPlaybook_DockerPrune(t *testing.T) {
+func TestPlaybook_DockerImagePrune(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 

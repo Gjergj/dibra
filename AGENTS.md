@@ -2852,7 +2852,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_DockerVolume` | Volume deep compare, driver options, metadata, recreate (Phase 7.4) |
 | `TestPlaybook_DockerSecretHashIdempotency` | Secret hash-based idempotency, data change detection (Phase 7.3) |
 | `TestPlaybook_DockerConfigHashIdempotency` | Config hash-based idempotency, label-only updates (Phase 7.3) |
-| `TestPlaybook_DockerPrune` | Prune filter improvements (Phase 7.2) |
+| `TestPlaybook_DockerVolumePrune` | Prune filter improvements (Phase 7.2) |
 
 Each test:
 1. Runs a playbook via `go run ./cmd/controller`

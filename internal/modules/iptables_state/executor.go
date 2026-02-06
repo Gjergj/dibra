@@ -247,7 +247,7 @@ func executeRestore(req Request, initialState []string, tables map[string][]stri
 
 	// Compare current state with what we want to restore
 	// When restoring, we only compare the tables that are in the file
-	currentStateToCompare := initialState
+	var currentStateToCompare []string
 	if req.Table != "" {
 		currentStateToCompare = extractTableState(initialState, req.Table)
 	} else {

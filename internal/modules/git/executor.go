@@ -70,7 +70,11 @@ func Execute(req Request) Response {
 
 		currentRemoteURL := getRemoteURL(req.Dest, remote, gitExec)
 		if currentRemoteURL != "" && currentRemoteURL != req.Repo {
-			setRemoteURL(req.Dest, remote, req.Repo, gitExec)
+			if err := setRemoteURL(req.Dest, remote, req.Repo, gitExec); err != nil {
+				resp.Failed = true
+				resp.Msg = "failed to set remote URL: " + err.Error()
+				return resp
+			}
 			resp.RemoteURLChanged = true
 			resp.Changed = true
 		}
@@ -82,7 +86,11 @@ func Execute(req Request) Response {
 					resp.Msg = "Local modifications exist in repository. Use force=true to discard them."
 					return resp
 				}
-				resetHard(req.Dest, gitExec)
+				if err := resetHard(req.Dest, gitExec); err != nil {
+					resp.Failed = true
+					resp.Msg = "failed to reset: " + err.Error()
+					return resp
+				}
 				resp.Changed = true
 			}
 
@@ -475,7 +483,7 @@ func resetHard(dest, gitExec string) error {
 
 	cleanCmd := exec.Command(gitExec, "clean", "-fd")
 	cleanCmd.Dir = dest
-	cleanCmd.Run()
+	_ = cleanCmd.Run()
 
 	return nil
 }

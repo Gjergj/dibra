@@ -254,7 +254,7 @@ func handleState(ufwPath string, req Request, preState string, commands *[]strin
 		if req.State == "reset" {
 			// Clean up backup files that might cause reset to fail if called multiple times
 			// within the same second (UFW uses timestamps with second precision for backups)
-			exec.Command("sh", "-c", "rm -f /etc/ufw/*.rules.*").Run()
+			_ = exec.Command("sh", "-c", "rm -f /etc/ufw/*.rules.*").Run()
 		}
 		args := []string{"--force", stateMap[req.State]}
 		if output, err := runUFW(ufwPath, args, commands); err != nil {

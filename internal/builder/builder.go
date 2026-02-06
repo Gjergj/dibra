@@ -20,7 +20,7 @@ type Builder struct {
 
 func New(projectRoot string) *Builder {
 	cacheDir := filepath.Join(os.TempDir(), "dibra-cache")
-	os.MkdirAll(cacheDir, 0755)
+	_ = os.MkdirAll(cacheDir, 0755)
 	return &Builder{
 		projectRoot: projectRoot,
 		cacheDir:    cacheDir,
@@ -78,14 +78,16 @@ func (b *Builder) sourceHash() (string, error) {
 	}
 
 	modulesDir := filepath.Join(b.projectRoot, "internal", "modules")
-	filepath.Walk(modulesDir, func(path string, info os.FileInfo, err error) error {
+	if err := filepath.Walk(modulesDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Ext(path) != ".go" {
 			return nil
 		}
 		data, _ := os.ReadFile(path)
 		h.Write(data)
 		return nil
-	})
+	}); err != nil {
+		return "", err
+	}
 
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }

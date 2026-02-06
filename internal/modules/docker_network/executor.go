@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/network"
@@ -354,13 +353,11 @@ func reconcileConnectedContainers(cli *client.Client, ctx context.Context, netwo
 		// Check if already connected
 		alreadyConnected := false
 		var currentEndpoint types.EndpointResource
-		if current != nil {
-			for containerID, endpoint := range current {
-				if containerID == c.Name || endpoint.Name == c.Name {
-					alreadyConnected = true
-					currentEndpoint = endpoint
-					break
-				}
+		for containerID, endpoint := range current {
+			if containerID == c.Name || endpoint.Name == c.Name {
+				alreadyConnected = true
+				currentEndpoint = endpoint
+				break
 			}
 		}
 
@@ -428,23 +425,6 @@ func needsEndpointUpdate(desired ConnectedContainer, current types.EndpointResou
 	// This is a limitation - aliases can only be checked via container inspect
 
 	return false
-}
-
-// compareAliases compares two alias lists (order-independent)
-func compareAliases(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	aMap := make(map[string]bool)
-	for _, s := range a {
-		aMap[strings.ToLower(s)] = true
-	}
-	for _, s := range b {
-		if !aMap[strings.ToLower(s)] {
-			return false
-		}
-	}
-	return true
 }
 
 // mapsContain checks if all keys in 'required' exist in 'actual' with the same values

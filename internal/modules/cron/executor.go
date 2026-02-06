@@ -127,7 +127,6 @@ func Execute(req Request) Response {
 		}
 		if backupFile != "" && !changed {
 			os.Remove(backupFile)
-			backupFile = ""
 		}
 		return Response{
 			Changed:  true,

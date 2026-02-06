@@ -133,7 +133,9 @@ func removeRepo(req Request) Response {
 			if strings.TrimSpace(newContent) == "" {
 				os.Remove(filepath)
 			} else {
-				os.WriteFile(filepath, []byte(newContent), 0644)
+				if err := os.WriteFile(filepath, []byte(newContent), 0644); err != nil {
+					return Response{Failed: true, Msg: fmt.Sprintf("failed to write source file: %v", err)}
+				}
 			}
 		}
 	}

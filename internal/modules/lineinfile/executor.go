@@ -2,8 +2,6 @@ package lineinfile
 
 import (
 	"bytes"
-	"crypto/sha1"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -569,11 +567,3 @@ func lookupGID(name string) (int, error) {
 	return strconv.Atoi(g.Gid)
 }
 
-func sha1File(path string) (string, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	h := sha1.Sum(content)
-	return hex.EncodeToString(h[:]), nil
-}

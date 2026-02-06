@@ -274,9 +274,7 @@ func (h *tarHandler) extract() error {
 		args = append(args, "--exclude="+pattern)
 	}
 
-	for _, pattern := range h.include {
-		args = append(args, pattern)
-	}
+	args = append(args, h.include...)
 
 	args = append(args, h.extraOpts...)
 
@@ -404,9 +402,7 @@ func (h *zipHandler) extract() error {
 
 	args = append(args, h.src, "-d", h.dest)
 
-	for _, pattern := range h.include {
-		args = append(args, pattern)
-	}
+	args = append(args, h.include...)
 
 	for _, pattern := range h.exclude {
 		args = append(args, "-x", pattern)

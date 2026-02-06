@@ -102,7 +102,7 @@ func Execute(req Request) Response {
 			return Response{Failed: true, Msg: fmt.Sprintf("failed to write stdin: %v", err)}
 		}
 		// Close write side to signal EOF
-		hijack.CloseWrite()
+		_ = hijack.CloseWrite()
 	}
 
 	// Read output

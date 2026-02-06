@@ -515,7 +515,7 @@ func createAndStart(ctx context.Context, cli *client.Client, req Request, state 
 			endpointConfig.IPAMConfig.IPv6Address = n.IPv6Address
 		}
 		if err := cli.NetworkConnect(ctx, n.Name, created.ID, endpointConfig); err != nil {
-			cli.ContainerRemove(ctx, created.ID, types.ContainerRemoveOptions{Force: true})
+			_ = cli.ContainerRemove(ctx, created.ID, types.ContainerRemoveOptions{Force: true})
 			return Response{Failed: true, Msg: docker.WrapError("connect network", n.Name, err).Error()}
 		}
 	}
@@ -525,7 +525,7 @@ func createAndStart(ctx context.Context, cli *client.Client, req Request, state 
 	}
 
 	if err := cli.ContainerStart(ctx, created.ID, types.ContainerStartOptions{}); err != nil {
-		cli.ContainerRemove(ctx, created.ID, types.ContainerRemoveOptions{Force: true})
+		_ = cli.ContainerRemove(ctx, created.ID, types.ContainerRemoveOptions{Force: true})
 		return Response{Failed: true, Msg: docker.WrapError("start container", req.Name, err).Error()}
 	}
 
@@ -731,9 +731,9 @@ func removeContainer(ctx context.Context, cli *client.Client, name string, force
 	if err == nil && existing.State.Running {
 		timeout := 10
 		if force {
-			cli.ContainerKill(ctx, name, "SIGKILL")
+			_ = cli.ContainerKill(ctx, name, "SIGKILL")
 		} else {
-			cli.ContainerStop(ctx, name, container.StopOptions{Timeout: &timeout})
+			_ = cli.ContainerStop(ctx, name, container.StopOptions{Timeout: &timeout})
 		}
 	}
 

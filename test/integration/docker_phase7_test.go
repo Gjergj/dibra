@@ -283,8 +283,8 @@ func TestPlaybook_DockerConfigHashIdempotency(t *testing.T) {
 	remoteExec(t, client, "docker config rm "+configName+" || true")
 }
 
-// TestPlaybook_DockerPrune
-func TestPlaybook_DockerPrune(t *testing.T) {
+// TestPlaybook_DockerVolumePrune
+func TestPlaybook_DockerVolumePrune(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 

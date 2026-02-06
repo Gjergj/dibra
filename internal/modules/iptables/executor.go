@@ -394,9 +394,6 @@ func constructRule(req Request, ipVersion string) []string {
 
 	// TCP flags
 	if req.TcpFlags != nil && len(req.TcpFlags.Flags) > 0 && len(req.TcpFlags.FlagsSet) > 0 {
-		if !loadedExtensions["tcp"] && req.Protocol == "tcp" {
-			// tcp match is implicit with -p tcp
-		}
 		rule = append(rule, "--tcp-flags",
 			strings.Join(req.TcpFlags.Flags, ","),
 			strings.Join(req.TcpFlags.FlagsSet, ","))
