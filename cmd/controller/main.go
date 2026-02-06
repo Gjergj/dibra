@@ -932,8 +932,31 @@ func main() {
 						"constraint":     task.DockerSwarmService.Constraint,
 						"restart_policy": task.DockerSwarmService.RestartPolicy,
 						"force_update":   task.DockerSwarmService.ForceUpdate,
-						"docker_host":    task.DockerSwarmService.DockerHost,
-						"tls":            task.DockerSwarmService.TLS,
+						// Phase 6.1: Configs and Secrets
+						"configs": task.DockerSwarmService.Configs,
+						"secrets": task.DockerSwarmService.Secrets,
+						// Phase 6.2: Update/Rollback config
+						"update_delay":               task.DockerSwarmService.UpdateDelay,
+						"update_parallelism":         task.DockerSwarmService.UpdateParallelism,
+						"update_failure_action":      task.DockerSwarmService.UpdateFailureAction,
+						"update_order":               task.DockerSwarmService.UpdateOrder,
+						"update_monitor":             task.DockerSwarmService.UpdateMonitor,
+						"max_failure_ratio":          task.DockerSwarmService.MaxFailureRatio,
+						"rollback_delay":             task.DockerSwarmService.RollbackDelay,
+						"rollback_parallelism":       task.DockerSwarmService.RollbackParallelism,
+						"rollback_failure_action":    task.DockerSwarmService.RollbackFailureAction,
+						"rollback_order":             task.DockerSwarmService.RollbackOrder,
+						"rollback_monitor":           task.DockerSwarmService.RollbackMonitor,
+						"rollback_max_failure_ratio": task.DockerSwarmService.RollbackMaxFailureRatio,
+						// Phase 6.3: Additional options
+						"healthcheck": task.DockerSwarmService.Healthcheck,
+						"dns":         task.DockerSwarmService.DNS,
+						"dns_search":  task.DockerSwarmService.DNSSearch,
+						"dns_options": task.DockerSwarmService.DNSOptions,
+						"hosts":       task.DockerSwarmService.Hosts,
+						"mounts":      task.DockerSwarmService.Mounts,
+						"docker_host": task.DockerSwarmService.DockerHost,
+						"tls":         task.DockerSwarmService.TLS,
 					},
 				}
 
@@ -941,14 +964,15 @@ func main() {
 				modReq = ModuleRequest{
 					Module: "docker_node",
 					Args: map[string]interface{}{
-						"hostname":     task.DockerNode.Hostname,
-						"self":         task.DockerNode.Self,
-						"availability": task.DockerNode.Availability,
-						"role":         task.DockerNode.Role,
-						"labels":       task.DockerNode.Labels,
-						"labels_state": task.DockerNode.LabelsState,
-						"docker_host":  task.DockerNode.DockerHost,
-						"tls":          task.DockerNode.TLS,
+						"hostname":         task.DockerNode.Hostname,
+						"self":             task.DockerNode.Self,
+						"availability":     task.DockerNode.Availability,
+						"role":             task.DockerNode.Role,
+						"labels":           task.DockerNode.Labels,
+						"labels_state":     task.DockerNode.LabelsState,
+						"labels_to_remove": task.DockerNode.LabelsToRemove,
+						"docker_host":      task.DockerNode.DockerHost,
+						"tls":              task.DockerNode.TLS,
 					},
 				}
 
@@ -1251,6 +1275,27 @@ func main() {
 						"api_version":   task.DockerSwarmInfo.APIVersion,
 						"timeout":       task.DockerSwarmInfo.Timeout,
 						"debug":         task.DockerSwarmInfo.Debug,
+					},
+				}
+
+			case task.DockerSwarmServiceInfo != nil:
+				modReq = ModuleRequest{
+					Module: "docker_swarm_service_info",
+					Args: map[string]interface{}{
+						"name":        task.DockerSwarmServiceInfo.Name,
+						"docker_host": task.DockerSwarmServiceInfo.DockerHost,
+						"tls":         task.DockerSwarmServiceInfo.TLS,
+					},
+				}
+
+			case task.DockerNodeInfo != nil:
+				modReq = ModuleRequest{
+					Module: "docker_node_info",
+					Args: map[string]interface{}{
+						"name":        task.DockerNodeInfo.Name,
+						"self":        task.DockerNodeInfo.Self,
+						"docker_host": task.DockerNodeInfo.DockerHost,
+						"tls":         task.DockerNodeInfo.TLS,
 					},
 				}
 
