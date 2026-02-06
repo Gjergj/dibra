@@ -95,10 +95,10 @@ homebrew_casks:
     homepage: "https://github.com/Gjergj/dibra"
     description: "A minimal Ansible-like configuration management tool written in Go"
     license: "MIT"
-    test: |
-      system "#{bin}/dibra", "--version"
-    install: |
-      bin.install "dibra"
+    # test: |
+    #   system "#{bin}/dibra", "--version"
+    # install: |
+    #   bin.install "dibra"
 
 # Scoop (Windows package manager)
 scoops:
