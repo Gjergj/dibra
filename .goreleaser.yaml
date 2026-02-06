@@ -87,18 +87,22 @@ homebrew_casks:
   - name: dibra
     ids:
       - controller-archive
+    binaries:
+      - dibra
+    url:
+      verified: "github.com/Gjergj/dibra/"
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/dibra"]
+          end
     repository:
       owner: Gjergj
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
     homepage: "https://github.com/Gjergj/dibra"
     description: "A minimal Ansible-like configuration management tool written in Go"
-    license: "MIT"
-    # test: |
-    #   system "#{bin}/dibra", "--version"
-    # install: |
-    #   bin.install "dibra"
 
 # Scoop (Windows package manager)
 scoops:
