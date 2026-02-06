@@ -6,9 +6,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/gjergjiramku/goansible/internal/modules/docker"
+)
+
+// Regex patterns for parsing build output
+var (
+	imageIDPattern = regexp.MustCompile(`(?i)writing image sha256:([a-f0-9]{64})`)
+	digestPattern  = regexp.MustCompile(`(?i)digest:\s*(sha256:[a-f0-9]{64})`)
+	errorPattern   = regexp.MustCompile(`(?i)^error\b|^#\d+ ERROR`)
 )
 
 func Execute(req Request) Response {
@@ -38,18 +46,21 @@ func Execute(req Request) Response {
 
 	fullImageName := fmt.Sprintf("%s:%s", req.Name, tag)
 
-	// Check if image already exists (for idempotency)
+	// Check if image already exists and get its ID (for idempotency)
+	var existingImageID string
 	if rebuild == "never" {
 		cli, err := docker.GetClient(req.CommonArgs)
 		if err == nil {
 			defer cli.Close()
-			_, _, err := cli.ImageInspectWithRaw(context.Background(), fullImageName)
+			inspect, _, err := cli.ImageInspectWithRaw(context.Background(), fullImageName)
 			if err == nil {
-				// Image exists, no change needed
+				existingImageID = inspect.ID
+				// Image exists, no change needed (unless we need to compare build context)
 				return Response{
 					Changed: false,
 					Msg:     "image already exists",
 					Image:   map[string]string{"name": req.Name, "tag": tag},
+					ImageID: inspect.ID,
 				}
 			}
 		}
@@ -148,27 +159,83 @@ func Execute(req Request) Response {
 	output, err := cmd.CombinedOutput()
 	outputStr := string(output)
 
+	// Parse build output for errors, image ID, and digest
+	logs := parseLogLines(outputStr)
+	imageID := extractImageID(outputStr)
+	digest := extractDigest(outputStr)
+	buildErrors := extractErrors(outputStr)
+
 	if err != nil {
+		errMsg := fmt.Sprintf("build failed: %v", err)
+		if len(buildErrors) > 0 {
+			errMsg = fmt.Sprintf("build failed: %s", strings.Join(buildErrors, "; "))
+		}
 		return Response{
 			Failed: true,
-			Msg:    fmt.Sprintf("build failed: %v", err),
+			Msg:    errMsg,
 			Stdout: outputStr,
+			Logs:   logs,
 		}
 	}
 
-	// Determine if anything actually changed
+	// Check idempotency by comparing image IDs
 	changed := true
-	lowerOut := strings.ToLower(outputStr)
-	if strings.Contains(lowerOut, "exporting to image") ||
-		strings.Contains(lowerOut, "built") ||
-		strings.Contains(lowerOut, "running") {
-		changed = true
+	if existingImageID != "" && imageID != "" {
+		if existingImageID == imageID {
+			changed = false
+		}
 	}
 
 	return Response{
 		Changed: changed,
 		Msg:     "image built successfully",
 		Image:   map[string]string{"name": req.Name, "tag": tag},
+		ImageID: imageID,
+		Digest:  digest,
 		Stdout:  outputStr,
+		Logs:    logs,
 	}
+}
+
+// parseLogLines extracts log lines from build output
+func parseLogLines(output string) []string {
+	lines := strings.Split(output, "\n")
+	var logs []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			logs = append(logs, line)
+		}
+	}
+	return logs
+}
+
+// extractImageID extracts the built image ID from build output
+func extractImageID(output string) string {
+	matches := imageIDPattern.FindStringSubmatch(output)
+	if len(matches) >= 2 {
+		return "sha256:" + matches[1]
+	}
+	return ""
+}
+
+// extractDigest extracts the pushed digest from build output
+func extractDigest(output string) string {
+	matches := digestPattern.FindStringSubmatch(output)
+	if len(matches) >= 2 {
+		return matches[1]
+	}
+	return ""
+}
+
+// extractErrors extracts error messages from build output
+func extractErrors(output string) []string {
+	lines := strings.Split(output, "\n")
+	var errors []string
+	for _, line := range lines {
+		if errorPattern.MatchString(line) {
+			errors = append(errors, strings.TrimSpace(line))
+		}
+	}
+	return errors
 }
