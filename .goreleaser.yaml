@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 version: 2
 
-project_name: goansible
+project_name: dibra
 
 before:
   hooks:
@@ -10,7 +10,7 @@ before:
 builds:
   - id: controller
     main: ./cmd/controller
-    binary: goansible
+    binary: dibra
     env:
       - CGO_ENABLED=0
     goos:
@@ -22,13 +22,13 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/gjergjiramku/goansible/internal/version.Version={{.Version}}
-      - -X github.com/gjergjiramku/goansible/internal/version.Commit={{.Commit}}
-      - -X github.com/gjergjiramku/goansible/internal/version.Date={{.Date}}
+      - -X github.com/gjergjiramku/dibra/internal/version.Version={{.Version}}
+      - -X github.com/gjergjiramku/dibra/internal/version.Commit={{.Commit}}
+      - -X github.com/gjergjiramku/dibra/internal/version.Date={{.Date}}
 
   - id: agent
     main: ./cmd/agent
-    binary: goansible-agent
+    binary: dibra-agent
     env:
       - CGO_ENABLED=0
     goos:
@@ -39,9 +39,9 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/gjergjiramku/goansible/internal/version.Version={{.Version}}
-      - -X github.com/gjergjiramku/goansible/internal/version.Commit={{.Commit}}
-      - -X github.com/gjergjiramku/goansible/internal/version.Date={{.Date}}
+      - -X github.com/gjergjiramku/dibra/internal/version.Version={{.Version}}
+      - -X github.com/gjergjiramku/dibra/internal/version.Commit={{.Commit}}
+      - -X github.com/gjergjiramku/dibra/internal/version.Date={{.Date}}
 
 archives:
   - id: controller-archive
@@ -84,7 +84,7 @@ changelog:
 
 # Homebrew tap
 homebrew:
-  - name: goansible
+  - name: dibra
     ids:
       - controller-archive
     repository:
@@ -92,53 +92,53 @@ homebrew:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
-    homepage: "https://github.com/Gjergj/goansible"
+    homepage: "https://github.com/Gjergj/dibra"
     description: "A minimal Ansible-like configuration management tool written in Go"
     license: "MIT"
     test: |
-      system "#{bin}/goansible", "--version"
+      system "#{bin}/dibra", "--version"
     install: |
-      bin.install "goansible"
+      bin.install "dibra"
 
 # Scoop (Windows package manager)
 scoops:
-  - name: goansible
+  - name: dibra
     ids:
       - controller-archive
     repository:
       owner: Gjergj
       name: scoop-bucket
       token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
-    homepage: "https://github.com/Gjergj/goansible"
+    homepage: "https://github.com/Gjergj/dibra"
     description: "A minimal Ansible-like configuration management tool written in Go"
     license: "MIT"
 
 # Chocolatey (Windows)
 chocolateys:
-  - name: goansible
+  - name: dibra
     ids:
       - controller-archive
     owners: Gjergj
     authors: Gjergj Ramku
-    project_url: "https://github.com/Gjergj/goansible"
-    license_url: "https://github.com/Gjergj/goansible/blob/main/LICENSE"
+    project_url: "https://github.com/Gjergj/dibra"
+    license_url: "https://github.com/Gjergj/dibra/blob/main/LICENSE"
     require_license_acceptance: false
-    bug_tracker_url: "https://github.com/Gjergj/goansible/issues"
+    bug_tracker_url: "https://github.com/Gjergj/dibra/issues"
     description: "A minimal Ansible-like configuration management tool written in Go"
-    summary: "GoAnsible - Ansible-like configuration management in Go"
-    release_notes: "https://github.com/Gjergj/goansible/releases/tag/v{{ .Version }}"
+    summary: "dibra - Ansible-like configuration management in Go"
+    release_notes: "https://github.com/Gjergj/dibra/releases/tag/v{{ .Version }}"
     tags: "automation configuration-management devops infrastructure ansible"
     skip_publish: false
     api_key: "{{ .Env.CHOCOLATEY_API_KEY }}"
 
 # Linux packages (deb/rpm)
 nfpms:
-  - id: goansible
-    package_name: goansible
+  - id: dibra
+    package_name: dibra
     ids:
       - controller
     vendor: Gjergj Ramku
-    homepage: "https://github.com/Gjergj/goansible"
+    homepage: "https://github.com/Gjergj/dibra"
     maintainer: "Gjergj Ramku <gjergj@example.com>"
     description: "A minimal Ansible-like configuration management tool written in Go"
     license: "MIT"
@@ -150,12 +150,12 @@ nfpms:
     priority: optional
     contents:
       - src: ./README.md
-        dst: /usr/share/doc/goansible/README.md
+        dst: /usr/share/doc/dibra/README.md
 
 release:
   github:
     owner: Gjergj
-    name: goansible
+    name: dibra
   draft: false
   prerelease: auto
   name_template: "v{{.Version}}"
@@ -164,4 +164,4 @@ release:
 # announce:
 #   discord:
 #     enabled: true
-#     message_template: "GoAnsible {{ .Tag }} is out! Check it out: {{ .ReleaseURL }}"
+#     message_template: "dibra {{ .Tag }} is out! Check it out: {{ .ReleaseURL }}"

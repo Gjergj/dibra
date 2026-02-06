@@ -14,7 +14,7 @@ func TestPlaybook_DockerImagePullPolicies(t *testing.T) {
 
 	imageName := "alpine:3.19"
 	remoteExec(t, client, "docker rmi "+imageName+" || true")
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 	defer remoteExec(t, client, "docker rmi "+imageName+" || true")
 
 	// Test 1: pull: never should fail when image doesn't exist
@@ -101,7 +101,7 @@ func TestPlaybook_DockerImageTagIdempotency(t *testing.T) {
 	// Setup: ensure source exists, remove target
 	remoteExec(t, client, "docker pull "+sourceImage)
 	remoteExec(t, client, "docker rmi "+targetTag+" || true")
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 	defer remoteExec(t, client, "docker rmi "+targetTag+" || true")
 
 	// Test 1: First tag should change
@@ -172,7 +172,7 @@ func TestPlaybook_DockerImageStreamErrors(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	// Test: Pull non-existent image should fail with proper error
 	t.Log("Test: Pull non-existent image should fail gracefully")
@@ -201,7 +201,7 @@ func TestPlaybook_DockerImageForceRemove(t *testing.T) {
 	remoteExec(t, client, "docker pull "+imageName)
 	remoteExec(t, client, "docker rm -f "+containerName+" || true")
 	remoteExec(t, client, "docker create --name "+containerName+" "+imageName+" sleep 1")
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 	defer remoteExec(t, client, "docker rm -f "+containerName+" || true")
 	defer remoteExec(t, client, "docker rmi -f "+imageName+" || true")
 
@@ -251,7 +251,7 @@ func TestPlaybook_DockerImageBackwardCompat(t *testing.T) {
 
 	imageName := "alpine:3.18"
 	remoteExec(t, client, "docker rmi "+imageName+" || true")
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 	defer remoteExec(t, client, "docker rmi "+imageName+" || true")
 
 	// Test: force_source: true should still work as force_pull

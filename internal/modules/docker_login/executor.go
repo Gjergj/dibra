@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/docker/docker/api/types/registry"
-	"github.com/gjergjiramku/goansible/internal/modules/docker"
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 // DockerConfig represents the full docker config.json structure
@@ -18,19 +18,19 @@ type DockerConfig struct {
 	CredsStore  string                `json:"credsStore,omitempty"`
 	CredHelpers map[string]string     `json:"credHelpers,omitempty"`
 	// Preserve other fields
-	HttpHeaders        map[string]string `json:"HttpHeaders,omitempty"`
-	Psformat           string            `json:"psFormat,omitempty"`
-	ImagesFormat       string            `json:"imagesFormat,omitempty"`
-	NetworksFormat     string            `json:"networksFormat,omitempty"`
-	VolumesFormat      string            `json:"volumesFormat,omitempty"`
-	StatsFormat        string            `json:"statsFormat,omitempty"`
-	Detachkeys         string            `json:"detachKeys,omitempty"`
-	CredentialsStore   string            `json:"credentialsStore,omitempty"`
-	Stackorchestrator  string            `json:"stackOrchestrator,omitempty"`
-	CurrentContext     string            `json:"currentContext,omitempty"`
-	Plugins            json.RawMessage   `json:"plugins,omitempty"`
-	Aliases            json.RawMessage   `json:"aliases,omitempty"`
-	ExtraFields        map[string]json.RawMessage `json:"-"`
+	HttpHeaders       map[string]string          `json:"HttpHeaders,omitempty"`
+	Psformat          string                     `json:"psFormat,omitempty"`
+	ImagesFormat      string                     `json:"imagesFormat,omitempty"`
+	NetworksFormat    string                     `json:"networksFormat,omitempty"`
+	VolumesFormat     string                     `json:"volumesFormat,omitempty"`
+	StatsFormat       string                     `json:"statsFormat,omitempty"`
+	Detachkeys        string                     `json:"detachKeys,omitempty"`
+	CredentialsStore  string                     `json:"credentialsStore,omitempty"`
+	Stackorchestrator string                     `json:"stackOrchestrator,omitempty"`
+	CurrentContext    string                     `json:"currentContext,omitempty"`
+	Plugins           json.RawMessage            `json:"plugins,omitempty"`
+	Aliases           json.RawMessage            `json:"aliases,omitempty"`
+	ExtraFields       map[string]json.RawMessage `json:"-"`
 }
 
 type DockerAuth struct {
@@ -96,7 +96,7 @@ func Execute(req Request) Response {
 		}
 		return Response{
 			Failed: true,
-			Msg: fmt.Sprintf("credential helper '%s' is configured for this registry; docker_login module cannot manage credentials stored in external helpers - use docker login CLI or manage the helper directly", helper),
+			Msg:    fmt.Sprintf("credential helper '%s' is configured for this registry; docker_login module cannot manage credentials stored in external helpers - use docker login CLI or manage the helper directly", helper),
 		}
 	}
 

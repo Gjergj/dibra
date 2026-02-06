@@ -13,19 +13,19 @@ func TestPlaybook_FullDeployWorkflow(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	appDir := "/opt/goansible-test-app"
+	appDir := "/opt/dibra-test-app"
 	client.Run("rm -rf " + appDir)
 
 	playbook := playbookHeader + `
   - name: Create application directory
     file:
-      path: /opt/goansible-test-app
+      path: /opt/dibra-test-app
       state: directory
       mode: "0755"
 
   - name: Create config subdirectory
     file:
-      path: /opt/goansible-test-app/config
+      path: /opt/dibra-test-app/config
       state: directory
       mode: "0755"
 
@@ -37,19 +37,19 @@ func TestPlaybook_FullDeployWorkflow(t *testing.T) {
           port: 8080
         database:
           host: localhost
-      dest: /opt/goansible-test-app/config/app.yaml
+      dest: /opt/dibra-test-app/config/app.yaml
       mode: "0644"
 
   - name: Create logs directory
     file:
-      path: /opt/goansible-test-app/logs
+      path: /opt/dibra-test-app/logs
       state: directory
       mode: "0777"
 
   - name: Create symlink to config
     file:
-      path: /opt/goansible-test-app/current-config
-      src: /opt/goansible-test-app/config/app.yaml
+      path: /opt/dibra-test-app/current-config
+      src: /opt/dibra-test-app/config/app.yaml
       state: link
 `
 	output := runPlaybook(t, playbook)
@@ -98,7 +98,7 @@ func TestPlaybook_FullDeployWorkflow(t *testing.T) {
 	cleanupPlaybook := playbookHeader + `
   - name: Cleanup test app
     file:
-      path: /opt/goansible-test-app
+      path: /opt/dibra-test-app
       state: absent
 `
 	runPlaybook(t, cleanupPlaybook)
@@ -114,7 +114,7 @@ func TestWorkflow_PackageAndConfigDeployment(t *testing.T) {
 	defer client.Close()
 
 	// Cleanup before test (don't remove cowsay - it's pre-installed and can't be reinstalled without network)
-	client.Run("rm -rf /etc/goansible-test-cowsay")
+	client.Run("rm -rf /etc/dibra-test-cowsay")
 
 	playbook := playbookHeader + `
   - name: Ensure cowsay package is present
@@ -124,7 +124,7 @@ func TestWorkflow_PackageAndConfigDeployment(t *testing.T) {
 
   - name: Create config directory
     file:
-      path: /etc/goansible-test-cowsay
+      path: /etc/dibra-test-cowsay
       state: directory
       mode: "0755"
 
@@ -134,7 +134,7 @@ func TestWorkflow_PackageAndConfigDeployment(t *testing.T) {
         # Cowsay configuration
         default_cow=tux
         wrap_text=true
-      dest: /etc/goansible-test-cowsay/config
+      dest: /etc/dibra-test-cowsay/config
       mode: "0644"
 `
 	output := runPlaybook(t, playbook)
@@ -149,11 +149,11 @@ func TestWorkflow_PackageAndConfigDeployment(t *testing.T) {
 	}
 
 	// Verify config exists
-	if !remoteFileExists(t, client, "/etc/goansible-test-cowsay/config") {
+	if !remoteFileExists(t, client, "/etc/dibra-test-cowsay/config") {
 		t.Error("Config file should exist")
 	}
 
-	content := remoteFileContent(t, client, "/etc/goansible-test-cowsay/config")
+	content := remoteFileContent(t, client, "/etc/dibra-test-cowsay/config")
 	if !strings.Contains(content, "default_cow=tux") {
 		t.Error("Config should contain default_cow setting")
 	}
@@ -165,45 +165,45 @@ func TestWorkflow_PackageAndConfigDeployment(t *testing.T) {
 	}
 
 	// Cleanup (keep cowsay installed for future test runs)
-	client.Run("rm -rf /etc/goansible-test-cowsay")
+	client.Run("rm -rf /etc/dibra-test-cowsay")
 }
 
 func TestWorkflow_DownloadAndDeploy(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	appDir := "/opt/goansible-download-test"
+	appDir := "/opt/dibra-download-test"
 	client.Run("rm -rf " + appDir)
 
 	playbook := playbookHeader + `
   - name: Create application directory
     file:
-      path: /opt/goansible-download-test
+      path: /opt/dibra-download-test
       state: directory
       mode: "0755"
 
   - name: Download sample file from internet
     uri:
       url: http://httpbin:80/robots.txt
-      dest: /opt/goansible-download-test/robots.txt
+      dest: /opt/dibra-download-test/robots.txt
 
   - name: Create bin directory
     file:
-      path: /opt/goansible-download-test/bin
+      path: /opt/dibra-download-test/bin
       state: directory
       mode: "0755"
 
   - name: Copy downloaded file to bin
     copy:
-      src: /opt/goansible-download-test/robots.txt
-      dest: /opt/goansible-download-test/bin/robots.txt
+      src: /opt/dibra-download-test/robots.txt
+      dest: /opt/dibra-download-test/bin/robots.txt
       remote_src: true
       mode: "0644"
 
   - name: Create symlink to latest
     file:
-      path: /opt/goansible-download-test/latest
-      src: /opt/goansible-download-test/bin/robots.txt
+      path: /opt/dibra-download-test/latest
+      src: /opt/dibra-download-test/bin/robots.txt
       state: link
 `
 	output := runPlaybook(t, playbook)
@@ -235,14 +235,14 @@ func TestWorkflow_CronJobSetup(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	scriptDir := "/opt/goansible-cron-test"
+	scriptDir := "/opt/dibra-cron-test"
 	client.Run("rm -rf " + scriptDir)
 	client.Run("crontab -r 2>/dev/null || true")
 
 	playbook := playbookHeader + `
   - name: Create scripts directory
     file:
-      path: /opt/goansible-cron-test
+      path: /opt/dibra-cron-test
       state: directory
       mode: "0755"
 
@@ -250,11 +250,11 @@ func TestWorkflow_CronJobSetup(t *testing.T) {
     copy:
       content: |
         #!/bin/bash
-        echo "Backup started at $(date)" >> /var/log/goansible-backup.log
+        echo "Backup started at $(date)" >> /var/log/dibra-backup.log
         # Simulate backup
         sleep 1
-        echo "Backup completed at $(date)" >> /var/log/goansible-backup.log
-      dest: /opt/goansible-cron-test/backup.sh
+        echo "Backup completed at $(date)" >> /var/log/dibra-backup.log
+      dest: /opt/dibra-cron-test/backup.sh
       mode: "0755"
 
   - name: Deploy cleanup script
@@ -262,7 +262,7 @@ func TestWorkflow_CronJobSetup(t *testing.T) {
       content: |
         #!/bin/bash
         find /tmp -name "*.tmp" -mtime +7 -delete 2>/dev/null || true
-      dest: /opt/goansible-cron-test/cleanup.sh
+      dest: /opt/dibra-cron-test/cleanup.sh
       mode: "0755"
 
   - name: Schedule daily backup
@@ -270,7 +270,7 @@ func TestWorkflow_CronJobSetup(t *testing.T) {
       name: daily backup
       minute: "0"
       hour: "2"
-      job: /opt/goansible-cron-test/backup.sh
+      job: /opt/dibra-cron-test/backup.sh
 
   - name: Schedule weekly cleanup
     cron:
@@ -278,7 +278,7 @@ func TestWorkflow_CronJobSetup(t *testing.T) {
       minute: "30"
       hour: "3"
       weekday: "0"
-      job: /opt/goansible-cron-test/cleanup.sh
+      job: /opt/dibra-cron-test/cleanup.sh
 `
 	output := runPlaybook(t, playbook)
 
@@ -324,20 +324,20 @@ func TestWorkflow_BlueGreenDeployment(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	baseDir := "/opt/goansible-bluegreen"
+	baseDir := "/opt/dibra-bluegreen"
 	client.Run("rm -rf " + baseDir)
 
 	// Deploy Blue version
 	bluePlaybook := playbookHeader + `
   - name: Create base directory
     file:
-      path: /opt/goansible-bluegreen
+      path: /opt/dibra-bluegreen
       state: directory
       mode: "0755"
 
   - name: Create blue version directory
     file:
-      path: /opt/goansible-bluegreen/blue
+      path: /opt/dibra-bluegreen/blue
       state: directory
       mode: "0755"
 
@@ -346,7 +346,7 @@ func TestWorkflow_BlueGreenDeployment(t *testing.T) {
       content: |
         #!/bin/bash
         echo "Blue version 1.0.0"
-      dest: /opt/goansible-bluegreen/blue/app.sh
+      dest: /opt/dibra-bluegreen/blue/app.sh
       mode: "0755"
 
   - name: Deploy blue version config
@@ -354,13 +354,13 @@ func TestWorkflow_BlueGreenDeployment(t *testing.T) {
       content: |
         version: 1.0.0
         color: blue
-      dest: /opt/goansible-bluegreen/blue/config.yaml
+      dest: /opt/dibra-bluegreen/blue/config.yaml
       mode: "0644"
 
   - name: Point current to blue
     file:
-      path: /opt/goansible-bluegreen/current
-      src: /opt/goansible-bluegreen/blue
+      path: /opt/dibra-bluegreen/current
+      src: /opt/dibra-bluegreen/blue
       state: link
       force: true
 `
@@ -379,7 +379,7 @@ func TestWorkflow_BlueGreenDeployment(t *testing.T) {
 	greenPlaybook := playbookHeader + `
   - name: Create green version directory
     file:
-      path: /opt/goansible-bluegreen/green
+      path: /opt/dibra-bluegreen/green
       state: directory
       mode: "0755"
 
@@ -388,7 +388,7 @@ func TestWorkflow_BlueGreenDeployment(t *testing.T) {
       content: |
         #!/bin/bash
         echo "Green version 2.0.0"
-      dest: /opt/goansible-bluegreen/green/app.sh
+      dest: /opt/dibra-bluegreen/green/app.sh
       mode: "0755"
 
   - name: Deploy green version config
@@ -396,13 +396,13 @@ func TestWorkflow_BlueGreenDeployment(t *testing.T) {
       content: |
         version: 2.0.0
         color: green
-      dest: /opt/goansible-bluegreen/green/config.yaml
+      dest: /opt/dibra-bluegreen/green/config.yaml
       mode: "0644"
 
   - name: Switch current to green
     file:
-      path: /opt/goansible-bluegreen/current
-      src: /opt/goansible-bluegreen/green
+      path: /opt/dibra-bluegreen/current
+      src: /opt/dibra-bluegreen/green
       state: link
       force: true
 `
@@ -436,14 +436,14 @@ func TestWorkflow_ConfigBackupAndUpdate(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	configDir := "/etc/goansible-backup-test"
+	configDir := "/etc/dibra-backup-test"
 	client.Run("rm -rf " + configDir)
 
 	// Initial deployment
 	initialPlaybook := playbookHeader + `
   - name: Create config directory
     file:
-      path: /etc/goansible-backup-test
+      path: /etc/dibra-backup-test
       state: directory
       mode: "0755"
 
@@ -453,7 +453,7 @@ func TestWorkflow_ConfigBackupAndUpdate(t *testing.T) {
         # Version 1.0
         setting1: value1
         setting2: value2
-      dest: /etc/goansible-backup-test/app.conf
+      dest: /etc/dibra-backup-test/app.conf
       mode: "0644"
 `
 	output := runPlaybook(t, initialPlaybook)
@@ -476,7 +476,7 @@ func TestWorkflow_ConfigBackupAndUpdate(t *testing.T) {
         setting1: new_value1
         setting2: new_value2
         setting3: added_value
-      dest: /etc/goansible-backup-test/app.conf
+      dest: /etc/dibra-backup-test/app.conf
       mode: "0644"
       backup: true
 `
@@ -511,13 +511,13 @@ func TestWorkflow_MultiUserPermissions(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	baseDir := "/opt/goansible-multiuser"
+	baseDir := "/opt/dibra-multiuser"
 	client.Run("rm -rf " + baseDir)
 
 	playbook := playbookHeader + `
   - name: Create base directory
     file:
-      path: /opt/goansible-multiuser
+      path: /opt/dibra-multiuser
       state: directory
       mode: "0755"
       owner: root
@@ -525,7 +525,7 @@ func TestWorkflow_MultiUserPermissions(t *testing.T) {
 
   - name: Create shared data directory
     file:
-      path: /opt/goansible-multiuser/shared
+      path: /opt/dibra-multiuser/shared
       state: directory
       mode: "0775"
       owner: root
@@ -533,7 +533,7 @@ func TestWorkflow_MultiUserPermissions(t *testing.T) {
 
   - name: Create private directory for nobody
     file:
-      path: /opt/goansible-multiuser/private
+      path: /opt/dibra-multiuser/private
       state: directory
       mode: "0700"
       owner: nobody
@@ -541,7 +541,7 @@ func TestWorkflow_MultiUserPermissions(t *testing.T) {
 
   - name: Create public read-only directory
     file:
-      path: /opt/goansible-multiuser/public
+      path: /opt/dibra-multiuser/public
       state: directory
       mode: "0755"
       owner: root
@@ -550,7 +550,7 @@ func TestWorkflow_MultiUserPermissions(t *testing.T) {
   - name: Deploy shared file
     copy:
       content: "Shared content accessible by group"
-      dest: /opt/goansible-multiuser/shared/data.txt
+      dest: /opt/dibra-multiuser/shared/data.txt
       mode: "0664"
       owner: root
       group: nogroup
@@ -558,7 +558,7 @@ func TestWorkflow_MultiUserPermissions(t *testing.T) {
   - name: Deploy private file
     copy:
       content: "Private content for nobody user only"
-      dest: /opt/goansible-multiuser/private/secret.txt
+      dest: /opt/dibra-multiuser/private/secret.txt
       mode: "0600"
       owner: nobody
       group: nogroup
@@ -566,7 +566,7 @@ func TestWorkflow_MultiUserPermissions(t *testing.T) {
   - name: Deploy public file
     copy:
       content: "Public content readable by all"
-      dest: /opt/goansible-multiuser/public/readme.txt
+      dest: /opt/dibra-multiuser/public/readme.txt
       mode: "0644"
       owner: root
       group: root
@@ -624,27 +624,27 @@ func TestWorkflow_FetchAndBackup(t *testing.T) {
 	defer client.Close()
 
 	// Create files on remote to fetch
-	remoteDir := "/opt/goansible-fetch-source"
+	remoteDir := "/opt/dibra-fetch-source"
 	client.Run("rm -rf " + remoteDir)
 	client.Run("mkdir -p " + remoteDir)
 	client.Run("echo 'config data version 1' > " + remoteDir + "/config.txt")
 	client.Run("echo 'important log data' > " + remoteDir + "/app.log")
 
 	// Create local backup directory
-	localBackupDir := filepath.Join(os.TempDir(), "goansible-fetch-backup")
+	localBackupDir := filepath.Join(os.TempDir(), "dibra-fetch-backup")
 	os.RemoveAll(localBackupDir)
 	os.MkdirAll(localBackupDir, 0755)
 
 	playbook := playbookHeader + `
   - name: Fetch config file
     fetch:
-      src: /opt/goansible-fetch-source/config.txt
+      src: /opt/dibra-fetch-source/config.txt
       dest: ` + localBackupDir + `/
       flat: false
 
   - name: Fetch log file flat
     fetch:
-      src: /opt/goansible-fetch-source/app.log
+      src: /opt/dibra-fetch-source/app.log
       dest: ` + localBackupDir + `/app.log
       flat: true
 `
@@ -654,7 +654,7 @@ func TestWorkflow_FetchAndBackup(t *testing.T) {
 	}
 
 	// Verify hierarchical fetch (includes hostname from playbook)
-	configPath := filepath.Join(localBackupDir, "testhost", "opt/goansible-fetch-source/config.txt")
+	configPath := filepath.Join(localBackupDir, "testhost", "opt/dibra-fetch-source/config.txt")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		t.Errorf("Config file should be fetched to %s", configPath)
 	}
@@ -690,20 +690,20 @@ func TestWorkflow_RollbackScenario(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	baseDir := "/opt/goansible-rollback"
+	baseDir := "/opt/dibra-rollback"
 	client.Run("rm -rf " + baseDir)
 
 	// Deploy version 1
 	v1Playbook := playbookHeader + `
   - name: Create releases directory
     file:
-      path: /opt/goansible-rollback/releases
+      path: /opt/dibra-rollback/releases
       state: directory
       mode: "0755"
 
   - name: Create v1 release
     file:
-      path: /opt/goansible-rollback/releases/v1.0.0
+      path: /opt/dibra-rollback/releases/v1.0.0
       state: directory
       mode: "0755"
 
@@ -712,7 +712,7 @@ func TestWorkflow_RollbackScenario(t *testing.T) {
       content: |
         #!/bin/bash
         echo "Application v1.0.0"
-      dest: /opt/goansible-rollback/releases/v1.0.0/app.sh
+      dest: /opt/dibra-rollback/releases/v1.0.0/app.sh
       mode: "0755"
 
   - name: Deploy v1 config
@@ -720,13 +720,13 @@ func TestWorkflow_RollbackScenario(t *testing.T) {
       content: |
         version: 1.0.0
         feature_x: false
-      dest: /opt/goansible-rollback/releases/v1.0.0/config.yaml
+      dest: /opt/dibra-rollback/releases/v1.0.0/config.yaml
       mode: "0644"
 
   - name: Link current to v1
     file:
-      path: /opt/goansible-rollback/current
-      src: /opt/goansible-rollback/releases/v1.0.0
+      path: /opt/dibra-rollback/current
+      src: /opt/dibra-rollback/releases/v1.0.0
       state: link
 `
 	output := runPlaybook(t, v1Playbook)
@@ -744,7 +744,7 @@ func TestWorkflow_RollbackScenario(t *testing.T) {
 	v2Playbook := playbookHeader + `
   - name: Create v2 release
     file:
-      path: /opt/goansible-rollback/releases/v2.0.0
+      path: /opt/dibra-rollback/releases/v2.0.0
       state: directory
       mode: "0755"
 
@@ -753,7 +753,7 @@ func TestWorkflow_RollbackScenario(t *testing.T) {
       content: |
         #!/bin/bash
         echo "Application v2.0.0 with new features"
-      dest: /opt/goansible-rollback/releases/v2.0.0/app.sh
+      dest: /opt/dibra-rollback/releases/v2.0.0/app.sh
       mode: "0755"
 
   - name: Deploy v2 config
@@ -762,13 +762,13 @@ func TestWorkflow_RollbackScenario(t *testing.T) {
         version: 2.0.0
         feature_x: true
         feature_y: true
-      dest: /opt/goansible-rollback/releases/v2.0.0/config.yaml
+      dest: /opt/dibra-rollback/releases/v2.0.0/config.yaml
       mode: "0644"
 
   - name: Link current to v2
     file:
-      path: /opt/goansible-rollback/current
-      src: /opt/goansible-rollback/releases/v2.0.0
+      path: /opt/dibra-rollback/current
+      src: /opt/dibra-rollback/releases/v2.0.0
       state: link
       force: true
 `
@@ -787,8 +787,8 @@ func TestWorkflow_RollbackScenario(t *testing.T) {
 	rollbackPlaybook := playbookHeader + `
   - name: Rollback to v1
     file:
-      path: /opt/goansible-rollback/current
-      src: /opt/goansible-rollback/releases/v1.0.0
+      path: /opt/dibra-rollback/current
+      src: /opt/dibra-rollback/releases/v1.0.0
       state: link
       force: true
 `
@@ -820,7 +820,7 @@ func TestWorkflow_BecomeUser(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testDir := "/opt/goansible-become-test"
+	testDir := "/opt/dibra-become-test"
 	client.Run("rm -rf " + testDir)
 
 	// Use testuser with become
@@ -837,7 +837,7 @@ hosts:
 tasks:
   - name: Create directory as root via become
     file:
-      path: /opt/goansible-become-test
+      path: /opt/dibra-become-test
       state: directory
       mode: "0755"
       owner: root
@@ -846,7 +846,7 @@ tasks:
   - name: Create file as root via become
     copy:
       content: "Created via become"
-      dest: /opt/goansible-become-test/root-file.txt
+      dest: /opt/dibra-become-test/root-file.txt
       mode: "0644"
       owner: root
       group: root
@@ -854,7 +854,7 @@ tasks:
   - name: Create file owned by testuser
     copy:
       content: "Owned by testuser"
-      dest: /opt/goansible-become-test/testuser-file.txt
+      dest: /opt/dibra-become-test/testuser-file.txt
       mode: "0644"
       owner: testuser
       group: testuser
@@ -900,9 +900,9 @@ func TestWorkflow_WebServerSetup(t *testing.T) {
 	defer client.Close()
 
 	// Cleanup (don't remove nginx - it's pre-installed and can't be reinstalled without network)
-	client.Run("rm -rf /var/www/goansible-test")
-	client.Run("rm -f /etc/nginx/sites-available/goansible-test")
-	client.Run("rm -f /etc/nginx/sites-enabled/goansible-test")
+	client.Run("rm -rf /var/www/dibra-test")
+	client.Run("rm -f /etc/nginx/sites-available/dibra-test")
+	client.Run("rm -f /etc/nginx/sites-enabled/dibra-test")
 
 	playbook := playbookHeader + `
   - name: Install nginx
@@ -914,7 +914,7 @@ func TestWorkflow_WebServerSetup(t *testing.T) {
 
   - name: Create web root directory
     file:
-      path: /var/www/goansible-test
+      path: /var/www/dibra-test
       state: directory
       mode: "0755"
       owner: www-data
@@ -925,10 +925,10 @@ func TestWorkflow_WebServerSetup(t *testing.T) {
       content: |
         <!DOCTYPE html>
         <html>
-        <head><title>GoAnsible Test</title></head>
-        <body><h1>Hello from GoAnsible!</h1></body>
+        <head><title>dibra Test</title></head>
+        <body><h1>Hello from dibra!</h1></body>
         </html>
-      dest: /var/www/goansible-test/index.html
+      dest: /var/www/dibra-test/index.html
       mode: "0644"
       owner: www-data
       group: www-data
@@ -938,20 +938,20 @@ func TestWorkflow_WebServerSetup(t *testing.T) {
       content: |
         server {
             listen 8888;
-            root /var/www/goansible-test;
+            root /var/www/dibra-test;
             index index.html;
             server_name _;
             location / {
                 try_files $uri $uri/ =404;
             }
         }
-      dest: /etc/nginx/sites-available/goansible-test
+      dest: /etc/nginx/sites-available/dibra-test
       mode: "0644"
 
   - name: Enable site
     file:
-      path: /etc/nginx/sites-enabled/goansible-test
-      src: /etc/nginx/sites-available/goansible-test
+      path: /etc/nginx/sites-enabled/dibra-test
+      src: /etc/nginx/sites-available/dibra-test
       state: link
 `
 	output := runPlaybook(t, playbook)
@@ -965,18 +965,18 @@ func TestWorkflow_WebServerSetup(t *testing.T) {
 	}
 
 	// Verify web root
-	if !remoteDirExists(t, client, "/var/www/goansible-test") {
+	if !remoteDirExists(t, client, "/var/www/dibra-test") {
 		t.Error("Web root should exist")
 	}
 
 	// Verify index page
-	content := remoteFileContent(t, client, "/var/www/goansible-test/index.html")
-	if !strings.Contains(content, "Hello from GoAnsible") {
+	content := remoteFileContent(t, client, "/var/www/dibra-test/index.html")
+	if !strings.Contains(content, "Hello from dibra") {
 		t.Error("Index page should contain expected content")
 	}
 
 	// Verify site enabled
-	if !remoteIsSymlink(t, client, "/etc/nginx/sites-enabled/goansible-test") {
+	if !remoteIsSymlink(t, client, "/etc/nginx/sites-enabled/dibra-test") {
 		t.Error("Site should be enabled via symlink")
 	}
 
@@ -988,41 +988,41 @@ func TestWorkflow_WebServerSetup(t *testing.T) {
 	}
 
 	// Cleanup (keep nginx installed for future test runs)
-	client.Run("rm -f /etc/nginx/sites-enabled/goansible-test")
-	client.Run("rm -f /etc/nginx/sites-available/goansible-test")
-	client.Run("rm -rf /var/www/goansible-test")
+	client.Run("rm -f /etc/nginx/sites-enabled/dibra-test")
+	client.Run("rm -f /etc/nginx/sites-available/dibra-test")
+	client.Run("rm -rf /var/www/dibra-test")
 }
 
 func TestWorkflow_MultiStepDatabaseSetup(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	baseDir := "/opt/goansible-db-setup"
+	baseDir := "/opt/dibra-db-setup"
 	client.Run("rm -rf " + baseDir)
 
-	// Note: loops aren't supported in goansible, so we expand manually
+	// Note: loops aren't supported in dibra, so we expand manually
 	playbook := playbookHeader + `
   - name: Create data directory
     file:
-      path: /opt/goansible-db-setup/data
+      path: /opt/dibra-db-setup/data
       state: directory
       mode: "0700"
 
   - name: Create logs directory
     file:
-      path: /opt/goansible-db-setup/logs
+      path: /opt/dibra-db-setup/logs
       state: directory
       mode: "0755"
 
   - name: Create backups directory
     file:
-      path: /opt/goansible-db-setup/backups
+      path: /opt/dibra-db-setup/backups
       state: directory
       mode: "0700"
 
   - name: Create config directory
     file:
-      path: /opt/goansible-db-setup/config
+      path: /opt/dibra-db-setup/config
       state: directory
       mode: "0755"
 
@@ -1030,21 +1030,21 @@ func TestWorkflow_MultiStepDatabaseSetup(t *testing.T) {
     copy:
       content: |
         [mysqld]
-        datadir=/opt/goansible-db-setup/data
-        log_error=/opt/goansible-db-setup/logs/error.log
+        datadir=/opt/dibra-db-setup/data
+        log_error=/opt/dibra-db-setup/logs/error.log
         port=3306
         bind-address=127.0.0.1
-      dest: /opt/goansible-db-setup/config/my.cnf
+      dest: /opt/dibra-db-setup/config/my.cnf
       mode: "0644"
 
   - name: Create backup script
     copy:
       content: |
         #!/bin/bash
-        BACKUP_DIR=/opt/goansible-db-setup/backups
+        BACKUP_DIR=/opt/dibra-db-setup/backups
         DATE=$(date +%Y%m%d_%H%M%S)
         echo "Backup created at $DATE" > $BACKUP_DIR/backup_$DATE.sql
-      dest: /opt/goansible-db-setup/backup.sh
+      dest: /opt/dibra-db-setup/backup.sh
       mode: "0755"
 
   - name: Schedule daily backup
@@ -1052,23 +1052,23 @@ func TestWorkflow_MultiStepDatabaseSetup(t *testing.T) {
       name: database backup
       minute: "0"
       hour: "1"
-      job: /opt/goansible-db-setup/backup.sh
+      job: /opt/dibra-db-setup/backup.sh
 
   - name: Create mysql data subdirectory
     file:
-      path: /opt/goansible-db-setup/data/mysql
+      path: /opt/dibra-db-setup/data/mysql
       state: directory
       mode: "0700"
 
   - name: Create performance_schema subdirectory
     file:
-      path: /opt/goansible-db-setup/data/performance_schema
+      path: /opt/dibra-db-setup/data/performance_schema
       state: directory
       mode: "0700"
 
   - name: Create sys subdirectory
     file:
-      path: /opt/goansible-db-setup/data/sys
+      path: /opt/dibra-db-setup/data/sys
       state: directory
       mode: "0700"
 `
@@ -1125,32 +1125,32 @@ func TestWorkflow_CompleteAppLifecycle(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	baseDir := "/opt/goansible-lifecycle"
+	baseDir := "/opt/dibra-lifecycle"
 	client.Run("rm -rf " + baseDir)
 
 	// Phase 1: Initial Setup
 	setupPlaybook := playbookHeader + `
   - name: Create app directory
     file:
-      path: /opt/goansible-lifecycle/app
+      path: /opt/dibra-lifecycle/app
       state: directory
       mode: "0755"
 
   - name: Create config directory
     file:
-      path: /opt/goansible-lifecycle/config
+      path: /opt/dibra-lifecycle/config
       state: directory
       mode: "0755"
 
   - name: Create logs directory
     file:
-      path: /opt/goansible-lifecycle/logs
+      path: /opt/dibra-lifecycle/logs
       state: directory
       mode: "0777"
 
   - name: Create data directory
     file:
-      path: /opt/goansible-lifecycle/data
+      path: /opt/dibra-lifecycle/data
       state: directory
       mode: "0755"
 `
@@ -1166,8 +1166,8 @@ func TestWorkflow_CompleteAppLifecycle(t *testing.T) {
       content: |
         #!/bin/bash
         echo "MyApp v1.0.0 starting..."
-        echo "Reading config from /opt/goansible-lifecycle/config/app.yaml"
-      dest: /opt/goansible-lifecycle/app/myapp
+        echo "Reading config from /opt/dibra-lifecycle/config/app.yaml"
+      dest: /opt/dibra-lifecycle/app/myapp
       mode: "0755"
 
   - name: Deploy configuration
@@ -1181,14 +1181,14 @@ func TestWorkflow_CompleteAppLifecycle(t *testing.T) {
           port: 8080
         logging:
           level: info
-          file: /opt/goansible-lifecycle/logs/app.log
-      dest: /opt/goansible-lifecycle/config/app.yaml
+          file: /opt/dibra-lifecycle/logs/app.log
+      dest: /opt/dibra-lifecycle/config/app.yaml
       mode: "0644"
 
   - name: Create convenience symlink
     file:
       path: /usr/local/bin/myapp
-      src: /opt/goansible-lifecycle/app/myapp
+      src: /opt/dibra-lifecycle/app/myapp
       state: link
 `
 	output = runPlaybook(t, deployPlaybook)
@@ -1217,14 +1217,14 @@ func TestWorkflow_CompleteAppLifecycle(t *testing.T) {
           echo "CRITICAL: myapp is not running"
           exit 2
         fi
-      dest: /opt/goansible-lifecycle/app/check_myapp.sh
+      dest: /opt/dibra-lifecycle/app/check_myapp.sh
       mode: "0755"
 
   - name: Schedule health check
     cron:
       name: myapp health check
       minute: "*/5"
-      job: /opt/goansible-lifecycle/app/check_myapp.sh >> /opt/goansible-lifecycle/logs/health.log 2>&1
+      job: /opt/dibra-lifecycle/app/check_myapp.sh >> /opt/dibra-lifecycle/logs/health.log 2>&1
 `
 	output = runPlaybook(t, monitorPlaybook)
 	if strings.Contains(output, "FAILED") {
@@ -1244,8 +1244,8 @@ func TestWorkflow_CompleteAppLifecycle(t *testing.T) {
 	updatePlaybook := playbookHeader + `
   - name: Backup current config
     copy:
-      src: /opt/goansible-lifecycle/config/app.yaml
-      dest: /opt/goansible-lifecycle/config/app.yaml.bak
+      src: /opt/dibra-lifecycle/config/app.yaml
+      dest: /opt/dibra-lifecycle/config/app.yaml.bak
       remote_src: true
 
   - name: Update application
@@ -1254,8 +1254,8 @@ func TestWorkflow_CompleteAppLifecycle(t *testing.T) {
         #!/bin/bash
         echo "MyApp v1.1.0 starting..."
         echo "New features enabled!"
-        echo "Reading config from /opt/goansible-lifecycle/config/app.yaml"
-      dest: /opt/goansible-lifecycle/app/myapp
+        echo "Reading config from /opt/dibra-lifecycle/config/app.yaml"
+      dest: /opt/dibra-lifecycle/app/myapp
       mode: "0755"
 
   - name: Update configuration
@@ -1269,10 +1269,10 @@ func TestWorkflow_CompleteAppLifecycle(t *testing.T) {
           port: 8080
         logging:
           level: debug
-          file: /opt/goansible-lifecycle/logs/app.log
+          file: /opt/dibra-lifecycle/logs/app.log
         features:
           new_feature: true
-      dest: /opt/goansible-lifecycle/config/app.yaml
+      dest: /opt/dibra-lifecycle/config/app.yaml
       mode: "0644"
 `
 	output = runPlaybook(t, updatePlaybook)
@@ -1309,7 +1309,7 @@ func TestWorkflow_CompleteAppLifecycle(t *testing.T) {
 
   - name: Remove application
     file:
-      path: /opt/goansible-lifecycle
+      path: /opt/dibra-lifecycle
       state: absent
 `
 	output = runPlaybook(t, cleanupPlaybook)

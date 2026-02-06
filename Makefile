@@ -5,9 +5,9 @@ VERSION ?= dev
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w \
-	-X github.com/gjergjiramku/goansible/internal/version.Version=$(VERSION) \
-	-X github.com/gjergjiramku/goansible/internal/version.Commit=$(COMMIT) \
-	-X github.com/gjergjiramku/goansible/internal/version.Date=$(DATE)
+	-X github.com/gjergjiramku/dibra/internal/version.Version=$(VERSION) \
+	-X github.com/gjergjiramku/dibra/internal/version.Commit=$(COMMIT) \
+	-X github.com/gjergjiramku/dibra/internal/version.Date=$(DATE)
 
 # Basic build (no version injection)
 build:
@@ -15,8 +15,8 @@ build:
 
 # Development build with version info
 build-dev:
-	go build -ldflags "$(LDFLAGS)" -o bin/goansible ./cmd/controller
-	go build -ldflags "$(LDFLAGS)" -o bin/goansible-agent ./cmd/agent
+	go build -ldflags "$(LDFLAGS)" -o bin/dibra ./cmd/controller
+	go build -ldflags "$(LDFLAGS)" -o bin/dibra-agent ./cmd/agent
 
 # Install to $GOPATH/bin
 install:
@@ -49,7 +49,7 @@ test-integration-only:
 # Clean up
 clean:
 	docker compose -f test/docker-compose.yaml down -v
-	rm -f /tmp/goansible-test-agent
+	rm -f /tmp/dibra-test-agent
 	rm -rf bin/ dist/
 	go clean
 

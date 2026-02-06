@@ -15,7 +15,7 @@ func TestPlaybook_DockerVolumeLifecycle(t *testing.T) {
 
 	// Ensure clean state
 	remoteExec(t, client, "docker volume rm "+volName+" || true")
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent") // Force update agent
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent") // Force update agent
 
 	// 1. Create Volume
 	t.Log("Step 1: Create Volume")

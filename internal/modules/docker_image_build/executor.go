@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/gjergjiramku/goansible/internal/modules/docker"
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 // Regex patterns for parsing build output

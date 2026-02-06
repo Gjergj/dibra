@@ -2,7 +2,7 @@ package docker_network_info
 
 import (
 	"github.com/docker/docker/api/types"
-	"github.com/gjergjiramku/goansible/internal/modules/docker"
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 // Execute inspects a Docker network and returns its full configuration

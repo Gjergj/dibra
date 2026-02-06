@@ -21,7 +21,7 @@ func TestPlaybook_DockerSwarmServiceLifecycle(t *testing.T) {
 		remoteExec(t, client, "docker swarm init --advertise-addr 127.0.0.1")
 	}
 	// Force update agent
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	// 1. Create Service
 	t.Log("Step 1: Create Service")

@@ -23,9 +23,11 @@ type ShellResponse struct {
 	Delta       string   `json:"delta,omitempty"`
 }
 
-func getShellResult(t *testing.T, client interface{ Run(string) (string, string, error) }, args string) ShellResponse {
+func getShellResult(t *testing.T, client interface {
+	Run(string) (string, string, error)
+}, args string) ShellResponse {
 	t.Helper()
-	cmd := `echo '{"module":"shell","args":` + args + `}' | /tmp/.goansible-agent`
+	cmd := `echo '{"module":"shell","args":` + args + `}' | /tmp/.dibra-agent`
 	stdout, stderr, err := client.Run(cmd)
 	if err != nil {
 		t.Logf("Agent stderr: %s", stderr)

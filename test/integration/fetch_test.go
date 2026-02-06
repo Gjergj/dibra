@@ -14,7 +14,7 @@ func TestPlaybook_FetchBasic(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	remoteFile := "/tmp/goansible-test-fetch-src"
+	remoteFile := "/tmp/dibra-test-fetch-src"
 	content := "fetch test content 123"
 
 	client.Run("echo -n '" + content + "' > " + remoteFile)
@@ -24,7 +24,7 @@ func TestPlaybook_FetchBasic(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Fetch file from remote
     fetch:
-      src: /tmp/goansible-test-fetch-src
+      src: /tmp/dibra-test-fetch-src
       dest: ` + localDest + `
 `
 	output := runPlaybook(t, playbook)
@@ -54,7 +54,7 @@ func TestPlaybook_FetchFlat(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	remoteFile := "/tmp/goansible-test-fetch-flat"
+	remoteFile := "/tmp/dibra-test-fetch-flat"
 	content := "flat fetch content"
 
 	client.Run("echo -n '" + content + "' > " + remoteFile)
@@ -65,7 +65,7 @@ func TestPlaybook_FetchFlat(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Fetch file with flat destination
     fetch:
-      src: /tmp/goansible-test-fetch-flat
+      src: /tmp/dibra-test-fetch-flat
       dest: ` + localDest + `
       flat: true
 `
@@ -90,7 +90,7 @@ func TestPlaybook_FetchFlatToDir(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	remoteFile := "/tmp/goansible-test-fetch-flatdir"
+	remoteFile := "/tmp/dibra-test-fetch-flatdir"
 	content := "flat dir fetch"
 
 	client.Run("echo -n '" + content + "' > " + remoteFile)
@@ -100,7 +100,7 @@ func TestPlaybook_FetchFlatToDir(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Fetch file with flat to directory
     fetch:
-      src: /tmp/goansible-test-fetch-flatdir
+      src: /tmp/dibra-test-fetch-flatdir
       dest: ` + localDir + `
       flat: true
 `
@@ -110,7 +110,7 @@ func TestPlaybook_FetchFlatToDir(t *testing.T) {
 		t.Error("Expected CHANGED for fetch")
 	}
 
-	expectedPath := filepath.Join(strings.TrimSuffix(localDir, "/"), "goansible-test-fetch-flatdir")
+	expectedPath := filepath.Join(strings.TrimSuffix(localDir, "/"), "dibra-test-fetch-flatdir")
 	data, err := os.ReadFile(expectedPath)
 	if err != nil {
 		t.Fatalf("Failed to read fetched file at %s: %v", expectedPath, err)
@@ -126,7 +126,7 @@ func TestPlaybook_FetchMissingFile(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Fetch non-existent file
     fetch:
-      src: /tmp/goansible-nonexistent-file-12345
+      src: /tmp/dibra-nonexistent-file-12345
       dest: /tmp/
 `
 	output := runPlaybook(t, playbook)
@@ -145,7 +145,7 @@ func TestPlaybook_FetchMissingFileNoFail(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Fetch non-existent file with fail_on_missing=false
     fetch:
-      src: /tmp/goansible-nonexistent-file-12345
+      src: /tmp/dibra-nonexistent-file-12345
       dest: ` + localDest + `
       fail_on_missing: false
 `
@@ -163,7 +163,7 @@ func TestPlaybook_FetchDirectory(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	remoteDir := "/tmp/goansible-test-fetch-dir"
+	remoteDir := "/tmp/dibra-test-fetch-dir"
 	client.Run("mkdir -p " + remoteDir)
 	defer client.Run("rm -rf " + remoteDir)
 
@@ -172,7 +172,7 @@ func TestPlaybook_FetchDirectory(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Fetch directory (should fail)
     fetch:
-      src: /tmp/goansible-test-fetch-dir
+      src: /tmp/dibra-test-fetch-dir
       dest: ` + localDest + `
 `
 	output := runPlaybook(t, playbook)
@@ -189,7 +189,7 @@ func TestPlaybook_FetchValidateChecksumFalse(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	remoteFile := "/tmp/goansible-test-fetch-nochecksum"
+	remoteFile := "/tmp/dibra-test-fetch-nochecksum"
 	content := "no checksum validation content"
 
 	client.Run("echo -n '" + content + "' > " + remoteFile)
@@ -201,7 +201,7 @@ func TestPlaybook_FetchValidateChecksumFalse(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Fetch file without checksum validation
     fetch:
-      src: /tmp/goansible-test-fetch-nochecksum
+      src: /tmp/dibra-test-fetch-nochecksum
       dest: ` + localDest + `
       flat: true
       validate_checksum: false
@@ -228,7 +228,7 @@ func TestPlaybook_FetchOverwriteExisting(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	remoteFile := "/tmp/goansible-test-fetch-overwrite"
+	remoteFile := "/tmp/dibra-test-fetch-overwrite"
 	newContent := "updated remote content"
 
 	client.Run("echo -n '" + newContent + "' > " + remoteFile)
@@ -246,7 +246,7 @@ func TestPlaybook_FetchOverwriteExisting(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Fetch file overwriting existing
     fetch:
-      src: /tmp/goansible-test-fetch-overwrite
+      src: /tmp/dibra-test-fetch-overwrite
       dest: ` + localDest + `
       flat: true
 `
@@ -274,13 +274,13 @@ func TestPlaybook_FetchDeepNestedPath(t *testing.T) {
 	defer client.Close()
 
 	// Create deeply nested remote path
-	remoteDir := "/tmp/goansible/deep/nested/path/to/file"
+	remoteDir := "/tmp/dibra/deep/nested/path/to/file"
 	remoteFile := remoteDir + "/deeply-nested.txt"
 	content := "deeply nested content"
 
 	client.Run("mkdir -p " + remoteDir)
 	client.Run("echo -n '" + content + "' > " + remoteFile)
-	defer client.Run("rm -rf /tmp/goansible")
+	defer client.Run("rm -rf /tmp/dibra")
 
 	localDest := t.TempDir()
 
@@ -315,8 +315,8 @@ func TestPlaybook_FetchSymlink(t *testing.T) {
 	defer client.Close()
 
 	// Create a file and symlink to it
-	realFile := "/tmp/goansible-test-fetch-real"
-	symlinkFile := "/tmp/goansible-test-fetch-symlink"
+	realFile := "/tmp/dibra-test-fetch-real"
+	symlinkFile := "/tmp/dibra-test-fetch-symlink"
 	content := "content via symlink"
 
 	client.Run("echo -n '" + content + "' > " + realFile)
@@ -329,7 +329,7 @@ func TestPlaybook_FetchSymlink(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Fetch file via symlink
     fetch:
-      src: /tmp/goansible-test-fetch-symlink
+      src: /tmp/dibra-test-fetch-symlink
       dest: ` + localDest + `
       flat: true
 `
@@ -356,7 +356,7 @@ func TestPlaybook_FetchBinaryFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	remoteFile := "/tmp/goansible-test-fetch-binary"
+	remoteFile := "/tmp/dibra-test-fetch-binary"
 	// Create a small binary file with various byte values
 	client.Run("printf '\\x00\\x01\\x02\\xff\\xfe\\xfd' > " + remoteFile)
 	defer client.Run("rm -f " + remoteFile)
@@ -367,7 +367,7 @@ func TestPlaybook_FetchBinaryFile(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Fetch binary file
     fetch:
-      src: /tmp/goansible-test-fetch-binary
+      src: /tmp/dibra-test-fetch-binary
       dest: ` + localDest + `
       flat: true
 `
@@ -401,27 +401,27 @@ func TestPlaybook_FetchMultipleFiles(t *testing.T) {
 	defer client.Close()
 
 	// Create multiple remote files
-	client.Run("echo -n 'file1 content' > /tmp/goansible-fetch-multi1.txt")
-	client.Run("echo -n 'file2 content' > /tmp/goansible-fetch-multi2.txt")
-	client.Run("echo -n 'file3 content' > /tmp/goansible-fetch-multi3.txt")
-	defer client.Run("rm -f /tmp/goansible-fetch-multi*.txt")
+	client.Run("echo -n 'file1 content' > /tmp/dibra-fetch-multi1.txt")
+	client.Run("echo -n 'file2 content' > /tmp/dibra-fetch-multi2.txt")
+	client.Run("echo -n 'file3 content' > /tmp/dibra-fetch-multi3.txt")
+	defer client.Run("rm -f /tmp/dibra-fetch-multi*.txt")
 
 	localDest := t.TempDir()
 
 	playbook := playbookHeader + `
   - name: Fetch first file
     fetch:
-      src: /tmp/goansible-fetch-multi1.txt
+      src: /tmp/dibra-fetch-multi1.txt
       dest: ` + localDest + `
 
   - name: Fetch second file
     fetch:
-      src: /tmp/goansible-fetch-multi2.txt
+      src: /tmp/dibra-fetch-multi2.txt
       dest: ` + localDest + `
 
   - name: Fetch third file
     fetch:
-      src: /tmp/goansible-fetch-multi3.txt
+      src: /tmp/dibra-fetch-multi3.txt
       dest: ` + localDest + `
 `
 	output := runPlaybook(t, playbook)
@@ -432,7 +432,7 @@ func TestPlaybook_FetchMultipleFiles(t *testing.T) {
 
 	// Verify all files exist
 	for i := 1; i <= 3; i++ {
-		expectedPath := filepath.Join(localDest, "testhost", "/tmp", "goansible-fetch-multi"+string(rune('0'+i))+".txt")
+		expectedPath := filepath.Join(localDest, "testhost", "/tmp", "dibra-fetch-multi"+string(rune('0'+i))+".txt")
 		if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
 			t.Errorf("File %d should exist at %s", i, expectedPath)
 		}
@@ -444,7 +444,7 @@ func TestPlaybook_FetchLogFile(t *testing.T) {
 	defer client.Close()
 
 	// Simulate log file collection - a common use case
-	logFile := "/tmp/goansible-test-app.log"
+	logFile := "/tmp/dibra-test-app.log"
 	logContent := `2024-01-15 10:00:00 INFO Application started
 2024-01-15 10:00:01 DEBUG Initializing components
 2024-01-15 10:00:02 INFO Ready to serve requests
@@ -460,7 +460,7 @@ func TestPlaybook_FetchLogFile(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Collect application log
     fetch:
-      src: /tmp/goansible-test-app.log
+      src: /tmp/dibra-test-app.log
       dest: ` + localDest + `
       flat: true
 `
@@ -488,7 +488,7 @@ func TestPlaybook_FetchConfigBackup(t *testing.T) {
 	defer client.Close()
 
 	// Simulate config file backup - another common use case
-	configFile := "/tmp/goansible-test-nginx.conf"
+	configFile := "/tmp/dibra-test-nginx.conf"
 	configContent := `server {
     listen 80;
     server_name example.com;
@@ -506,7 +506,7 @@ func TestPlaybook_FetchConfigBackup(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Backup nginx config before changes
     fetch:
-      src: /tmp/goansible-test-nginx.conf
+      src: /tmp/dibra-test-nginx.conf
       dest: ` + localDir + `
 `
 	output := runPlaybook(t, playbook)
@@ -533,7 +533,7 @@ func TestPlaybook_FetchLargeFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	remoteFile := "/tmp/goansible-test-fetch-large"
+	remoteFile := "/tmp/dibra-test-fetch-large"
 	// Create a ~100KB file
 	client.Run("dd if=/dev/urandom of=" + remoteFile + " bs=1024 count=100 2>/dev/null")
 	defer client.Run("rm -f " + remoteFile)
@@ -547,7 +547,7 @@ func TestPlaybook_FetchLargeFile(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Fetch large file
     fetch:
-      src: /tmp/goansible-test-fetch-large
+      src: /tmp/dibra-test-fetch-large
       dest: ` + localDest + `
       flat: true
 `
@@ -583,7 +583,7 @@ func TestPlaybook_FetchEmptyFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	remoteFile := "/tmp/goansible-test-fetch-empty"
+	remoteFile := "/tmp/dibra-test-fetch-empty"
 	client.Run("touch " + remoteFile)
 	defer client.Run("rm -f " + remoteFile)
 
@@ -593,7 +593,7 @@ func TestPlaybook_FetchEmptyFile(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Fetch empty file
     fetch:
-      src: /tmp/goansible-test-fetch-empty
+      src: /tmp/dibra-test-fetch-empty
       dest: ` + localDest + `
       flat: true
 `

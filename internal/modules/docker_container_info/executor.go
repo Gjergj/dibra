@@ -1,7 +1,7 @@
 package docker_container_info
 
 import (
-	"github.com/gjergjiramku/goansible/internal/modules/docker"
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 // Execute inspects a Docker container and returns its full configuration
@@ -38,16 +38,16 @@ func Execute(req Request) Response {
 		"name":    inspect.Name,
 		"created": inspect.Created,
 		"state": map[string]interface{}{
-			"status":     inspect.State.Status,
-			"running":    inspect.State.Running,
-			"paused":     inspect.State.Paused,
-			"restarting": inspect.State.Restarting,
-			"oom_killed": inspect.State.OOMKilled,
-			"dead":       inspect.State.Dead,
-			"pid":        inspect.State.Pid,
-			"exit_code":  inspect.State.ExitCode,
-			"error":      inspect.State.Error,
-			"started_at": inspect.State.StartedAt,
+			"status":      inspect.State.Status,
+			"running":     inspect.State.Running,
+			"paused":      inspect.State.Paused,
+			"restarting":  inspect.State.Restarting,
+			"oom_killed":  inspect.State.OOMKilled,
+			"dead":        inspect.State.Dead,
+			"pid":         inspect.State.Pid,
+			"exit_code":   inspect.State.ExitCode,
+			"error":       inspect.State.Error,
+			"started_at":  inspect.State.StartedAt,
 			"finished_at": inspect.State.FinishedAt,
 		},
 		"image":         inspect.Image,
@@ -129,15 +129,15 @@ func Execute(req Request) Response {
 		networks := make(map[string]interface{})
 		for name, endpoint := range inspect.NetworkSettings.Networks {
 			networks[name] = map[string]interface{}{
-				"network_id":   endpoint.NetworkID,
-				"endpoint_id":  endpoint.EndpointID,
-				"gateway":      endpoint.Gateway,
-				"ip_address":   endpoint.IPAddress,
-				"ip_prefix_len": endpoint.IPPrefixLen,
-				"ipv6_gateway": endpoint.IPv6Gateway,
+				"network_id":          endpoint.NetworkID,
+				"endpoint_id":         endpoint.EndpointID,
+				"gateway":             endpoint.Gateway,
+				"ip_address":          endpoint.IPAddress,
+				"ip_prefix_len":       endpoint.IPPrefixLen,
+				"ipv6_gateway":        endpoint.IPv6Gateway,
 				"global_ipv6_address": endpoint.GlobalIPv6Address,
-				"mac_address":  endpoint.MacAddress,
-				"aliases":      endpoint.Aliases,
+				"mac_address":         endpoint.MacAddress,
+				"aliases":             endpoint.Aliases,
 			}
 		}
 		container["network_settings"] = map[string]interface{}{

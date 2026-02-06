@@ -18,7 +18,7 @@ func ensureSwarmActive(t *testing.T, client interface{ Close() error }) {
 		remoteExec(t, c, "docker swarm init --advertise-addr 127.0.0.1")
 	}
 	// Force update agent
-	remoteExec(t, c, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, c, "rm -f /tmp/.dibra-agent")
 }
 
 // TestPlaybook_DockerSwarmServiceHealthcheck tests healthcheck configuration (6.3.1)

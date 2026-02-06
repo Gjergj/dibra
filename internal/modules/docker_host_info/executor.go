@@ -2,7 +2,7 @@ package docker_host_info
 
 import (
 	"github.com/docker/docker/api/types"
-	"github.com/gjergjiramku/goansible/internal/modules/docker"
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 // Execute retrieves Docker daemon information
@@ -50,33 +50,33 @@ func Execute(req Request) Response {
 func convertInfoToMap(info types.Info, version types.Version) map[string]interface{} {
 	hostInfo := map[string]interface{}{
 		// Version info
-		"server_version":    info.ServerVersion,
-		"api_version":       version.APIVersion,
-		"min_api_version":   version.MinAPIVersion,
-		"git_commit":        version.GitCommit,
-		"go_version":        version.GoVersion,
-		"os":                version.Os,
-		"arch":              version.Arch,
-		"kernel_version":    version.KernelVersion,
-		"build_time":        version.BuildTime,
+		"server_version":  info.ServerVersion,
+		"api_version":     version.APIVersion,
+		"min_api_version": version.MinAPIVersion,
+		"git_commit":      version.GitCommit,
+		"go_version":      version.GoVersion,
+		"os":              version.Os,
+		"arch":            version.Arch,
+		"kernel_version":  version.KernelVersion,
+		"build_time":      version.BuildTime,
 
 		// System info
-		"id":                info.ID,
-		"name":              info.Name,
-		"operating_system":  info.OperatingSystem,
-		"os_type":           info.OSType,
-		"os_version":        info.OSVersion,
-		"architecture":      info.Architecture,
-		"ncpu":              info.NCPU,
-		"mem_total":         info.MemTotal,
+		"id":               info.ID,
+		"name":             info.Name,
+		"operating_system": info.OperatingSystem,
+		"os_type":          info.OSType,
+		"os_version":       info.OSVersion,
+		"architecture":     info.Architecture,
+		"ncpu":             info.NCPU,
+		"mem_total":        info.MemTotal,
 
 		// Docker info
-		"docker_root_dir":   info.DockerRootDir,
-		"driver":            info.Driver,
-		"driver_status":     info.DriverStatus,
-		"logging_driver":    info.LoggingDriver,
-		"cgroup_driver":     info.CgroupDriver,
-		"cgroup_version":    info.CgroupVersion,
+		"docker_root_dir": info.DockerRootDir,
+		"driver":          info.Driver,
+		"driver_status":   info.DriverStatus,
+		"logging_driver":  info.LoggingDriver,
+		"cgroup_driver":   info.CgroupDriver,
+		"cgroup_version":  info.CgroupVersion,
 
 		// Container counts
 		"containers":         info.Containers,
@@ -85,16 +85,16 @@ func convertInfoToMap(info types.Info, version types.Version) map[string]interfa
 		"containers_stopped": info.ContainersStopped,
 
 		// Image count
-		"images":             info.Images,
+		"images": info.Images,
 
 		// Swarm info
 		"swarm": map[string]interface{}{
-			"local_node_state": string(info.Swarm.LocalNodeState),
+			"local_node_state":  string(info.Swarm.LocalNodeState),
 			"control_available": info.Swarm.ControlAvailable,
-			"node_id":          info.Swarm.NodeID,
-			"node_addr":        info.Swarm.NodeAddr,
-			"managers":         info.Swarm.Managers,
-			"nodes":            info.Swarm.Nodes,
+			"node_id":           info.Swarm.NodeID,
+			"node_addr":         info.Swarm.NodeAddr,
+			"managers":          info.Swarm.Managers,
+			"nodes":             info.Swarm.Nodes,
 		},
 
 		// Registry
@@ -114,8 +114,8 @@ func convertInfoToMap(info types.Info, version types.Version) map[string]interfa
 		},
 
 		// Runtime
-		"runtimes":         info.Runtimes,
-		"default_runtime":  info.DefaultRuntime,
+		"runtimes":        info.Runtimes,
+		"default_runtime": info.DefaultRuntime,
 
 		// Features
 		"live_restore_enabled": info.LiveRestoreEnabled,

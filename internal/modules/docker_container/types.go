@@ -3,7 +3,7 @@ package docker_container
 import (
 	"encoding/json"
 
-	"github.com/gjergjiramku/goansible/internal/modules/docker"
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 // PullPolicy represents the image pull behavior with backward compatibility
@@ -72,11 +72,11 @@ func (r *RecreatePolicy) UnmarshalJSON(data []byte) error {
 type Request struct {
 	docker.CommonArgs
 
-	Name       string      `json:"name"`
-	Image      string      `json:"image"`
-	State      string      `json:"state"`      // present, absent, started, stopped
-	Command    interface{} `json:"command"`    // string or []string
-	Entrypoint interface{} `json:"entrypoint"` // string or []string
+	Name       string            `json:"name"`
+	Image      string            `json:"image"`
+	State      string            `json:"state"`      // present, absent, started, stopped
+	Command    interface{}       `json:"command"`    // string or []string
+	Entrypoint interface{}       `json:"entrypoint"` // string or []string
 	Env        map[string]string `json:"env"`
 
 	// Port bindings
@@ -122,18 +122,18 @@ type Request struct {
 	ShmSize string   `json:"shm_size"` // /dev/shm size: "64m"
 
 	// Resource limits (Tier 2)
-	Ulimits    []Ulimit          `json:"ulimits"`      // Ulimit options
-	Sysctls    map[string]string `json:"sysctls"`      // Sysctl options
-	SecurityOpt []string         `json:"security_opt"` // Security options
-	CPUs       float64           `json:"cpus"`         // CPU limit
-	Memory     string            `json:"memory"`       // Memory limit: "512m"
-	MemorySwap string            `json:"memory_swap"`  // Swap limit: "1g" or "-1" for unlimited
-	PidsLimit  int64             `json:"pids_limit"`   // PID limit
+	Ulimits     []Ulimit          `json:"ulimits"`      // Ulimit options
+	Sysctls     map[string]string `json:"sysctls"`      // Sysctl options
+	SecurityOpt []string          `json:"security_opt"` // Security options
+	CPUs        float64           `json:"cpus"`         // CPU limit
+	Memory      string            `json:"memory"`       // Memory limit: "512m"
+	MemorySwap  string            `json:"memory_swap"`  // Swap limit: "1g" or "-1" for unlimited
+	PidsLimit   int64             `json:"pids_limit"`   // PID limit
 
 	// Idempotency control
-	Comparisons map[string]string `json:"comparisons"` // Field comparison modes: strict, ignore, allow_more_present
-	Recreate    RecreatePolicy    `json:"recreate"`    // auto, always, never (default: auto)
-	ForceKill   bool              `json:"force_kill"`  // Force kill on stop/remove
+	Comparisons map[string]string `json:"comparisons"`  // Field comparison modes: strict, ignore, allow_more_present
+	Recreate    RecreatePolicy    `json:"recreate"`     // auto, always, never (default: auto)
+	ForceKill   bool              `json:"force_kill"`   // Force kill on stop/remove
 	KeepVolumes bool              `json:"keep_volumes"` // Keep volumes on remove
 
 	// Image pull behavior
@@ -176,6 +176,6 @@ type Response struct {
 	Container map[string]interface{} `json:"container,omitempty"`
 	Stdout    string                 `json:"stdout,omitempty"`
 	Stderr    string                 `json:"stderr,omitempty"`
-	Diff      map[string]interface{} `json:"diff,omitempty"` // Changed fields with before/after
+	Diff      map[string]interface{} `json:"diff,omitempty"`    // Changed fields with before/after
 	Actions   []string               `json:"actions,omitempty"` // Actions taken: created, started, stopped, removed, updated
 }

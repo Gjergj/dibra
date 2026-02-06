@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gjergjiramku/goansible/internal/modules/docker"
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 func Execute(req Request) Response {

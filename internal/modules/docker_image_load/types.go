@@ -1,7 +1,7 @@
 package docker_image_load
 
 import (
-	"github.com/gjergjiramku/goansible/internal/modules/docker"
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 type Request struct {

@@ -13,16 +13,16 @@ func TestPlaybook_CopyContent(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-content"
-	expectedContent := "Hello from GoAnsible!"
+	testFile := "/tmp/dibra-test-content"
+	expectedContent := "Hello from dibra!"
 
 	client.Run("rm -f " + testFile)
 
 	playbook := playbookHeader + `
   - name: Copy content to file
     copy:
-      content: "Hello from GoAnsible!"
-      dest: /tmp/goansible-test-content
+      content: "Hello from dibra!"
+      dest: /tmp/dibra-test-content
       mode: "0644"
 `
 	output := runPlaybook(t, playbook)
@@ -57,8 +57,8 @@ func TestPlaybook_CopyRemoteSrc(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	srcFile := "/tmp/goansible-test-remote-src"
-	destFile := "/tmp/goansible-test-remote-dest"
+	srcFile := "/tmp/dibra-test-remote-src"
+	destFile := "/tmp/dibra-test-remote-dest"
 	content := "remote source content"
 
 	client.Run("rm -f " + srcFile + " " + destFile)
@@ -67,8 +67,8 @@ func TestPlaybook_CopyRemoteSrc(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Copy remote file
     copy:
-      src: /tmp/goansible-test-remote-src
-      dest: /tmp/goansible-test-remote-dest
+      src: /tmp/dibra-test-remote-src
+      dest: /tmp/dibra-test-remote-dest
       remote_src: true
 `
 	output := runPlaybook(t, playbook)
@@ -97,7 +97,7 @@ func TestPlaybook_CopyWithBackup(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-backup"
+	testFile := "/tmp/dibra-test-backup"
 	client.Run("rm -f " + testFile + "*")
 	client.Run("echo 'original' > " + testFile)
 
@@ -105,7 +105,7 @@ func TestPlaybook_CopyWithBackup(t *testing.T) {
   - name: Copy with backup
     copy:
       content: "new content"
-      dest: /tmp/goansible-test-backup
+      dest: /tmp/dibra-test-backup
       backup: true
 `
 	output := runPlaybook(t, playbook)
@@ -142,14 +142,14 @@ func TestPlaybook_CopyLocalFile(t *testing.T) {
 		t.Fatalf("Failed to create local file: %v", err)
 	}
 
-	destFile := "/tmp/goansible-test-local-copy"
+	destFile := "/tmp/dibra-test-local-copy"
 	client.Run("rm -f " + destFile)
 
 	playbook := playbookHeader + `
   - name: Copy local file to remote
     copy:
       src: ` + localFile + `
-      dest: /tmp/goansible-test-local-copy
+      dest: /tmp/dibra-test-local-copy
       mode: "0644"
 `
 	output := runPlaybook(t, playbook)
@@ -178,14 +178,14 @@ func TestPlaybook_CopyOwnerGroup(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-owner"
+	testFile := "/tmp/dibra-test-owner"
 	client.Run("rm -f " + testFile)
 
 	playbook := playbookHeader + `
   - name: Copy with owner and group
     copy:
       content: "owned content"
-      dest: /tmp/goansible-test-owner
+      dest: /tmp/dibra-test-owner
       mode: "0640"
       owner: root
       group: root
@@ -222,7 +222,7 @@ func TestPlaybook_CopyForce(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-force"
+	testFile := "/tmp/dibra-test-force"
 	client.Run("rm -f " + testFile)
 	// Create file with same content
 	client.Run("echo -n 'same content' > " + testFile)
@@ -232,7 +232,7 @@ func TestPlaybook_CopyForce(t *testing.T) {
   - name: Copy without force
     copy:
       content: "same content"
-      dest: /tmp/goansible-test-force
+      dest: /tmp/dibra-test-force
 `
 	output := runPlaybook(t, playbookNoForce)
 	if strings.Contains(output, "CHANGED") {
@@ -244,7 +244,7 @@ func TestPlaybook_CopyForce(t *testing.T) {
   - name: Copy with force
     copy:
       content: "same content"
-      dest: /tmp/goansible-test-force
+      dest: /tmp/dibra-test-force
       force: true
 `
 	output = runPlaybook(t, playbookForce)
@@ -260,8 +260,8 @@ func TestPlaybook_CopyToDirectory(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	srcFile := "/tmp/goansible-test-srcfile.txt"
-	destDir := "/tmp/goansible-test-destdir"
+	srcFile := "/tmp/dibra-test-srcfile.txt"
+	destDir := "/tmp/dibra-test-destdir"
 
 	client.Run("rm -rf " + destDir)
 	client.Run("mkdir -p " + destDir)
@@ -270,8 +270,8 @@ func TestPlaybook_CopyToDirectory(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Copy file to directory
     copy:
-      src: /tmp/goansible-test-srcfile.txt
-      dest: /tmp/goansible-test-destdir/
+      src: /tmp/dibra-test-srcfile.txt
+      dest: /tmp/dibra-test-destdir/
       remote_src: true
 `
 	output := runPlaybook(t, playbook)
@@ -281,7 +281,7 @@ func TestPlaybook_CopyToDirectory(t *testing.T) {
 	}
 
 	// File should be copied with original filename
-	expectedFile := destDir + "/goansible-test-srcfile.txt"
+	expectedFile := destDir + "/dibra-test-srcfile.txt"
 	if !remoteFileExists(t, client, expectedFile) {
 		t.Error("File should exist in destination directory")
 	}
@@ -300,14 +300,14 @@ func TestPlaybook_CopyCreateParentDirs(t *testing.T) {
 	defer client.Close()
 
 	// Nested path that doesn't exist
-	destFile := "/tmp/goansible-test-parent/subdir/nested/file.txt"
-	client.Run("rm -rf /tmp/goansible-test-parent")
+	destFile := "/tmp/dibra-test-parent/subdir/nested/file.txt"
+	client.Run("rm -rf /tmp/dibra-test-parent")
 
 	playbook := playbookHeader + `
   - name: Copy creating parent directories
     copy:
       content: "nested content"
-      dest: /tmp/goansible-test-parent/subdir/nested/file.txt
+      dest: /tmp/dibra-test-parent/subdir/nested/file.txt
 `
 	output := runPlaybook(t, playbook)
 
@@ -326,14 +326,14 @@ func TestPlaybook_CopyCreateParentDirs(t *testing.T) {
 	}
 
 	// Cleanup
-	client.Run("rm -rf /tmp/goansible-test-parent")
+	client.Run("rm -rf /tmp/dibra-test-parent")
 }
 
 func TestPlaybook_CopyMultilineContent(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-multiline"
+	testFile := "/tmp/dibra-test-multiline"
 	client.Run("rm -f " + testFile)
 
 	playbook := playbookHeader + `
@@ -343,7 +343,7 @@ func TestPlaybook_CopyMultilineContent(t *testing.T) {
         line 1
         line 2
         line 3
-      dest: /tmp/goansible-test-multiline
+      dest: /tmp/dibra-test-multiline
       mode: "0644"
 `
 	output := runPlaybook(t, playbook)
@@ -371,8 +371,8 @@ func TestPlaybook_CopyDirectoryRemoteSrc(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	srcDir := "/tmp/goansible-test-srcdir"
-	destDir := "/tmp/goansible-test-destdir-copy"
+	srcDir := "/tmp/dibra-test-srcdir"
+	destDir := "/tmp/dibra-test-destdir-copy"
 
 	// Create source directory with files
 	client.Run("rm -rf " + srcDir + " " + destDir)
@@ -383,8 +383,8 @@ func TestPlaybook_CopyDirectoryRemoteSrc(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Copy directory recursively
     copy:
-      src: /tmp/goansible-test-srcdir/
-      dest: /tmp/goansible-test-destdir-copy
+      src: /tmp/dibra-test-srcdir/
+      dest: /tmp/dibra-test-destdir-copy
       remote_src: true
 `
 	output := runPlaybook(t, playbook)
@@ -421,7 +421,7 @@ func TestPlaybook_CopyConfigFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-config.yaml"
+	testFile := "/tmp/dibra-test-config.yaml"
 	client.Run("rm -f " + testFile)
 
 	// Simulates a common use case: deploying config files
@@ -439,7 +439,7 @@ func TestPlaybook_CopyConfigFile(t *testing.T) {
         logging:
           level: info
           format: json
-      dest: /tmp/goansible-test-config.yaml
+      dest: /tmp/dibra-test-config.yaml
       mode: "0644"
       owner: root
       group: root

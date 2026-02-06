@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gjergjiramku/goansible/internal/ssh"
+	"github.com/gjergjiramku/dibra/internal/ssh"
 )
 
 func getProjectRoot() string {

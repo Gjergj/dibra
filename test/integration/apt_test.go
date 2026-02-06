@@ -253,8 +253,8 @@ func TestPlaybook_AptKeyAndRepo(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	keyring := "/etc/apt/keyrings/goansible-test.gpg"
-	repoFile := "/etc/apt/sources.list.d/goansible-test.list"
+	keyring := "/etc/apt/keyrings/dibra-test.gpg"
+	repoFile := "/etc/apt/sources.list.d/dibra-test.list"
 
 	client.Run("rm -f " + keyring + " " + repoFile)
 
@@ -262,13 +262,13 @@ func TestPlaybook_AptKeyAndRepo(t *testing.T) {
   - name: Add GPG key
     apt_key:
       url: https://apt.grafana.com/gpg.key
-      keyring: /etc/apt/keyrings/goansible-test.gpg
+      keyring: /etc/apt/keyrings/dibra-test.gpg
       state: present
 
   - name: Add repository
     apt_repository:
-      repo: "deb [signed-by=/etc/apt/keyrings/goansible-test.gpg] https://apt.grafana.com stable main"
-      filename: goansible-test
+      repo: "deb [signed-by=/etc/apt/keyrings/dibra-test.gpg] https://apt.grafana.com stable main"
+      filename: dibra-test
       update_cache: false
 `
 	output := runPlaybook(t, playbook)

@@ -20,7 +20,7 @@ func TestPlaybook_DockerImageBuild(t *testing.T) {
 	remoteExec(t, client, "rm -rf "+buildDir+" && mkdir -p "+buildDir)
 	remoteExec(t, client, fmt.Sprintf("echo 'FROM alpine:latest' > %s/Dockerfile", buildDir))
 	remoteExec(t, client, fmt.Sprintf("echo 'RUN echo \"built at $(date)\" > /built.txt' >> %s/Dockerfile", buildDir))
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	defer remoteExec(t, client, "docker rmi "+imageName+":latest || true")
 	defer remoteExec(t, client, "rm -rf "+buildDir)
@@ -64,7 +64,7 @@ func TestPlaybook_DockerImageLoad(t *testing.T) {
 	remoteExec(t, client, "docker rmi "+loadTag)
 	defer remoteExec(t, client, "rm -f "+archivePath)
 	defer remoteExec(t, client, "docker rmi "+loadTag+" || true")
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	// 1. Load image
 	t.Log("Step 1: Load image from archive")
@@ -98,7 +98,7 @@ func TestPlaybook_DockerImageExport(t *testing.T) {
 	// Prepare: ensure image exists and clean up old export
 	remoteExec(t, client, "docker pull "+sourceImage)
 	remoteExec(t, client, "rm -f "+exportPath)
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 	defer remoteExec(t, client, "rm -f "+exportPath)
 
 	// 1. Export image

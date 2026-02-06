@@ -3,7 +3,7 @@ package docker_image
 import (
 	"encoding/json"
 
-	"github.com/gjergjiramku/goansible/internal/modules/docker"
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 // PullPolicy represents the image pull behavior with backward compatibility

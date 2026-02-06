@@ -1,4 +1,4 @@
-# GoAnsible
+# dibra
 
 A minimal Ansible-like tool written in Go, supporting the `apt` module for Debian/Ubuntu systems.
 
@@ -32,7 +32,7 @@ A minimal Ansible-like tool written in Go, supporting the `apt` module for Debia
 
 ```bash
 # Build and run
-cd goansible
+cd dibra
 go run ./cmd/controller -config playbook.yaml
 
 # With verbose output
@@ -87,10 +87,10 @@ tasks:
 
 ```bash
 # Build controller
-go build -o goansible ./cmd/controller
+go build -o dibra ./cmd/controller
 
 # Build agent manually (for testing)
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o goansible-agent ./cmd/agent
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dibra-agent ./cmd/agent
 ```
 
 ## How It Works
@@ -98,7 +98,7 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o goansible-agent ./cmd/agent
 1. **Controller** reads the playbook YAML
 2. **Cross-compiles** the agent for linux/amd64 (cached by source hash)
 3. **Connects** to each host via SSH
-4. **Uploads** agent to `/tmp/.goansible-agent` (if not present)
+4. **Uploads** agent to `/tmp/.dibra-agent` (if not present)
 5. **Executes** agent with `sudo -S` wrapper, passing JSON request via stdin
 6. **Parses** JSON response from agent stdout
 7. **Reports** changed/ok/failed status for each task

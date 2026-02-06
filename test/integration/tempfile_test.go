@@ -16,9 +16,11 @@ type TempfileResponse struct {
 	State   string `json:"state,omitempty"`
 }
 
-func getTempfileResult(t *testing.T, client interface{ Run(string) (string, string, error) }, args string) TempfileResponse {
+func getTempfileResult(t *testing.T, client interface {
+	Run(string) (string, string, error)
+}, args string) TempfileResponse {
 	t.Helper()
-	cmd := `echo '{"module":"tempfile","args":` + args + `}' | /tmp/.goansible-agent`
+	cmd := `echo '{"module":"tempfile","args":` + args + `}' | /tmp/.dibra-agent`
 	stdout, stderr, err := client.Run(cmd)
 	if err != nil {
 		t.Fatalf("Agent execution failed: %v, stderr: %s", err, stderr)

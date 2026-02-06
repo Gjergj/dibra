@@ -23,7 +23,7 @@ func TestPlaybook_DockerStackLifecycle(t *testing.T) {
 
 	// Cleanup potential leftovers
 	remoteExec(t, client, "docker stack rm "+stackName+" || true")
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	// Create compose file on remote
 	composeContent := `version: "3.8"

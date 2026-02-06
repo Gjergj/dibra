@@ -1,4 +1,4 @@
-// Package version provides version information for goansible binaries.
+// Package version provides version information for dibra binaries.
 // These variables are set at build time via ldflags.
 package version
 

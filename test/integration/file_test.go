@@ -11,13 +11,13 @@ func TestPlaybook_FileDirectory(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testDir := "/tmp/goansible-test-dir"
+	testDir := "/tmp/dibra-test-dir"
 	client.Run("rm -rf " + testDir)
 
 	playbook := playbookHeader + `
   - name: Create directory
     file:
-      path: /tmp/goansible-test-dir
+      path: /tmp/dibra-test-dir
       state: directory
       mode: "0755"
 `
@@ -52,13 +52,13 @@ func TestPlaybook_FileTouch(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-touch"
+	testFile := "/tmp/dibra-test-touch"
 	client.Run("rm -f " + testFile)
 
 	playbook := playbookHeader + `
   - name: Touch file
     file:
-      path: /tmp/goansible-test-touch
+      path: /tmp/dibra-test-touch
       state: touch
       mode: "0644"
 `
@@ -87,8 +87,8 @@ func TestPlaybook_FileSymlink(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	srcFile := "/tmp/goansible-test-src"
-	linkFile := "/tmp/goansible-test-link"
+	srcFile := "/tmp/dibra-test-src"
+	linkFile := "/tmp/dibra-test-link"
 
 	client.Run("rm -f " + srcFile + " " + linkFile)
 	client.Run("touch " + srcFile)
@@ -96,8 +96,8 @@ func TestPlaybook_FileSymlink(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Create symlink
     file:
-      path: /tmp/goansible-test-link
-      src: /tmp/goansible-test-src
+      path: /tmp/dibra-test-link
+      src: /tmp/dibra-test-src
       state: link
 `
 	output := runPlaybook(t, playbook)
@@ -131,13 +131,13 @@ func TestPlaybook_FileAbsent(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-absent"
+	testFile := "/tmp/dibra-test-absent"
 	client.Run("touch " + testFile)
 
 	playbook := playbookHeader + `
   - name: Delete file
     file:
-      path: /tmp/goansible-test-absent
+      path: /tmp/dibra-test-absent
       state: absent
 `
 	output := runPlaybook(t, playbook)
@@ -162,7 +162,7 @@ func TestPlaybook_FileAbsentDirectory(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testDir := "/tmp/goansible-test-absent-dir"
+	testDir := "/tmp/dibra-test-absent-dir"
 	client.Run("rm -rf " + testDir)
 	client.Run("mkdir -p " + testDir + "/subdir")
 	client.Run("touch " + testDir + "/file.txt")
@@ -171,7 +171,7 @@ func TestPlaybook_FileAbsentDirectory(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Delete directory recursively
     file:
-      path: /tmp/goansible-test-absent-dir
+      path: /tmp/dibra-test-absent-dir
       state: absent
 `
 	output := runPlaybook(t, playbook)
@@ -196,13 +196,13 @@ func TestPlaybook_FileDirectoryWithOwnership(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testDir := "/tmp/goansible-test-dir-owner"
+	testDir := "/tmp/dibra-test-dir-owner"
 	client.Run("rm -rf " + testDir)
 
 	playbook := playbookHeader + `
   - name: Create directory with ownership
     file:
-      path: /tmp/goansible-test-dir-owner
+      path: /tmp/dibra-test-dir-owner
       state: directory
       mode: "0750"
       owner: nobody
@@ -250,13 +250,13 @@ func TestPlaybook_FileNestedDirectory(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testDir := "/tmp/goansible-test-nested/level1/level2/level3"
-	client.Run("rm -rf /tmp/goansible-test-nested")
+	testDir := "/tmp/dibra-test-nested/level1/level2/level3"
+	client.Run("rm -rf /tmp/dibra-test-nested")
 
 	playbook := playbookHeader + `
   - name: Create nested directory
     file:
-      path: /tmp/goansible-test-nested/level1/level2/level3
+      path: /tmp/dibra-test-nested/level1/level2/level3
       state: directory
       mode: "0755"
 `
@@ -278,14 +278,14 @@ func TestPlaybook_FileNestedDirectory(t *testing.T) {
 	}
 
 	// Cleanup
-	client.Run("rm -rf /tmp/goansible-test-nested")
+	client.Run("rm -rf /tmp/dibra-test-nested")
 }
 
 func TestPlaybook_FileDirectoryRecurse(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testDir := "/tmp/goansible-test-recurse"
+	testDir := "/tmp/dibra-test-recurse"
 	client.Run("rm -rf " + testDir)
 	client.Run("mkdir -p " + testDir + "/subdir")
 	client.Run("touch " + testDir + "/file1.txt")
@@ -295,7 +295,7 @@ func TestPlaybook_FileDirectoryRecurse(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Set recursive permissions
     file:
-      path: /tmp/goansible-test-recurse
+      path: /tmp/dibra-test-recurse
       state: directory
       mode: "0755"
       recurse: true
@@ -341,8 +341,8 @@ func TestPlaybook_FileHardlink(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	srcFile := "/tmp/goansible-test-hard-src"
-	linkFile := "/tmp/goansible-test-hard-link"
+	srcFile := "/tmp/dibra-test-hard-src"
+	linkFile := "/tmp/dibra-test-hard-link"
 
 	client.Run("rm -f " + srcFile + " " + linkFile)
 	client.Run("echo 'hardlink test' > " + srcFile)
@@ -350,8 +350,8 @@ func TestPlaybook_FileHardlink(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Create hardlink
     file:
-      path: /tmp/goansible-test-hard-link
-      src: /tmp/goansible-test-hard-src
+      path: /tmp/dibra-test-hard-link
+      src: /tmp/dibra-test-hard-src
       state: hard
 `
 	output := runPlaybook(t, playbook)
@@ -386,7 +386,7 @@ func TestPlaybook_FileStateFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-state-file"
+	testFile := "/tmp/dibra-test-state-file"
 	client.Run("rm -f " + testFile)
 	client.Run("touch " + testFile)
 	client.Run("chmod 777 " + testFile)
@@ -394,7 +394,7 @@ func TestPlaybook_FileStateFile(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Set file permissions
     file:
-      path: /tmp/goansible-test-state-file
+      path: /tmp/dibra-test-state-file
       state: file
       mode: "0644"
       owner: nobody
@@ -437,8 +437,8 @@ func TestPlaybook_FileSymlinkForce(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	srcFile := "/tmp/goansible-test-force-src"
-	linkFile := "/tmp/goansible-test-force-link"
+	srcFile := "/tmp/dibra-test-force-src"
+	linkFile := "/tmp/dibra-test-force-link"
 
 	client.Run("rm -f " + srcFile + " " + linkFile)
 	client.Run("touch " + srcFile)
@@ -447,8 +447,8 @@ func TestPlaybook_FileSymlinkForce(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Force create symlink over existing file
     file:
-      path: /tmp/goansible-test-force-link
-      src: /tmp/goansible-test-force-src
+      path: /tmp/dibra-test-force-link
+      src: /tmp/dibra-test-force-src
       state: link
       force: true
 `
@@ -477,9 +477,9 @@ func TestPlaybook_FileSymlinkReplace(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	srcFile1 := "/tmp/goansible-test-replace-src1"
-	srcFile2 := "/tmp/goansible-test-replace-src2"
-	linkFile := "/tmp/goansible-test-replace-link"
+	srcFile1 := "/tmp/dibra-test-replace-src1"
+	srcFile2 := "/tmp/dibra-test-replace-src2"
+	linkFile := "/tmp/dibra-test-replace-link"
 
 	client.Run("rm -f " + srcFile1 + " " + srcFile2 + " " + linkFile)
 	client.Run("touch " + srcFile1)
@@ -490,8 +490,8 @@ func TestPlaybook_FileSymlinkReplace(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Replace symlink target
     file:
-      path: /tmp/goansible-test-replace-link
-      src: /tmp/goansible-test-replace-src2
+      path: /tmp/dibra-test-replace-link
+      src: /tmp/dibra-test-replace-src2
       state: link
       force: true
 `
@@ -515,7 +515,7 @@ func TestPlaybook_FileTouchExisting(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-touch-existing"
+	testFile := "/tmp/dibra-test-touch-existing"
 	client.Run("rm -f " + testFile)
 	client.Run("touch " + testFile)
 
@@ -528,7 +528,7 @@ func TestPlaybook_FileTouchExisting(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Touch existing file
     file:
-      path: /tmp/goansible-test-touch-existing
+      path: /tmp/dibra-test-touch-existing
       state: touch
 `
 	output := runPlaybook(t, playbook)
@@ -551,13 +551,13 @@ func TestPlaybook_FileTouchWithMode(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-touch-mode"
+	testFile := "/tmp/dibra-test-touch-mode"
 	client.Run("rm -f " + testFile)
 
 	playbook := playbookHeader + `
   - name: Touch file with specific mode
     file:
-      path: /tmp/goansible-test-touch-mode
+      path: /tmp/dibra-test-touch-mode
       state: touch
       mode: "0600"
       owner: nobody
@@ -594,13 +594,13 @@ func TestPlaybook_FileTouchCreatesParentDirs(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-touch-parent/subdir/file.txt"
-	client.Run("rm -rf /tmp/goansible-test-touch-parent")
+	testFile := "/tmp/dibra-test-touch-parent/subdir/file.txt"
+	client.Run("rm -rf /tmp/dibra-test-touch-parent")
 
 	playbook := playbookHeader + `
   - name: Touch file in nested directory
     file:
-      path: /tmp/goansible-test-touch-parent/subdir/file.txt
+      path: /tmp/dibra-test-touch-parent/subdir/file.txt
       state: touch
 `
 	output := runPlaybook(t, playbook)
@@ -615,25 +615,25 @@ func TestPlaybook_FileTouchCreatesParentDirs(t *testing.T) {
 	}
 
 	// Verify parent directories exist
-	if !remoteDirExists(t, client, "/tmp/goansible-test-touch-parent/subdir") {
+	if !remoteDirExists(t, client, "/tmp/dibra-test-touch-parent/subdir") {
 		t.Error("Parent directory should exist")
 	}
 
 	// Cleanup
-	client.Run("rm -rf /tmp/goansible-test-touch-parent")
+	client.Run("rm -rf /tmp/dibra-test-touch-parent")
 }
 
 func TestPlaybook_FileStateFileNonExistent(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-nonexistent"
+	testFile := "/tmp/dibra-test-nonexistent"
 	client.Run("rm -f " + testFile)
 
 	playbook := playbookHeader + `
   - name: Modify non-existent file
     file:
-      path: /tmp/goansible-test-nonexistent
+      path: /tmp/dibra-test-nonexistent
       state: file
       mode: "0644"
 `
@@ -649,14 +649,14 @@ func TestPlaybook_FileDirectoryExistsAsFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testPath := "/tmp/goansible-test-dir-as-file"
+	testPath := "/tmp/dibra-test-dir-as-file"
 	client.Run("rm -rf " + testPath)
 	client.Run("touch " + testPath) // Create as file
 
 	playbook := playbookHeader + `
   - name: Create directory where file exists
     file:
-      path: /tmp/goansible-test-dir-as-file
+      path: /tmp/dibra-test-dir-as-file
       state: directory
 `
 	output := runPlaybook(t, playbook)
@@ -674,13 +674,13 @@ func TestPlaybook_FileSymlinkMissingSrc(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	linkFile := "/tmp/goansible-test-link-no-src"
+	linkFile := "/tmp/dibra-test-link-no-src"
 	client.Run("rm -f " + linkFile)
 
 	playbook := playbookHeader + `
   - name: Create symlink without src
     file:
-      path: /tmp/goansible-test-link-no-src
+      path: /tmp/dibra-test-link-no-src
       state: link
 `
 	output := runPlaybook(t, playbook)
@@ -695,13 +695,13 @@ func TestPlaybook_FileHardlinkMissingSrc(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	linkFile := "/tmp/goansible-test-hard-no-src"
+	linkFile := "/tmp/dibra-test-hard-no-src"
 	client.Run("rm -f " + linkFile)
 
 	playbook := playbookHeader + `
   - name: Create hardlink without src
     file:
-      path: /tmp/goansible-test-hard-no-src
+      path: /tmp/dibra-test-hard-no-src
       state: hard
 `
 	output := runPlaybook(t, playbook)
@@ -716,7 +716,7 @@ func TestPlaybook_FileModeChange(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-mode-change"
+	testFile := "/tmp/dibra-test-mode-change"
 	client.Run("rm -f " + testFile)
 	client.Run("touch " + testFile)
 	client.Run("chmod 644 " + testFile)
@@ -725,7 +725,7 @@ func TestPlaybook_FileModeChange(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Change file mode
     file:
-      path: /tmp/goansible-test-mode-change
+      path: /tmp/dibra-test-mode-change
       state: file
       mode: "0755"
 `
@@ -754,7 +754,7 @@ func TestPlaybook_FileOwnerChange(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-owner-change"
+	testFile := "/tmp/dibra-test-owner-change"
 	client.Run("rm -f " + testFile)
 	client.Run("touch " + testFile)
 
@@ -762,7 +762,7 @@ func TestPlaybook_FileOwnerChange(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Change file owner
     file:
-      path: /tmp/goansible-test-owner-change
+      path: /tmp/dibra-test-owner-change
       state: file
       owner: nobody
 `
@@ -791,7 +791,7 @@ func TestPlaybook_FileGroupChange(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-group-change"
+	testFile := "/tmp/dibra-test-group-change"
 	client.Run("rm -f " + testFile)
 	client.Run("touch " + testFile)
 
@@ -799,7 +799,7 @@ func TestPlaybook_FileGroupChange(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Change file group
     file:
-      path: /tmp/goansible-test-group-change
+      path: /tmp/dibra-test-group-change
       state: file
       group: nogroup
 `
@@ -828,8 +828,8 @@ func TestPlaybook_FileSymlinkToNonExistentTarget(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	srcFile := "/tmp/goansible-nonexistent-target"
-	linkFile := "/tmp/goansible-test-dangling-link"
+	srcFile := "/tmp/dibra-nonexistent-target"
+	linkFile := "/tmp/dibra-test-dangling-link"
 
 	client.Run("rm -f " + srcFile + " " + linkFile)
 
@@ -837,8 +837,8 @@ func TestPlaybook_FileSymlinkToNonExistentTarget(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Create symlink to non-existent target
     file:
-      path: /tmp/goansible-test-dangling-link
-      src: /tmp/goansible-nonexistent-target
+      path: /tmp/dibra-test-dangling-link
+      src: /tmp/dibra-nonexistent-target
       state: link
 `
 	output := runPlaybook(t, playbook)
@@ -872,8 +872,8 @@ func TestPlaybook_FileHardlinkForce(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	srcFile := "/tmp/goansible-test-hard-force-src"
-	linkFile := "/tmp/goansible-test-hard-force-link"
+	srcFile := "/tmp/dibra-test-hard-force-src"
+	linkFile := "/tmp/dibra-test-hard-force-link"
 
 	client.Run("rm -f " + srcFile + " " + linkFile)
 	client.Run("echo 'source' > " + srcFile)
@@ -882,8 +882,8 @@ func TestPlaybook_FileHardlinkForce(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Force create hardlink over existing file
     file:
-      path: /tmp/goansible-test-hard-force-link
-      src: /tmp/goansible-test-hard-force-src
+      path: /tmp/dibra-test-hard-force-link
+      src: /tmp/dibra-test-hard-force-src
       state: hard
       force: true
 `
@@ -908,7 +908,7 @@ func TestPlaybook_FileDirectoryRecurseOwnership(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testDir := "/tmp/goansible-test-recurse-owner"
+	testDir := "/tmp/dibra-test-recurse-owner"
 	client.Run("rm -rf " + testDir)
 	client.Run("mkdir -p " + testDir + "/subdir")
 	client.Run("touch " + testDir + "/file1.txt")
@@ -917,7 +917,7 @@ func TestPlaybook_FileDirectoryRecurseOwnership(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Set recursive ownership
     file:
-      path: /tmp/goansible-test-recurse-owner
+      path: /tmp/dibra-test-recurse-owner
       state: directory
       owner: nobody
       group: nogroup
@@ -959,18 +959,18 @@ func TestPlaybook_FileSymlinkCreatesParentDirs(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	srcFile := "/tmp/goansible-symlink-parent-src"
-	linkFile := "/tmp/goansible-symlink-parent/subdir/link"
+	srcFile := "/tmp/dibra-symlink-parent-src"
+	linkFile := "/tmp/dibra-symlink-parent/subdir/link"
 
-	client.Run("rm -rf /tmp/goansible-symlink-parent")
+	client.Run("rm -rf /tmp/dibra-symlink-parent")
 	client.Run("rm -f " + srcFile)
 	client.Run("touch " + srcFile)
 
 	playbook := playbookHeader + `
   - name: Create symlink in nested directory
     file:
-      path: /tmp/goansible-symlink-parent/subdir/link
-      src: /tmp/goansible-symlink-parent-src
+      path: /tmp/dibra-symlink-parent/subdir/link
+      src: /tmp/dibra-symlink-parent-src
       state: link
 `
 	output := runPlaybook(t, playbook)
@@ -985,25 +985,25 @@ func TestPlaybook_FileSymlinkCreatesParentDirs(t *testing.T) {
 	}
 
 	// Verify parent directories exist
-	if !remoteDirExists(t, client, "/tmp/goansible-symlink-parent/subdir") {
+	if !remoteDirExists(t, client, "/tmp/dibra-symlink-parent/subdir") {
 		t.Error("Parent directory should exist")
 	}
 
 	// Cleanup
-	client.Run("rm -rf /tmp/goansible-symlink-parent " + srcFile)
+	client.Run("rm -rf /tmp/dibra-symlink-parent " + srcFile)
 }
 
 func TestPlaybook_FileAbsentIdempotent(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-test-absent-idem"
+	testFile := "/tmp/dibra-test-absent-idem"
 	client.Run("rm -f " + testFile) // Ensure doesn't exist
 
 	playbook := playbookHeader + `
   - name: Delete non-existent file
     file:
-      path: /tmp/goansible-test-absent-idem
+      path: /tmp/dibra-test-absent-idem
       state: absent
 `
 	// Should not report changed when file doesn't exist

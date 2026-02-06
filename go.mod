@@ -1,4 +1,4 @@
-module github.com/gjergjiramku/goansible
+module github.com/gjergjiramku/dibra
 
 go 1.24.0
 

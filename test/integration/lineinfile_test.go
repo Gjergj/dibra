@@ -11,7 +11,7 @@ func TestPlaybook_Lineinfile_BasicInsert(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-test.txt"
+	testFile := "/tmp/dibra-lineinfile-test.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1\nline 2\nline 3' > " + testFile)
@@ -45,7 +45,7 @@ func TestPlaybook_Lineinfile_InsertAfterBOF(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-bof.txt"
+	testFile := "/tmp/dibra-lineinfile-bof.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1\nline 2\nline 3' > " + testFile)
@@ -81,7 +81,7 @@ func TestPlaybook_Lineinfile_InsertAfterEOF(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-eof.txt"
+	testFile := "/tmp/dibra-lineinfile-eof.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1\nline 2' > " + testFile)
@@ -112,7 +112,7 @@ func TestPlaybook_Lineinfile_InsertAfterRegex(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-after.txt"
+	testFile := "/tmp/dibra-lineinfile-after.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e '[section_one]\n\n[section_two]\n\n[section_three]' > " + testFile)
@@ -155,7 +155,7 @@ func TestPlaybook_Lineinfile_InsertBeforeRegex(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-before.txt"
+	testFile := "/tmp/dibra-lineinfile-before.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e '[section_one]\n\n[section_two]\n\n[section_three]' > " + testFile)
@@ -192,7 +192,7 @@ func TestPlaybook_Lineinfile_ReplaceWithRegexp(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-replace.txt"
+	testFile := "/tmp/dibra-lineinfile-replace.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'This is line 1\nThis is line 2\nThis is line 3' > " + testFile)
@@ -230,7 +230,7 @@ func TestPlaybook_Lineinfile_Backrefs(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-backrefs.txt"
+	testFile := "/tmp/dibra-lineinfile-backrefs.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'This is line 1\nREF this is line for backrefs REF\nThis is line 3' > " + testFile)
@@ -261,7 +261,7 @@ func TestPlaybook_Lineinfile_BackrefsNoMatch(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-backrefs-nomatch.txt"
+	testFile := "/tmp/dibra-lineinfile-backrefs-nomatch.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1\nline 2\nline 3' > " + testFile)
@@ -294,7 +294,7 @@ func TestPlaybook_Lineinfile_SearchString(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-search.txt"
+	testFile := "/tmp/dibra-lineinfile-search.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'This is line 1\nThis is line 2\nThis is line 3' > " + testFile)
@@ -324,7 +324,7 @@ func TestPlaybook_Lineinfile_StateAbsent(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-absent.txt"
+	testFile := "/tmp/dibra-lineinfile-absent.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1\nline 2\nline 3' > " + testFile)
@@ -362,7 +362,7 @@ func TestPlaybook_Lineinfile_StateAbsentSearchString(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-absent-search.txt"
+	testFile := "/tmp/dibra-lineinfile-absent-search.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1\nline 2\nline 3' > " + testFile)
@@ -392,7 +392,7 @@ func TestPlaybook_Lineinfile_StateAbsentExactLine(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-absent-line.txt"
+	testFile := "/tmp/dibra-lineinfile-absent-line.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1\nline 2\nline 3' > " + testFile)
@@ -422,7 +422,7 @@ func TestPlaybook_Lineinfile_CreateFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-create.txt"
+	testFile := "/tmp/dibra-lineinfile-create.txt"
 
 	client.Run("rm -f " + testFile)
 
@@ -455,7 +455,7 @@ func TestPlaybook_Lineinfile_CreateFileFail(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-nocreate.txt"
+	testFile := "/tmp/dibra-lineinfile-nocreate.txt"
 
 	client.Run("rm -f " + testFile)
 
@@ -478,7 +478,7 @@ func TestPlaybook_Lineinfile_Backup(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-backup.txt"
+	testFile := "/tmp/dibra-lineinfile-backup.txt"
 
 	client.Run("rm -f " + testFile + "*")
 	client.Run("echo -e 'original line 1\noriginal line 2' > " + testFile)
@@ -514,7 +514,7 @@ func TestPlaybook_Lineinfile_FirstMatch(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-firstmatch.txt"
+	testFile := "/tmp/dibra-lineinfile-firstmatch.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line1\nline1\nline1\nline2\nline3' > " + testFile)
@@ -557,7 +557,7 @@ func TestPlaybook_Lineinfile_InsertAfterFirstMatch(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-insertafter-fm.txt"
+	testFile := "/tmp/dibra-lineinfile-insertafter-fm.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line1\nline1\nline1\nline2\nline3' > " + testFile)
@@ -595,7 +595,7 @@ func TestPlaybook_Lineinfile_InsertBeforeFirstMatch(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-insertbefore-fm.txt"
+	testFile := "/tmp/dibra-lineinfile-insertbefore-fm.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line1\nline1\nline1\nline2\nline3' > " + testFile)
@@ -628,7 +628,7 @@ func TestPlaybook_Lineinfile_ModeOwnerGroup(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-perms.txt"
+	testFile := "/tmp/dibra-lineinfile-perms.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1\nline 2' > " + testFile)
@@ -670,7 +670,7 @@ func TestPlaybook_Lineinfile_ValidateSuccess(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-validate.txt"
+	testFile := "/tmp/dibra-lineinfile-validate.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1' > " + testFile)
@@ -700,7 +700,7 @@ func TestPlaybook_Lineinfile_ValidateFail(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-validate-fail.txt"
+	testFile := "/tmp/dibra-lineinfile-validate-fail.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1' > " + testFile)
@@ -730,7 +730,7 @@ func TestPlaybook_Lineinfile_EmptyFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-empty.txt"
+	testFile := "/tmp/dibra-lineinfile-empty.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("touch " + testFile)
@@ -759,7 +759,7 @@ func TestPlaybook_Lineinfile_FileWithoutNewlineAtEOF(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-noeof.txt"
+	testFile := "/tmp/dibra-lineinfile-noeof.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("printf 'line 1\nline 2' > " + testFile)
@@ -793,7 +793,7 @@ func TestPlaybook_Lineinfile_SingleQuotes(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-quotes.txt"
+	testFile := "/tmp/dibra-lineinfile-quotes.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo 'original' > " + testFile)
@@ -822,7 +822,7 @@ func TestPlaybook_Lineinfile_SpecialRegexChars(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-special.txt"
+	testFile := "/tmp/dibra-lineinfile-special.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'test.value=old\nother.value=x' > " + testFile)
@@ -852,7 +852,7 @@ func TestPlaybook_Lineinfile_RegexpNoMatchInsertAfter(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-nomatch-insert.txt"
+	testFile := "/tmp/dibra-lineinfile-nomatch-insert.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e '[section_one]\nkey1=value1\n\n[section_two]\nkey2=value2' > " + testFile)
@@ -891,7 +891,7 @@ func TestPlaybook_Lineinfile_MultipleRemoval(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-multiremove.txt"
+	testFile := "/tmp/dibra-lineinfile-multiremove.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line1\nline2\nline1\nline3\nline1' > " + testFile)
@@ -926,9 +926,9 @@ func TestPlaybook_Lineinfile_CreateWithParentDirs(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-parent/subdir/test.txt"
+	testFile := "/tmp/dibra-lineinfile-parent/subdir/test.txt"
 
-	client.Run("rm -rf /tmp/goansible-lineinfile-parent")
+	client.Run("rm -rf /tmp/dibra-lineinfile-parent")
 
 	playbook := playbookHeader + `
   - name: Create file with parent dirs
@@ -952,14 +952,14 @@ func TestPlaybook_Lineinfile_CreateWithParentDirs(t *testing.T) {
 		t.Errorf("Expected line in new file, got: %s", content)
 	}
 
-	client.Run("rm -rf /tmp/goansible-lineinfile-parent")
+	client.Run("rm -rf /tmp/dibra-lineinfile-parent")
 }
 
 func TestPlaybook_Lineinfile_RealWorldSSHDConfig(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-sshd_config"
+	testFile := "/tmp/dibra-sshd_config"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e '#Port 22\n#PermitRootLogin yes\n#PasswordAuthentication yes' > " + testFile)
@@ -1012,7 +1012,7 @@ func TestPlaybook_Lineinfile_RealWorldApacheConfig(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-apache.conf"
+	testFile := "/tmp/dibra-apache.conf"
 
 	client.Run("rm -f " + testFile)
 	client.Run(`echo -e '<VirtualHost *:80>\n    ServerName example.com\n    DocumentRoot /var/www/html\n</VirtualHost>' > ` + testFile)
@@ -1042,7 +1042,7 @@ func TestPlaybook_Lineinfile_RealWorldEnvironmentFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-env"
+	testFile := "/tmp/dibra-env"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'PATH=/usr/bin\nHOME=/root\nLANG=en_US.UTF-8' > " + testFile)
@@ -1080,7 +1080,7 @@ func TestPlaybook_Lineinfile_RealWorldHostsFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-hosts"
+	testFile := "/tmp/dibra-hosts"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e '127.0.0.1 localhost\n::1 localhost' > " + testFile)
@@ -1115,7 +1115,7 @@ func TestPlaybook_Lineinfile_RegexpWithInsertBefore(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-regexp-insertbefore.txt"
+	testFile := "/tmp/dibra-lineinfile-regexp-insertbefore.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1\nline 2\nline 3' > " + testFile)
@@ -1154,7 +1154,7 @@ func TestPlaybook_Lineinfile_RegexpWithInsertAfter(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-regexp-insertafter.txt"
+	testFile := "/tmp/dibra-lineinfile-regexp-insertafter.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1\nline 2\nline 3' > " + testFile)
@@ -1194,7 +1194,7 @@ func TestPlaybook_Lineinfile_InsertNoMatch(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-insert-nomatch.txt"
+	testFile := "/tmp/dibra-lineinfile-insert-nomatch.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1\nline 2\nline 3' > " + testFile)
@@ -1226,7 +1226,7 @@ func TestPlaybook_Lineinfile_DuplicatePrevention(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-duplicate.txt"
+	testFile := "/tmp/dibra-lineinfile-duplicate.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1\nexisting line\nline 2' > " + testFile)
@@ -1255,7 +1255,7 @@ func TestPlaybook_Lineinfile_ReplaceLastMatchOnly(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-lastmatch.txt"
+	testFile := "/tmp/dibra-lineinfile-lastmatch.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("printf 'match_line\nother line\nmatch_line\nfinal line\n' > " + testFile)
@@ -1304,7 +1304,7 @@ func TestPlaybook_Lineinfile_MultilineSupport(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-lineinfile-multiline.txt"
+	testFile := "/tmp/dibra-lineinfile-multiline.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo 'initial' > " + testFile)

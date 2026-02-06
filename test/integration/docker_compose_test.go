@@ -27,7 +27,7 @@ services:
 
 	// Ensure clean state
 	remoteExec(t, client, "docker compose -f "+projectDir+"/docker-compose.yml down || true")
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	// 1. Up (Present)
 	t.Log("Step 1: Compose Up")

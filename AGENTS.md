@@ -1,4 +1,4 @@
-# GoAnsible
+# dibra
 
 A minimal Ansible-like configuration management tool written in Go.
 
@@ -15,7 +15,7 @@ make build-dev
 make install
 
 # Check version
-./bin/goansible --version
+./bin/dibra --version
 
 # Run playbook
 go run ./cmd/controller -config playbook.yaml
@@ -73,13 +73,13 @@ make release-check      # Validate .goreleaser.yaml
 
 | Platform | Method |
 |----------|--------|
-| **macOS** | `brew install Gjergj/tap/goansible` |
-| **macOS/Linux** | `curl -fsSL https://raw.githubusercontent.com/Gjergj/goansible/main/scripts/install.sh \| sh` |
-| **Linux (deb)** | Download `.deb` from releases, `sudo dpkg -i goansible_*.deb` |
-| **Linux (rpm)** | Download `.rpm` from releases, `sudo rpm -i goansible_*.rpm` |
-| **Windows** | `scoop bucket add goansible https://github.com/Gjergj/scoop-bucket && scoop install goansible` |
-| **Windows** | `choco install goansible` |
-| **Any** | Download binary from [GitHub Releases](https://github.com/Gjergj/goansible/releases) |
+| **macOS** | `brew install Gjergj/tap/dibra` |
+| **macOS/Linux** | `curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install.sh \| sh` |
+| **Linux (deb)** | Download `.deb` from releases, `sudo dpkg -i dibra_*.deb` |
+| **Linux (rpm)** | Download `.rpm` from releases, `sudo rpm -i dibra_*.rpm` |
+| **Windows** | `scoop bucket add dibra https://github.com/Gjergj/scoop-bucket && scoop install dibra` |
+| **Windows** | `choco install dibra` |
+| **Any** | Download binary from [GitHub Releases](https://github.com/Gjergj/dibra/releases) |
 
 ### Required GitHub Secrets
 
@@ -121,11 +121,11 @@ We chose an **agent-based execution model** (Option 3 from initial design):
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | **Agent Delivery** | Build on demand | Cross-compiles `GOOS=linux GOARCH=amd64` when source changes; caches by source hash |
-| **Agent Caching** | Upload once, reuse | Agent stored at `/tmp/.goansible-agent`; use `--force-agent-upload` to update |
+| **Agent Caching** | Upload once, reuse | Agent stored at `/tmp/.dibra-agent`; use `--force-agent-upload` to update |
 | **Privilege Escalation** | Controller wraps with `sudo -S` | Follows Ansible pattern; agent runs as root, doesn't handle sudo itself |
 | **Communication** | JSON over stdin/stdout | Agent reads JSON request from stdin, writes JSON response to stdout |
 | **Idempotency** | Check before change | All modules check current state before making changes |
-| **File Transfer** | SCP protocol | Controller uploads files to `/tmp/.goansible-copy-<hash>` before copy module runs |
+| **File Transfer** | SCP protocol | Controller uploads files to `/tmp/.dibra-copy-<hash>` before copy module runs |
 | **Checksum Validation** | SHA1 | Matches Ansible; computed locally, verified on remote after transfer |
 
 ### Privilege Escalation Flow
@@ -134,7 +134,7 @@ When connecting as non-root user with `become: true`:
 
 ```
 Controller executes via SSH:
-  echo "$PASSWORD" | sudo -S -p '' /tmp/.goansible-agent
+  echo "$PASSWORD" | sudo -S -p '' /tmp/.dibra-agent
 
 Agent stdin receives:
   password\n{"module":"apt","args":{...}}
@@ -147,7 +147,7 @@ When connecting as root: sudo wrapper is skipped entirely.
 ## Project Structure
 
 ```
-goansible/
+dibra/
 ├── cmd/
 │   ├── controller/main.go    # CLI orchestrator
 │   └── agent/main.go         # Remote agent binary
@@ -703,7 +703,7 @@ Manage Docker Swarm secrets.
 | `state` | `present` | `present` to create, `absent` to remove. |
 | `force` | `false` | Force recreate even if hash matches. |
 
-**Idempotency**: The module stores a SHA256 hash of the data in a label (`goansible.data_hash`) to detect changes. Since Docker secrets are immutable, the module recreates the secret if the data hash changes.
+**Idempotency**: The module stores a SHA256 hash of the data in a label (`dibra.data_hash`) to detect changes. Since Docker secrets are immutable, the module recreates the secret if the data hash changes.
 
 ### docker_config
 
@@ -731,7 +731,7 @@ Manage Docker Swarm configs.
 | `state` | `present` | `present` to create, `absent` to remove. |
 | `force` | `false` | Force recreate even if hash matches. |
 
-**Idempotency**: The module stores a SHA256 hash of the data in a label (`goansible.data_hash`) to detect changes. Since Docker configs are immutable, the module recreates the config if the data hash changes. Labels can be updated in-place without recreating.
+**Idempotency**: The module stores a SHA256 hash of the data in a label (`dibra.data_hash`) to detect changes. Since Docker configs are immutable, the module recreates the config if the data hash changes. Labels can be updated in-place without recreating.
 
 ### docker_stack
 
@@ -1615,7 +1615,7 @@ Copies files to remote hosts.
 
 **File Transfer Flow** (when `src` is local):
 1. Controller computes SHA1 checksum of local file
-2. Controller uploads to `/tmp/.goansible-copy-<hash>`
+2. Controller uploads to `/tmp/.dibra-copy-<hash>`
 3. Agent verifies checksum matches
 4. Agent atomically moves to destination
 5. Agent applies mode/owner/group
@@ -1783,7 +1783,7 @@ Unpacks an archive after (optionally) copying it from the local machine. Support
 
 **File Transfer Flow** (when `remote_src=false`):
 1. Controller computes SHA1 checksum of local archive
-2. Controller uploads to `/tmp/.goansible-unarchive-<hash>`
+2. Controller uploads to `/tmp/.dibra-unarchive-<hash>`
 3. Agent verifies checksum matches
 4. Agent extracts archive to destination
 5. Agent applies mode/owner/group if specified
@@ -2663,7 +2663,7 @@ Reboots a machine, waits for it to go down, come back up, and respond to command
 | `reboot_timeout` | `600` | Maximum seconds to wait for machine to reboot and respond to a test command. |
 | `connect_timeout` | `30` | Maximum seconds to wait for a successful SSH connection before retrying. |
 | `test_command` | `whoami` | Command to run on the rebooted host to determine the machine is ready for further tasks. |
-| `msg` | `Reboot initiated by GoAnsible` | Message to display to users before reboot. |
+| `msg` | `Reboot initiated by dibra` | Message to display to users before reboot. |
 | `search_paths` | `["/sbin", "/bin", "/usr/sbin", "/usr/bin", "/usr/local/sbin"]` | Paths to search on the remote machine for the `shutdown` command. |
 | `boot_time_command` | `cat /proc/sys/kernel/random/boot_id` | Command to run that returns a unique string indicating the last time the system was booted. |
 | `reboot_command` | `[determined based on target OS]` | Custom command to run that reboots the system. If set, ignores `pre_reboot_delay`, `msg`, and `search_paths`. |

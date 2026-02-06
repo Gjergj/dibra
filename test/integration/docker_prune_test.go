@@ -38,7 +38,7 @@ func TestPlaybook_DockerPrune(t *testing.T) {
 	if strings.TrimSpace(dangling) == "" {
 		t.Log("Warning: Failed to create dangling image for test. Skipping prune assertions.")
 	} else {
-		remoteExec(t, client, "rm -f /tmp/.goansible-agent") // Force update agent
+		remoteExec(t, client, "rm -f /tmp/.dibra-agent") // Force update agent
 
 		// 2. Run Prune Playbook
 		t.Log("Step 2: Run Prune")
