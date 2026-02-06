@@ -17,7 +17,7 @@ func TestPlaybook_DockerSwarmLifecycle(t *testing.T) {
 	if strings.TrimSpace(info) == "active" {
 		remoteExec(t, client, "docker swarm leave --force")
 	}
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent") // Force update agent
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent") // Force update agent
 
 	// 1. Init Swarm
 	t.Log("Step 1: Init Swarm")

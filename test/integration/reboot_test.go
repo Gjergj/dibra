@@ -18,7 +18,7 @@ func TestPlaybook_RebootBootTimeCommand(t *testing.T) {
     ping:
 `)
 
-	cmd := `echo '{"module":"shell","args":{"cmd":"cat /proc/sys/kernel/random/boot_id"}}' | /tmp/.goansible-agent`
+	cmd := `echo '{"module":"shell","args":{"cmd":"cat /proc/sys/kernel/random/boot_id"}}' | /tmp/.dibra-agent`
 	stdout, stderr, err := client.Run(cmd)
 	if err != nil {
 		t.Fatalf("Boot time command failed: %v, stderr: %s", err, stderr)
@@ -55,7 +55,7 @@ func TestPlaybook_RebootBootTimeIdempotent(t *testing.T) {
     ping:
 `)
 
-	cmd := `echo '{"module":"shell","args":{"cmd":"cat /proc/sys/kernel/random/boot_id"}}' | /tmp/.goansible-agent`
+	cmd := `echo '{"module":"shell","args":{"cmd":"cat /proc/sys/kernel/random/boot_id"}}' | /tmp/.dibra-agent`
 
 	stdout1, _, _ := client.Run(cmd)
 	time.Sleep(100 * time.Millisecond)
@@ -84,7 +84,7 @@ func TestPlaybook_RebootCustomBootTimeCommand(t *testing.T) {
     ping:
 `)
 
-	cmd := `echo '{"module":"shell","args":{"cmd":"uptime"}}' | /tmp/.goansible-agent`
+	cmd := `echo '{"module":"shell","args":{"cmd":"uptime"}}' | /tmp/.dibra-agent`
 	stdout, stderr, err := client.Run(cmd)
 	if err != nil {
 		t.Fatalf("Custom boot time command failed: %v, stderr: %s", err, stderr)
@@ -142,7 +142,7 @@ func TestPlaybook_RebootTestCommand(t *testing.T) {
     ping:
 `)
 
-	cmd := `echo '{"module":"shell","args":{"cmd":"whoami"}}' | /tmp/.goansible-agent`
+	cmd := `echo '{"module":"shell","args":{"cmd":"whoami"}}' | /tmp/.dibra-agent`
 	stdout, stderr, err := client.Run(cmd)
 	if err != nil {
 		t.Fatalf("Test command failed: %v, stderr: %s", err, stderr)
@@ -175,7 +175,7 @@ func TestPlaybook_RebootCustomTestCommand(t *testing.T) {
     ping:
 `)
 
-	cmd := `echo '{"module":"shell","args":{"cmd":"uname -a"}}' | /tmp/.goansible-agent`
+	cmd := `echo '{"module":"shell","args":{"cmd":"uname -a"}}' | /tmp/.dibra-agent`
 	stdout, stderr, err := client.Run(cmd)
 	if err != nil {
 		t.Fatalf("Custom test command failed: %v, stderr: %s", err, stderr)
@@ -207,7 +207,7 @@ func TestPlaybook_RebootInvalidTestCommand(t *testing.T) {
     ping:
 `)
 
-	cmd := `echo '{"module":"shell","args":{"cmd":"nonexistent_command_that_should_fail_12345"}}' | /tmp/.goansible-agent`
+	cmd := `echo '{"module":"shell","args":{"cmd":"nonexistent_command_that_should_fail_12345"}}' | /tmp/.dibra-agent`
 	stdout, _, _ := client.Run(cmd)
 
 	var resp struct {
@@ -230,7 +230,7 @@ func TestPlaybook_RebootModuleShellAvailable(t *testing.T) {
     ping:
 `)
 
-	cmd := `echo '{"module":"shell","args":{"cmd":"echo hello"}}' | /tmp/.goansible-agent`
+	cmd := `echo '{"module":"shell","args":{"cmd":"echo hello"}}' | /tmp/.dibra-agent`
 	stdout, stderr, err := client.Run(cmd)
 	if err != nil {
 		t.Fatalf("Shell module failed: %v, stderr: %s", err, stderr)
@@ -309,7 +309,7 @@ func TestPlaybook_RebootModuleAgentResponds(t *testing.T) {
     ping:
 `)
 
-	cmd := `echo '{"module":"shell","args":{"cmd":"which shutdown || which reboot"}}' | /tmp/.goansible-agent`
+	cmd := `echo '{"module":"shell","args":{"cmd":"which shutdown || which reboot"}}' | /tmp/.dibra-agent`
 	stdout, _, _ := client.Run(cmd)
 
 	t.Logf("Shutdown/reboot location check: %s", stdout)
@@ -360,7 +360,7 @@ func TestPlaybook_RebootTimeoutShort(t *testing.T) {
     ping:
 `)
 
-	cmd := `echo '{"module":"shell","args":{"cmd":"sleep 0.1 && echo done"}}' | timeout 5 /tmp/.goansible-agent`
+	cmd := `echo '{"module":"shell","args":{"cmd":"sleep 0.1 && echo done"}}' | timeout 5 /tmp/.dibra-agent`
 	stdout, stderr, err := client.Run(cmd)
 	if err != nil {
 		t.Fatalf("Command failed: %v, stderr: %s", err, stderr)
@@ -389,7 +389,7 @@ func TestPlaybook_RebootMsgEscaping(t *testing.T) {
 `)
 
 	specialMsg := "Test message with 'quotes' and \"double quotes\""
-	cmd := `echo '{"module":"shell","args":{"cmd":"echo '` + `'` + `'" ` + specialMsg + `" '` + `'` + `'"}}' | /tmp/.goansible-agent`
+	cmd := `echo '{"module":"shell","args":{"cmd":"echo '` + `'` + `'" ` + specialMsg + `" '` + `'` + `'"}}' | /tmp/.dibra-agent`
 	stdout, _, err := client.Run(cmd)
 
 	if err == nil {
@@ -449,7 +449,7 @@ func TestPlaybook_RebootModuleRegistration(t *testing.T) {
     ping:
 `)
 
-	cmd := `echo '{"module":"shell","args":{"cmd":"test -x /sbin/shutdown && echo reboot_available"}}' | /tmp/.goansible-agent`
+	cmd := `echo '{"module":"shell","args":{"cmd":"test -x /sbin/shutdown && echo reboot_available"}}' | /tmp/.dibra-agent`
 	stdout, _, _ := client.Run(cmd)
 
 	var resp struct {
@@ -549,7 +549,7 @@ func TestPlaybook_RebootMultipleBootTimeReads(t *testing.T) {
 `)
 
 	for i := 0; i < 3; i++ {
-		cmd := `echo '{"module":"shell","args":{"cmd":"cat /proc/sys/kernel/random/boot_id"}}' | /tmp/.goansible-agent`
+		cmd := `echo '{"module":"shell","args":{"cmd":"cat /proc/sys/kernel/random/boot_id"}}' | /tmp/.dibra-agent`
 		stdout, stderr, err := client.Run(cmd)
 		if err != nil {
 			t.Fatalf("Iteration %d failed: %v, stderr: %s", i, err, stderr)

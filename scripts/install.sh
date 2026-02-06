@@ -1,12 +1,12 @@
 #!/bin/sh
-# GoAnsible installer script
-# Usage: curl -fsSL https://raw.githubusercontent.com/Gjergj/goansible/main/scripts/install.sh | sh
+# dibra installer script
+# Usage: curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install.sh | sh
 # Or with a specific version: curl -fsSL ... | VERSION=v1.2.3 sh
 
 set -e
 
-REPO="Gjergj/goansible"
-BINARY_NAME="goansible"
+REPO="Gjergj/dibra"
+BINARY_NAME="dibra"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 
 # Colors for output
@@ -141,7 +141,7 @@ download_and_verify() {
 }
 
 main() {
-    info "GoAnsible Installer"
+    info "dibra Installer"
     
     OS=$(detect_os)
     ARCH=$(detect_arch)
@@ -168,7 +168,7 @@ main() {
     
     echo ""
     info "Installation complete!"
-    info "Run 'goansible --version' to verify"
+    info "Run 'dibra --version' to verify"
 }
 
 main "$@"

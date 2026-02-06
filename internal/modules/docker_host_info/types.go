@@ -1,6 +1,6 @@
 package docker_host_info
 
-import "github.com/gjergjiramku/goansible/internal/modules/docker"
+import "github.com/gjergjiramku/dibra/internal/modules/docker"
 
 // Request represents the module arguments
 type Request struct {

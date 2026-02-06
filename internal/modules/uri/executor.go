@@ -69,7 +69,7 @@ func Execute(req Request) Response {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to create request: %v", err)}
 	}
 
-	httpReq.Header.Set("User-Agent", "goansible-uri/1.0")
+	httpReq.Header.Set("User-Agent", "dibra-uri/1.0")
 
 	if contentType != "" {
 		httpReq.Header.Set("Content-Type", contentType)

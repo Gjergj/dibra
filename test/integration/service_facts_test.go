@@ -22,9 +22,11 @@ type ServiceInfo struct {
 	Source string `json:"source"`
 }
 
-func getServiceFacts(t *testing.T, client interface{ Run(string) (string, string, error) }) ServiceFactsResponse {
+func getServiceFacts(t *testing.T, client interface {
+	Run(string) (string, string, error)
+}) ServiceFactsResponse {
 	t.Helper()
-	stdout, stderr, err := client.Run(`echo '{"module":"service_facts","args":{}}' | /tmp/.goansible-agent`)
+	stdout, stderr, err := client.Run(`echo '{"module":"service_facts","args":{}}' | /tmp/.dibra-agent`)
 	if err != nil {
 		t.Fatalf("Agent execution failed: %v, stderr: %s", err, stderr)
 	}

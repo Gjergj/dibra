@@ -22,7 +22,7 @@ func TestPlaybook_DockerConfigLifecycle(t *testing.T) {
 
 	// Cleanup potential leftovers
 	remoteExec(t, client, "docker config rm "+configName+" || true")
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	// 1. Create Config
 	t.Log("Step 1: Create Config")

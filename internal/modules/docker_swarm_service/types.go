@@ -1,26 +1,26 @@
 package docker_swarm_service
 
 import (
-	"github.com/gjergjiramku/goansible/internal/modules/docker"
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 type Request struct {
 	docker.CommonArgs
 
-	Name              string            `json:"name"`
-	Image             string            `json:"image"`
-	State             string            `json:"state"` // present, absent
-	Replicas          *uint64           `json:"replicas"`
-	Args              []string          `json:"args"`
-	Command           interface{}       `json:"command"` // string or []string
-	Env               map[string]string `json:"env"`
-	Publish           []PortPublish     `json:"publish"`
-	Networks          []string          `json:"networks"`
-	Labels            map[string]string `json:"labels"`
-	LimitCPU          float64           `json:"limit_cpu"`
-	LimitMemory       int64             `json:"limit_memory"` // Bytes
-	Constraint        []string          `json:"constraint"`
-	RestartPolicy     string            `json:"restart_policy"` // any, none, on-failure
+	Name                string            `json:"name"`
+	Image               string            `json:"image"`
+	State               string            `json:"state"` // present, absent
+	Replicas            *uint64           `json:"replicas"`
+	Args                []string          `json:"args"`
+	Command             interface{}       `json:"command"` // string or []string
+	Env                 map[string]string `json:"env"`
+	Publish             []PortPublish     `json:"publish"`
+	Networks            []string          `json:"networks"`
+	Labels              map[string]string `json:"labels"`
+	LimitCPU            float64           `json:"limit_cpu"`
+	LimitMemory         int64             `json:"limit_memory"` // Bytes
+	Constraint          []string          `json:"constraint"`
+	RestartPolicy       string            `json:"restart_policy"` // any, none, on-failure
 	UpdateDelay         string            `json:"update_delay"`
 	UpdateParallelism   uint64            `json:"update_parallelism"`
 	UpdateFailureAction string            `json:"update_failure_action"` // pause, continue, rollback
@@ -31,11 +31,11 @@ type Request struct {
 	ResolveImage        string            `json:"resolve_image"` // always, changed, never
 
 	// Rollback configuration
-	RollbackDelay         string  `json:"rollback_delay"`
-	RollbackParallelism   uint64  `json:"rollback_parallelism"`
-	RollbackFailureAction string  `json:"rollback_failure_action"` // pause, continue
-	RollbackOrder         string  `json:"rollback_order"`          // stop-first, start-first
-	RollbackMonitor       string  `json:"rollback_monitor"`
+	RollbackDelay           string  `json:"rollback_delay"`
+	RollbackParallelism     uint64  `json:"rollback_parallelism"`
+	RollbackFailureAction   string  `json:"rollback_failure_action"` // pause, continue
+	RollbackOrder           string  `json:"rollback_order"`          // stop-first, start-first
+	RollbackMonitor         string  `json:"rollback_monitor"`
 	RollbackMaxFailureRatio float32 `json:"rollback_max_failure_ratio"`
 
 	Configs []ConfigReference `json:"configs,omitempty"`

@@ -28,7 +28,7 @@ func (r *Request) SetDefaults() {
 		r.TestCommand = "whoami"
 	}
 	if r.Msg == "" {
-		r.Msg = "Reboot initiated by GoAnsible"
+		r.Msg = "Reboot initiated by dibra"
 	}
 	if len(r.SearchPaths) == 0 {
 		r.SearchPaths = []string{"/sbin", "/bin", "/usr/sbin", "/usr/bin", "/usr/local/sbin"}

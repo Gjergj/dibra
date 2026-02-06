@@ -13,15 +13,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gjergjiramku/goansible/internal/builder"
-	"github.com/gjergjiramku/goansible/internal/config"
-	"github.com/gjergjiramku/goansible/internal/ssh"
-	"github.com/gjergjiramku/goansible/internal/version"
+	"github.com/gjergjiramku/dibra/internal/builder"
+	"github.com/gjergjiramku/dibra/internal/config"
+	"github.com/gjergjiramku/dibra/internal/ssh"
+	"github.com/gjergjiramku/dibra/internal/version"
 )
 
 const (
 	remoteAgentDir  = "/tmp"
-	remoteAgentName = ".goansible-agent"
+	remoteAgentName = ".dibra-agent"
 )
 
 type ModuleRequest struct {
@@ -49,7 +49,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("goansible %s (commit: %s, built: %s)\n", version.Version, version.Commit, version.Date)
+		fmt.Printf("dibra %s (commit: %s, built: %s)\n", version.Version, version.Commit, version.Date)
 		os.Exit(0)
 	}
 
@@ -321,7 +321,7 @@ func main() {
 						continue
 					}
 
-					remoteTmpPath := fmt.Sprintf("/tmp/.goansible-copy-%s", localChecksum[:12])
+					remoteTmpPath := fmt.Sprintf("/tmp/.dibra-copy-%s", localChecksum[:12])
 					if err := client.UploadFile(task.Copy.Src, remoteTmpPath); err != nil {
 						fmt.Printf("    ✗ Failed to upload file: %v\n", err)
 						continue
@@ -459,7 +459,7 @@ func main() {
 						continue
 					}
 
-					remoteTmpPath := fmt.Sprintf("/tmp/.goansible-unarchive-%s", localChecksum[:12])
+					remoteTmpPath := fmt.Sprintf("/tmp/.dibra-unarchive-%s", localChecksum[:12])
 					if err := client.UploadFile(task.Unarchive.Src, remoteTmpPath); err != nil {
 						fmt.Printf("    ✗ Failed to upload archive: %v\n", err)
 						continue
@@ -663,30 +663,30 @@ func main() {
 				modReq = ModuleRequest{
 					Module: "docker_container",
 					Args: map[string]interface{}{
-						"name":           task.DockerContainer.Name,
-						"image":          task.DockerContainer.Image,
-						"state":          task.DockerContainer.State,
-						"command":        task.DockerContainer.Command,
-						"entrypoint":     task.DockerContainer.Entrypoint,
-						"args":           task.DockerContainer.Args,
-						"env":            task.DockerContainer.Env,
-						"exposed_ports":  task.DockerContainer.ExposedPorts,
-						"ports":          task.DockerContainer.Ports,
-						"volumes":        task.DockerContainer.Volumes,
-						"network_mode":   task.DockerContainer.NetworkMode,
-						"networks":       task.DockerContainer.Networks,
+						"name":            task.DockerContainer.Name,
+						"image":           task.DockerContainer.Image,
+						"state":           task.DockerContainer.State,
+						"command":         task.DockerContainer.Command,
+						"entrypoint":      task.DockerContainer.Entrypoint,
+						"args":            task.DockerContainer.Args,
+						"env":             task.DockerContainer.Env,
+						"exposed_ports":   task.DockerContainer.ExposedPorts,
+						"ports":           task.DockerContainer.Ports,
+						"volumes":         task.DockerContainer.Volumes,
+						"network_mode":    task.DockerContainer.NetworkMode,
+						"networks":        task.DockerContainer.Networks,
 						"networks_append": task.DockerContainer.NetworksAppend,
-						"restart_policy": task.DockerContainer.RestartPolicy,
-						"auto_remove":    task.DockerContainer.AutoRemove,
-						"privileged":     task.DockerContainer.Privileged,
-						"user":           task.DockerContainer.User,
-						"working_dir":    task.DockerContainer.WorkingDir,
-						"hostname":       task.DockerContainer.Hostname,
-						"domainname":     task.DockerContainer.Domainname,
-						"labels":         task.DockerContainer.Labels,
-						"links":          task.DockerContainer.Links,
-						"log_driver":     task.DockerContainer.LogDriver,
-						"log_options":    task.DockerContainer.LogOptions,
+						"restart_policy":  task.DockerContainer.RestartPolicy,
+						"auto_remove":     task.DockerContainer.AutoRemove,
+						"privileged":      task.DockerContainer.Privileged,
+						"user":            task.DockerContainer.User,
+						"working_dir":     task.DockerContainer.WorkingDir,
+						"hostname":        task.DockerContainer.Hostname,
+						"domainname":      task.DockerContainer.Domainname,
+						"labels":          task.DockerContainer.Labels,
+						"links":           task.DockerContainer.Links,
+						"log_driver":      task.DockerContainer.LogDriver,
+						"log_options":     task.DockerContainer.LogOptions,
 						// Tier 1 options
 						"cap_add":     task.DockerContainer.CapAdd,
 						"cap_drop":    task.DockerContainer.CapDrop,
@@ -1176,16 +1176,16 @@ func main() {
 				modReq = ModuleRequest{
 					Module: "docker_container_info",
 					Args: map[string]interface{}{
-						"name":          task.DockerContainerInfo.Name,
-						"docker_host":   task.DockerContainerInfo.DockerHost,
-						"tls":           task.DockerContainerInfo.TLS,
+						"name":           task.DockerContainerInfo.Name,
+						"docker_host":    task.DockerContainerInfo.DockerHost,
+						"tls":            task.DockerContainerInfo.TLS,
 						"validate_certs": task.DockerContainerInfo.ValidateCerts,
-						"ca_path":       task.DockerContainerInfo.CAPath,
-						"client_cert":   task.DockerContainerInfo.ClientCert,
-						"client_key":    task.DockerContainerInfo.ClientKey,
-						"api_version":   task.DockerContainerInfo.APIVersion,
-						"timeout":       task.DockerContainerInfo.Timeout,
-						"debug":         task.DockerContainerInfo.Debug,
+						"ca_path":        task.DockerContainerInfo.CAPath,
+						"client_cert":    task.DockerContainerInfo.ClientCert,
+						"client_key":     task.DockerContainerInfo.ClientKey,
+						"api_version":    task.DockerContainerInfo.APIVersion,
+						"timeout":        task.DockerContainerInfo.Timeout,
+						"debug":          task.DockerContainerInfo.Debug,
 					},
 				}
 
@@ -1193,16 +1193,16 @@ func main() {
 				modReq = ModuleRequest{
 					Module: "docker_image_info",
 					Args: map[string]interface{}{
-						"name":          task.DockerImageInfo.Name,
-						"docker_host":   task.DockerImageInfo.DockerHost,
-						"tls":           task.DockerImageInfo.TLS,
+						"name":           task.DockerImageInfo.Name,
+						"docker_host":    task.DockerImageInfo.DockerHost,
+						"tls":            task.DockerImageInfo.TLS,
 						"validate_certs": task.DockerImageInfo.ValidateCerts,
-						"ca_path":       task.DockerImageInfo.CAPath,
-						"client_cert":   task.DockerImageInfo.ClientCert,
-						"client_key":    task.DockerImageInfo.ClientKey,
-						"api_version":   task.DockerImageInfo.APIVersion,
-						"timeout":       task.DockerImageInfo.Timeout,
-						"debug":         task.DockerImageInfo.Debug,
+						"ca_path":        task.DockerImageInfo.CAPath,
+						"client_cert":    task.DockerImageInfo.ClientCert,
+						"client_key":     task.DockerImageInfo.ClientKey,
+						"api_version":    task.DockerImageInfo.APIVersion,
+						"timeout":        task.DockerImageInfo.Timeout,
+						"debug":          task.DockerImageInfo.Debug,
 					},
 				}
 
@@ -1210,16 +1210,16 @@ func main() {
 				modReq = ModuleRequest{
 					Module: "docker_network_info",
 					Args: map[string]interface{}{
-						"name":          task.DockerNetworkInfo.Name,
-						"docker_host":   task.DockerNetworkInfo.DockerHost,
-						"tls":           task.DockerNetworkInfo.TLS,
+						"name":           task.DockerNetworkInfo.Name,
+						"docker_host":    task.DockerNetworkInfo.DockerHost,
+						"tls":            task.DockerNetworkInfo.TLS,
 						"validate_certs": task.DockerNetworkInfo.ValidateCerts,
-						"ca_path":       task.DockerNetworkInfo.CAPath,
-						"client_cert":   task.DockerNetworkInfo.ClientCert,
-						"client_key":    task.DockerNetworkInfo.ClientKey,
-						"api_version":   task.DockerNetworkInfo.APIVersion,
-						"timeout":       task.DockerNetworkInfo.Timeout,
-						"debug":         task.DockerNetworkInfo.Debug,
+						"ca_path":        task.DockerNetworkInfo.CAPath,
+						"client_cert":    task.DockerNetworkInfo.ClientCert,
+						"client_key":     task.DockerNetworkInfo.ClientKey,
+						"api_version":    task.DockerNetworkInfo.APIVersion,
+						"timeout":        task.DockerNetworkInfo.Timeout,
+						"debug":          task.DockerNetworkInfo.Debug,
 					},
 				}
 
@@ -1227,16 +1227,16 @@ func main() {
 				modReq = ModuleRequest{
 					Module: "docker_volume_info",
 					Args: map[string]interface{}{
-						"name":          task.DockerVolumeInfo.Name,
-						"docker_host":   task.DockerVolumeInfo.DockerHost,
-						"tls":           task.DockerVolumeInfo.TLS,
+						"name":           task.DockerVolumeInfo.Name,
+						"docker_host":    task.DockerVolumeInfo.DockerHost,
+						"tls":            task.DockerVolumeInfo.TLS,
 						"validate_certs": task.DockerVolumeInfo.ValidateCerts,
-						"ca_path":       task.DockerVolumeInfo.CAPath,
-						"client_cert":   task.DockerVolumeInfo.ClientCert,
-						"client_key":    task.DockerVolumeInfo.ClientKey,
-						"api_version":   task.DockerVolumeInfo.APIVersion,
-						"timeout":       task.DockerVolumeInfo.Timeout,
-						"debug":         task.DockerVolumeInfo.Debug,
+						"ca_path":        task.DockerVolumeInfo.CAPath,
+						"client_cert":    task.DockerVolumeInfo.ClientCert,
+						"client_key":     task.DockerVolumeInfo.ClientKey,
+						"api_version":    task.DockerVolumeInfo.APIVersion,
+						"timeout":        task.DockerVolumeInfo.Timeout,
+						"debug":          task.DockerVolumeInfo.Debug,
 					},
 				}
 
@@ -1244,19 +1244,19 @@ func main() {
 				modReq = ModuleRequest{
 					Module: "docker_host_info",
 					Args: map[string]interface{}{
-						"containers":    task.DockerHostInfo.Containers,
-						"images":        task.DockerHostInfo.Images,
-						"volumes":       task.DockerHostInfo.Volumes,
-						"disk_usage":    task.DockerHostInfo.DiskUsage,
-						"docker_host":   task.DockerHostInfo.DockerHost,
-						"tls":           task.DockerHostInfo.TLS,
+						"containers":     task.DockerHostInfo.Containers,
+						"images":         task.DockerHostInfo.Images,
+						"volumes":        task.DockerHostInfo.Volumes,
+						"disk_usage":     task.DockerHostInfo.DiskUsage,
+						"docker_host":    task.DockerHostInfo.DockerHost,
+						"tls":            task.DockerHostInfo.TLS,
 						"validate_certs": task.DockerHostInfo.ValidateCerts,
-						"ca_path":       task.DockerHostInfo.CAPath,
-						"client_cert":   task.DockerHostInfo.ClientCert,
-						"client_key":    task.DockerHostInfo.ClientKey,
-						"api_version":   task.DockerHostInfo.APIVersion,
-						"timeout":       task.DockerHostInfo.Timeout,
-						"debug":         task.DockerHostInfo.Debug,
+						"ca_path":        task.DockerHostInfo.CAPath,
+						"client_cert":    task.DockerHostInfo.ClientCert,
+						"client_key":     task.DockerHostInfo.ClientKey,
+						"api_version":    task.DockerHostInfo.APIVersion,
+						"timeout":        task.DockerHostInfo.Timeout,
+						"debug":          task.DockerHostInfo.Debug,
 					},
 				}
 
@@ -1264,17 +1264,17 @@ func main() {
 				modReq = ModuleRequest{
 					Module: "docker_swarm_info",
 					Args: map[string]interface{}{
-						"nodes":         task.DockerSwarmInfo.Nodes,
-						"verbose":       task.DockerSwarmInfo.Verbose,
-						"docker_host":   task.DockerSwarmInfo.DockerHost,
-						"tls":           task.DockerSwarmInfo.TLS,
+						"nodes":          task.DockerSwarmInfo.Nodes,
+						"verbose":        task.DockerSwarmInfo.Verbose,
+						"docker_host":    task.DockerSwarmInfo.DockerHost,
+						"tls":            task.DockerSwarmInfo.TLS,
 						"validate_certs": task.DockerSwarmInfo.ValidateCerts,
-						"ca_path":       task.DockerSwarmInfo.CAPath,
-						"client_cert":   task.DockerSwarmInfo.ClientCert,
-						"client_key":    task.DockerSwarmInfo.ClientKey,
-						"api_version":   task.DockerSwarmInfo.APIVersion,
-						"timeout":       task.DockerSwarmInfo.Timeout,
-						"debug":         task.DockerSwarmInfo.Debug,
+						"ca_path":        task.DockerSwarmInfo.CAPath,
+						"client_cert":    task.DockerSwarmInfo.ClientCert,
+						"client_key":     task.DockerSwarmInfo.ClientKey,
+						"api_version":    task.DockerSwarmInfo.APIVersion,
+						"timeout":        task.DockerSwarmInfo.Timeout,
+						"debug":          task.DockerSwarmInfo.Debug,
 					},
 				}
 
@@ -1567,7 +1567,7 @@ func executeScript(client *ssh.Client, agentPath string, params *config.ScriptPa
 		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to compute script checksum: %v", err)}
 	}
 
-	remoteTmpPath := fmt.Sprintf("/tmp/.goansible-script-%s", localChecksum[:12])
+	remoteTmpPath := fmt.Sprintf("/tmp/.dibra-script-%s", localChecksum[:12])
 
 	if verbose {
 		fmt.Printf("    Uploading script %s -> %s\n", scriptPath, remoteTmpPath)
@@ -1674,7 +1674,7 @@ func executeReboot(client *ssh.Client, agentPath string, host config.Host, param
 	}
 	msg := params.Msg
 	if msg == "" {
-		msg = "Reboot initiated by GoAnsible"
+		msg = "Reboot initiated by dibra"
 	}
 	searchPaths := params.SearchPaths
 	if len(searchPaths) == 0 {

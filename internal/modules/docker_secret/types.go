@@ -1,11 +1,11 @@
 package docker_secret
 
 import (
-	"github.com/gjergjiramku/goansible/internal/modules/docker"
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 // DataHashLabel is the label key used to store the hash of secret data for idempotency
-const DataHashLabel = "goansible.data_hash"
+const DataHashLabel = "dibra.data_hash"
 
 type Request struct {
 	docker.CommonArgs

@@ -15,9 +15,11 @@ type PingResponse struct {
 	Ping    string `json:"ping,omitempty"`
 }
 
-func getPingResult(t *testing.T, client interface{ Run(string) (string, string, error) }, args string) PingResponse {
+func getPingResult(t *testing.T, client interface {
+	Run(string) (string, string, error)
+}, args string) PingResponse {
 	t.Helper()
-	cmd := `echo '{"module":"ping","args":` + args + `}' | /tmp/.goansible-agent`
+	cmd := `echo '{"module":"ping","args":` + args + `}' | /tmp/.dibra-agent`
 	stdout, stderr, err := client.Run(cmd)
 	if err != nil {
 		t.Fatalf("Agent execution failed: %v, stderr: %s", err, stderr)

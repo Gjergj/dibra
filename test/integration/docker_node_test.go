@@ -26,7 +26,7 @@ func TestPlaybook_DockerNode(t *testing.T) {
 	hostname := strings.TrimSpace(remoteExec(t, client, "docker node ls --format '{{.Hostname}}' | head -n 1"))
 
 	// Force update agent
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	// Debug: List nodes
 	nodes := remoteExec(t, client, "docker node ls")

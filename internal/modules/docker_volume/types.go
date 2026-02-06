@@ -1,6 +1,6 @@
 package docker_volume
 
-import "github.com/gjergjiramku/goansible/internal/modules/docker"
+import "github.com/gjergjiramku/dibra/internal/modules/docker"
 
 type Request struct {
 	docker.CommonArgs

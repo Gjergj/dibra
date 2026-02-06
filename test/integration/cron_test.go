@@ -217,7 +217,7 @@ func TestPlaybook_CronFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	cronFile := "/etc/cron.d/goansible-test"
+	cronFile := "/etc/cron.d/dibra-test"
 	client.Run("rm -f " + cronFile)
 	defer client.Run("rm -f " + cronFile)
 
@@ -229,7 +229,7 @@ func TestPlaybook_CronFile(t *testing.T) {
       hour: "2"
       user: root
       job: /usr/bin/echo crond
-      cron_file: goansible-test
+      cron_file: dibra-test
 `
 	output := runPlaybook(t, playbook)
 
@@ -254,7 +254,7 @@ func TestPlaybook_CronFileRemove(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	cronFile := "/etc/cron.d/goansible-test-remove"
+	cronFile := "/etc/cron.d/dibra-test-remove"
 	client.Run("rm -f " + cronFile)
 	defer client.Run("rm -f " + cronFile)
 
@@ -264,7 +264,7 @@ func TestPlaybook_CronFileRemove(t *testing.T) {
       name: temp job
       user: root
       job: /usr/bin/echo temp
-      cron_file: goansible-test-remove
+      cron_file: dibra-test-remove
 `
 	runPlaybook(t, setupPlaybook)
 
@@ -272,7 +272,7 @@ func TestPlaybook_CronFileRemove(t *testing.T) {
   - name: Remove cron.d job
     cron:
       name: temp job
-      cron_file: goansible-test-remove
+      cron_file: dibra-test-remove
       state: absent
 `
 	output := runPlaybook(t, removePlaybook)
@@ -776,7 +776,7 @@ func TestPlaybook_CronFileMultipleJobs(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	cronFile := "/etc/cron.d/goansible-multi"
+	cronFile := "/etc/cron.d/dibra-multi"
 	client.Run("rm -f " + cronFile)
 	defer client.Run("rm -f " + cronFile)
 
@@ -788,7 +788,7 @@ func TestPlaybook_CronFileMultipleJobs(t *testing.T) {
       hour: "1"
       user: root
       job: /usr/bin/echo crond-job1
-      cron_file: goansible-multi
+      cron_file: dibra-multi
 
   - name: Add second cron.d job
     cron:
@@ -797,7 +797,7 @@ func TestPlaybook_CronFileMultipleJobs(t *testing.T) {
       hour: "2"
       user: root
       job: /usr/bin/echo crond-job2
-      cron_file: goansible-multi
+      cron_file: dibra-multi
 `
 	output := runPlaybook(t, playbook)
 

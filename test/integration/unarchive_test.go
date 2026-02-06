@@ -15,8 +15,8 @@ func TestPlaybook_UnarchiveTar(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-tar"
-	archiveFile := "/tmp/goansible-test.tar"
+	destDir := "/tmp/dibra-unarchive-tar"
+	archiveFile := "/tmp/dibra-test.tar"
 
 	// Cleanup
 	client.Run("rm -rf " + destDir + " " + archiveFile)
@@ -75,8 +75,8 @@ func TestPlaybook_UnarchiveTarGz(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-tgz"
-	archiveFile := "/tmp/goansible-test.tar.gz"
+	destDir := "/tmp/dibra-unarchive-tgz"
+	archiveFile := "/tmp/dibra-test.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -123,8 +123,8 @@ func TestPlaybook_UnarchiveTarBz2(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-bz2"
-	archiveFile := "/tmp/goansible-test.tar.bz2"
+	destDir := "/tmp/dibra-unarchive-bz2"
+	archiveFile := "/tmp/dibra-test.tar.bz2"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -165,8 +165,8 @@ func TestPlaybook_UnarchiveTarXz(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-xz"
-	archiveFile := "/tmp/goansible-test.tar.xz"
+	destDir := "/tmp/dibra-unarchive-xz"
+	archiveFile := "/tmp/dibra-test.tar.xz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -212,8 +212,8 @@ func TestPlaybook_UnarchiveZip(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-zip"
-	archiveFile := "/tmp/goansible-test.zip"
+	destDir := "/tmp/dibra-unarchive-zip"
+	archiveFile := "/tmp/dibra-test.zip"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -271,8 +271,8 @@ func TestPlaybook_UnarchiveCreates(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-creates"
-	archiveFile := "/tmp/goansible-creates.tar.gz"
+	destDir := "/tmp/dibra-unarchive-creates"
+	archiveFile := "/tmp/dibra-creates.tar.gz"
 	createsFile := destDir + "/marker.txt"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
@@ -321,8 +321,8 @@ func TestPlaybook_UnarchiveCreatesNotExists(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-creates-ne"
-	archiveFile := "/tmp/goansible-creates-ne.tar.gz"
+	destDir := "/tmp/dibra-unarchive-creates-ne"
+	archiveFile := "/tmp/dibra-creates-ne.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -362,8 +362,8 @@ func TestPlaybook_UnarchiveListFiles(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-list"
-	archiveFile := "/tmp/goansible-list.tar.gz"
+	destDir := "/tmp/dibra-unarchive-list"
+	archiveFile := "/tmp/dibra-list.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -406,8 +406,8 @@ func TestPlaybook_UnarchiveExclude(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-exclude"
-	archiveFile := "/tmp/goansible-exclude.tar.gz"
+	destDir := "/tmp/dibra-unarchive-exclude"
+	archiveFile := "/tmp/dibra-exclude.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -455,8 +455,8 @@ func TestPlaybook_UnarchiveExcludeGlob(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-exclude-glob"
-	archiveFile := "/tmp/goansible-exclude-glob.tar.gz"
+	destDir := "/tmp/dibra-unarchive-exclude-glob"
+	archiveFile := "/tmp/dibra-exclude-glob.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -508,8 +508,8 @@ func TestPlaybook_UnarchiveInclude(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-include"
-	archiveFile := "/tmp/goansible-include.tar.gz"
+	destDir := "/tmp/dibra-unarchive-include"
+	archiveFile := "/tmp/dibra-include.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -561,8 +561,8 @@ func TestPlaybook_UnarchiveKeepNewer(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-newer"
-	archiveFile := "/tmp/goansible-newer.tar.gz"
+	destDir := "/tmp/dibra-unarchive-newer"
+	archiveFile := "/tmp/dibra-newer.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -605,8 +605,8 @@ func TestPlaybook_UnarchiveWithMode(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-mode"
-	archiveFile := "/tmp/goansible-mode.tar.gz"
+	destDir := "/tmp/dibra-unarchive-mode"
+	archiveFile := "/tmp/dibra-mode.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -644,8 +644,8 @@ func TestPlaybook_UnarchiveWithOwnerGroup(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-owner"
-	archiveFile := "/tmp/goansible-owner.tar.gz"
+	destDir := "/tmp/dibra-unarchive-owner"
+	archiveFile := "/tmp/dibra-owner.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -694,8 +694,8 @@ func TestPlaybook_UnarchiveIdempotent(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-idem"
-	archiveFile := "/tmp/goansible-idem.tar.gz"
+	destDir := "/tmp/dibra-unarchive-idem"
+	archiveFile := "/tmp/dibra-idem.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -738,8 +738,8 @@ func TestPlaybook_UnarchiveZipIdempotent(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-zip-idem"
-	archiveFile := "/tmp/goansible-zip-idem.zip"
+	destDir := "/tmp/dibra-unarchive-zip-idem"
+	archiveFile := "/tmp/dibra-zip-idem.zip"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -783,7 +783,7 @@ func TestPlaybook_UnarchiveMissingSrc(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-missing"
+	destDir := "/tmp/dibra-unarchive-missing"
 	client.Run("mkdir -p " + destDir)
 
 	playbook := playbookHeader + `
@@ -806,7 +806,7 @@ func TestPlaybook_UnarchiveMissingDest(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	archiveFile := "/tmp/goansible-missing-dest.tar.gz"
+	archiveFile := "/tmp/dibra-missing-dest.tar.gz"
 
 	// Create a valid archive
 	client.Run("mkdir -p /tmp/missing-dest-source")
@@ -838,8 +838,8 @@ func TestPlaybook_UnarchiveReextractAfterDelete(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-reextract"
-	archiveFile := "/tmp/goansible-reextract.tar.gz"
+	destDir := "/tmp/dibra-unarchive-reextract"
+	archiveFile := "/tmp/dibra-reextract.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -889,8 +889,8 @@ func TestPlaybook_UnarchiveContentDiffers(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-content"
-	archiveFile := "/tmp/goansible-content.tar.gz"
+	destDir := "/tmp/dibra-unarchive-content"
+	archiveFile := "/tmp/dibra-content.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -940,8 +940,8 @@ func TestPlaybook_UnarchiveSymlink(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-symlink"
-	archiveFile := "/tmp/goansible-symlink.tar.gz"
+	destDir := "/tmp/dibra-unarchive-symlink"
+	archiveFile := "/tmp/dibra-symlink.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -994,9 +994,9 @@ func TestPlaybook_UnarchiveDestSymlinkToDir(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	realDir := "/tmp/goansible-unarchive-real-dest"
-	symlinkDir := "/tmp/goansible-unarchive-sym-dest"
-	archiveFile := "/tmp/goansible-symdir.tar.gz"
+	realDir := "/tmp/dibra-unarchive-real-dest"
+	symlinkDir := "/tmp/dibra-unarchive-sym-dest"
+	archiveFile := "/tmp/dibra-symdir.tar.gz"
 
 	client.Run("rm -rf " + realDir + " " + symlinkDir + " " + archiveFile)
 	client.Run("mkdir -p " + realDir)
@@ -1037,8 +1037,8 @@ func TestPlaybook_UnarchiveExcludeIncludeMutuallyExclusive(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-mutex"
-	archiveFile := "/tmp/goansible-mutex.tar.gz"
+	destDir := "/tmp/dibra-unarchive-mutex"
+	archiveFile := "/tmp/dibra-mutex.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -1077,8 +1077,8 @@ func TestPlaybook_UnarchiveExtraOpts(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-extra"
-	archiveFile := "/tmp/goansible-extra.tar.gz"
+	destDir := "/tmp/dibra-unarchive-extra"
+	archiveFile := "/tmp/dibra-extra.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -1119,8 +1119,8 @@ func TestPlaybook_UnarchiveZipExclude(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-zip-exc"
-	archiveFile := "/tmp/goansible-zip-exc.zip"
+	destDir := "/tmp/dibra-unarchive-zip-exc"
+	archiveFile := "/tmp/dibra-zip-exc.zip"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -1169,7 +1169,7 @@ func TestPlaybook_UnarchiveUnsupportedFormat(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-unsup"
+	destDir := "/tmp/dibra-unarchive-unsup"
 	client.Run("mkdir -p " + destDir)
 
 	// Create a file with unsupported extension
@@ -1199,8 +1199,8 @@ func TestPlaybook_UnarchiveDestIsFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destFile := "/tmp/goansible-dest-is-file"
-	archiveFile := "/tmp/goansible-dest-file.tar.gz"
+	destFile := "/tmp/dibra-dest-is-file"
+	archiveFile := "/tmp/dibra-dest-file.tar.gz"
 
 	client.Run("rm -f " + destFile + " " + archiveFile)
 	client.Run("echo 'im a file' > " + destFile)
@@ -1235,8 +1235,8 @@ func TestPlaybook_UnarchiveNestedDirectories(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-nested"
-	archiveFile := "/tmp/goansible-nested.tar.gz"
+	destDir := "/tmp/dibra-unarchive-nested"
+	archiveFile := "/tmp/dibra-nested.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -1288,8 +1288,8 @@ func TestPlaybook_UnarchivePreservesPermissions(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-perms"
-	archiveFile := "/tmp/goansible-perms.tar.gz"
+	destDir := "/tmp/dibra-unarchive-perms"
+	archiveFile := "/tmp/dibra-perms.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -1339,8 +1339,8 @@ func TestPlaybook_UnarchiveEmptyArchive(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-empty"
-	archiveFile := "/tmp/goansible-empty.tar.gz"
+	destDir := "/tmp/dibra-unarchive-empty"
+	archiveFile := "/tmp/dibra-empty.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)
@@ -1375,8 +1375,8 @@ func TestPlaybook_UnarchiveSpecialCharFilenames(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-unarchive-special"
-	archiveFile := "/tmp/goansible-special.tar.gz"
+	destDir := "/tmp/dibra-unarchive-special"
+	archiveFile := "/tmp/dibra-special.tar.gz"
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
 	client.Run("mkdir -p " + destDir)

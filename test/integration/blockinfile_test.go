@@ -11,7 +11,7 @@ func TestPlaybook_Blockinfile_BasicInsert(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-basic.txt"
+	testFile := "/tmp/dibra-blockinfile-basic.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1\nline 2\nline 3' > " + testFile)
@@ -56,7 +56,7 @@ func TestPlaybook_Blockinfile_InsertWithBackup(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-backup.txt"
+	testFile := "/tmp/dibra-blockinfile-backup.txt"
 
 	client.Run("rm -f " + testFile + "*")
 	client.Run("echo -e 'original content' > " + testFile)
@@ -93,7 +93,7 @@ func TestPlaybook_Blockinfile_CreateFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-create.txt"
+	testFile := "/tmp/dibra-blockinfile-create.txt"
 
 	client.Run("rm -f " + testFile)
 
@@ -130,7 +130,7 @@ func TestPlaybook_Blockinfile_RemoveBlock(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-remove.txt"
+	testFile := "/tmp/dibra-blockinfile-remove.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("cat > " + testFile + " << 'EOF'\nline 1\n# BEGIN ANSIBLE MANAGED BLOCK\nblock content\n# END ANSIBLE MANAGED BLOCK\nline 2\nEOF")
@@ -176,7 +176,7 @@ func TestPlaybook_Blockinfile_RemoveWithEmptyBlock(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-empty.txt"
+	testFile := "/tmp/dibra-blockinfile-empty.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("cat > " + testFile + " << 'EOF'\nline 1\n# BEGIN ANSIBLE MANAGED BLOCK\nblock content\n# END ANSIBLE MANAGED BLOCK\nline 2\nEOF")
@@ -205,7 +205,7 @@ func TestPlaybook_Blockinfile_CustomMarkers(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-markers.txt"
+	testFile := "/tmp/dibra-blockinfile-markers.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1\nline 2' > " + testFile)
@@ -247,7 +247,7 @@ func TestPlaybook_Blockinfile_CustomMarkerBeginEnd(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-marker-begin-end.txt"
+	testFile := "/tmp/dibra-blockinfile-marker-begin-end.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1' > " + testFile)
@@ -282,7 +282,7 @@ func TestPlaybook_Blockinfile_InsertAfter(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-insertafter.txt"
+	testFile := "/tmp/dibra-blockinfile-insertafter.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line1\nline2\nline3' > " + testFile)
@@ -322,7 +322,7 @@ func TestPlaybook_Blockinfile_InsertBefore(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-insertbefore.txt"
+	testFile := "/tmp/dibra-blockinfile-insertbefore.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line1\nline2\nline3' > " + testFile)
@@ -357,7 +357,7 @@ func TestPlaybook_Blockinfile_InsertBeforeBOF(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-bof.txt"
+	testFile := "/tmp/dibra-blockinfile-bof.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line1\nline2' > " + testFile)
@@ -389,7 +389,7 @@ func TestPlaybook_Blockinfile_InsertAfterEOF(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-eof.txt"
+	testFile := "/tmp/dibra-blockinfile-eof.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line1\nline2' > " + testFile)
@@ -420,7 +420,7 @@ func TestPlaybook_Blockinfile_UpdateExistingBlock(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-update.txt"
+	testFile := "/tmp/dibra-blockinfile-update.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("cat > " + testFile + " << 'EOF'\nline 1\n# BEGIN ANSIBLE MANAGED BLOCK\nold content\n# END ANSIBLE MANAGED BLOCK\nline 2\nEOF")
@@ -467,7 +467,7 @@ func TestPlaybook_Blockinfile_MultipleBlocks(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-multi.txt"
+	testFile := "/tmp/dibra-blockinfile-multi.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'content' > " + testFile)
@@ -520,7 +520,7 @@ func TestPlaybook_Blockinfile_PreserveCRLF(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-crlf.txt"
+	testFile := "/tmp/dibra-blockinfile-crlf.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("printf 'line1\\r\\nline2\\r\\nline3\\r\\n' > " + testFile)
@@ -550,7 +550,7 @@ func TestPlaybook_Blockinfile_PrependNewline(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-prepend.txt"
+	testFile := "/tmp/dibra-blockinfile-prepend.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line1\nline2\nline3' > " + testFile)
@@ -593,7 +593,7 @@ func TestPlaybook_Blockinfile_AppendNewline(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-append.txt"
+	testFile := "/tmp/dibra-blockinfile-append.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line1\nline2\nline3' > " + testFile)
@@ -631,7 +631,7 @@ func TestPlaybook_Blockinfile_Validation(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-validate.txt"
+	testFile := "/tmp/dibra-blockinfile-validate.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line1' > " + testFile)
@@ -657,7 +657,7 @@ func TestPlaybook_Blockinfile_ValidationFailure(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-validate-fail.txt"
+	testFile := "/tmp/dibra-blockinfile-validate-fail.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line1' > " + testFile)
@@ -683,7 +683,7 @@ func TestPlaybook_Blockinfile_FileWithoutTrailingNewline(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-notrailingnl.txt"
+	testFile := "/tmp/dibra-blockinfile-notrailingnl.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("printf 'line without newline' > " + testFile)
@@ -724,7 +724,7 @@ func TestPlaybook_Blockinfile_BlockWithoutTrailingNewline(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-blocknl.txt"
+	testFile := "/tmp/dibra-blockinfile-blocknl.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo 'existing' > " + testFile)
@@ -759,7 +759,7 @@ func TestPlaybook_Blockinfile_AbsentOnNonexistentFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-nonexistent.txt"
+	testFile := "/tmp/dibra-blockinfile-nonexistent.txt"
 
 	client.Run("rm -f " + testFile)
 
@@ -783,7 +783,7 @@ func TestPlaybook_Blockinfile_WithMode(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-mode.txt"
+	testFile := "/tmp/dibra-blockinfile-mode.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo 'content' > " + testFile)
@@ -814,7 +814,7 @@ func TestPlaybook_Blockinfile_SSHConfig(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-sshd-test.conf"
+	testFile := "/tmp/dibra-sshd-test.conf"
 
 	client.Run("rm -f " + testFile)
 	client.Run("cat > " + testFile + " << 'EOF'\n# SSH Server Configuration\nPort 22\nPermitRootLogin yes\n# End of config\nEOF")
@@ -859,7 +859,7 @@ func TestPlaybook_Blockinfile_ApacheConfig(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-httpd-test.conf"
+	testFile := "/tmp/dibra-httpd-test.conf"
 
 	client.Run("rm -f " + testFile)
 	client.Run("cat > " + testFile + " << 'EOF'\n<VirtualHost *:80>\n    ServerName example.com\n</VirtualHost>\nEOF")
@@ -909,7 +909,7 @@ func TestPlaybook_Blockinfile_SysctlConfig(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-sysctl-test.conf"
+	testFile := "/tmp/dibra-sysctl-test.conf"
 
 	client.Run("rm -f " + testFile)
 	client.Run("cat > " + testFile + " << 'EOF'\n# sysctl.conf\nnet.ipv4.ip_forward = 0\n# End\nEOF")
@@ -953,7 +953,7 @@ func TestPlaybook_Blockinfile_EnvironmentVariables(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-environment-test"
+	testFile := "/tmp/dibra-environment-test"
 
 	client.Run("rm -f " + testFile)
 	client.Run("cat > " + testFile + " << 'EOF'\nPATH=/usr/local/bin:/usr/bin\nEOF")
@@ -988,7 +988,7 @@ func TestPlaybook_Blockinfile_FirewallRules(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-firewall-test.xml"
+	testFile := "/tmp/dibra-firewall-test.xml"
 
 	client.Run("rm -f " + testFile)
 	client.Run("cat > " + testFile + " << 'EOF'\n<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<service>\n  <short>MyService</short>\n</service>\nEOF")
@@ -1034,7 +1034,7 @@ func TestPlaybook_Blockinfile_RegexInsertAfter(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-regex.txt"
+	testFile := "/tmp/dibra-blockinfile-regex.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e '[section1]\nkey1=value1\n\n[section2]\nkey2=value2' > " + testFile)
@@ -1074,7 +1074,7 @@ func TestPlaybook_Blockinfile_InsertNoMatch(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-nomatch.txt"
+	testFile := "/tmp/dibra-blockinfile-nomatch.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line1\nline2\nline3' > " + testFile)
@@ -1105,7 +1105,7 @@ func TestPlaybook_Blockinfile_EmptyFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-empty.txt"
+	testFile := "/tmp/dibra-blockinfile-empty.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("touch " + testFile)
@@ -1138,7 +1138,7 @@ func TestPlaybook_Blockinfile_MultilineBlock(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-multiline.txt"
+	testFile := "/tmp/dibra-blockinfile-multiline.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo 'header' > " + testFile)
@@ -1190,7 +1190,7 @@ func TestPlaybook_Blockinfile_IndentedContent(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-indent.txt"
+	testFile := "/tmp/dibra-blockinfile-indent.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo 'root:' > " + testFile)
@@ -1235,7 +1235,7 @@ func TestPlaybook_Blockinfile_RemoveOneOfMultiple(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-blockinfile-remove-one.txt"
+	testFile := "/tmp/dibra-blockinfile-remove-one.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("cat > " + testFile + " << 'EOF'\ncontent\n# BEGIN BLOCK ONE\nblock one content\n# END BLOCK ONE\nmore content\n# BEGIN BLOCK TWO\nblock two content\n# END BLOCK TWO\nfinal content\nEOF")
@@ -1277,7 +1277,7 @@ func TestPlaybook_Blockinfile_CreateWithParentDirs(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testDir := "/tmp/goansible-blockinfile-newdir"
+	testDir := "/tmp/dibra-blockinfile-newdir"
 	testFile := testDir + "/subdir/newfile.txt"
 
 	client.Run("rm -rf " + testDir)

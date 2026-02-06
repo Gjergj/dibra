@@ -24,7 +24,7 @@ func TestPlaybook_DockerSecretLifecycle(t *testing.T) {
 	remoteExec(t, client, "docker secret rm "+secretName+" || true")
 
 	// Force update agent
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	// 1. Create Secret
 	t.Log("Step 1: Create Secret")

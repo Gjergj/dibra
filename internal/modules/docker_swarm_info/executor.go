@@ -3,7 +3,7 @@ package docker_swarm_info
 import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/swarm"
-	"github.com/gjergjiramku/goansible/internal/modules/docker"
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 // Execute retrieves Docker Swarm information
@@ -61,17 +61,17 @@ func Execute(req Request) Response {
 		swarmInfo["updated_at"] = swarmInspect.UpdatedAt
 		swarmInfo["version"] = swarmInspect.Version.Index
 		swarmInfo["spec"] = map[string]interface{}{
-			"name":       swarmInspect.Spec.Annotations.Name,
-			"labels":     swarmInspect.Spec.Annotations.Labels,
+			"name":   swarmInspect.Spec.Annotations.Name,
+			"labels": swarmInspect.Spec.Annotations.Labels,
 			"orchestration": map[string]interface{}{
 				"task_history_retention_limit": swarmInspect.Spec.Orchestration.TaskHistoryRetentionLimit,
 			},
 			"raft": map[string]interface{}{
-				"snapshot_interval":           swarmInspect.Spec.Raft.SnapshotInterval,
-				"keep_old_snapshots":          swarmInspect.Spec.Raft.KeepOldSnapshots,
+				"snapshot_interval":              swarmInspect.Spec.Raft.SnapshotInterval,
+				"keep_old_snapshots":             swarmInspect.Spec.Raft.KeepOldSnapshots,
 				"log_entries_for_slow_followers": swarmInspect.Spec.Raft.LogEntriesForSlowFollowers,
-				"election_tick":               swarmInspect.Spec.Raft.ElectionTick,
-				"heartbeat_tick":              swarmInspect.Spec.Raft.HeartbeatTick,
+				"election_tick":                  swarmInspect.Spec.Raft.ElectionTick,
+				"heartbeat_tick":                 swarmInspect.Spec.Raft.HeartbeatTick,
 			},
 			"dispatcher": map[string]interface{}{
 				"heartbeat_period": swarmInspect.Spec.Dispatcher.HeartbeatPeriod,
@@ -93,8 +93,8 @@ func Execute(req Request) Response {
 		// TLS info
 		if swarmInspect.TLSInfo.TrustRoot != "" {
 			swarmInfo["tls_info"] = map[string]interface{}{
-				"trust_root":        swarmInspect.TLSInfo.TrustRoot,
-				"cert_issuer_subject": swarmInspect.TLSInfo.CertIssuerSubject,
+				"trust_root":             swarmInspect.TLSInfo.TrustRoot,
+				"cert_issuer_subject":    swarmInspect.TLSInfo.CertIssuerSubject,
 				"cert_issuer_public_key": swarmInspect.TLSInfo.CertIssuerPublicKey,
 			}
 		}
@@ -167,8 +167,8 @@ func convertNodeToMap(node swarm.Node, verbose bool) map[string]interface{} {
 		}
 		if node.Description.TLSInfo.TrustRoot != "" {
 			nodeMap["tls_info"] = map[string]interface{}{
-				"trust_root":            node.Description.TLSInfo.TrustRoot,
-				"cert_issuer_subject":   node.Description.TLSInfo.CertIssuerSubject,
+				"trust_root":             node.Description.TLSInfo.TrustRoot,
+				"cert_issuer_subject":    node.Description.TLSInfo.CertIssuerSubject,
 				"cert_issuer_public_key": node.Description.TLSInfo.CertIssuerPublicKey,
 			}
 		}

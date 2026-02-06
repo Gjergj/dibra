@@ -10,7 +10,7 @@ import (
 
 const (
 	agentPath  = "cmd/agent"
-	binaryName = "goansible-agent"
+	binaryName = "dibra-agent"
 )
 
 type Builder struct {
@@ -19,7 +19,7 @@ type Builder struct {
 }
 
 func New(projectRoot string) *Builder {
-	cacheDir := filepath.Join(os.TempDir(), "goansible-cache")
+	cacheDir := filepath.Join(os.TempDir(), "dibra-cache")
 	os.MkdirAll(cacheDir, 0755)
 	return &Builder{
 		projectRoot: projectRoot,

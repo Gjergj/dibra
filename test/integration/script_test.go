@@ -26,9 +26,11 @@ type ScriptResponse struct {
 	Delta       string   `json:"delta,omitempty"`
 }
 
-func getScriptResult(t *testing.T, client interface{ Run(string) (string, string, error) }, args string) ScriptResponse {
+func getScriptResult(t *testing.T, client interface {
+	Run(string) (string, string, error)
+}, args string) ScriptResponse {
 	t.Helper()
-	cmd := `echo '{"module":"script","args":` + args + `}' | /tmp/.goansible-agent`
+	cmd := `echo '{"module":"script","args":` + args + `}' | /tmp/.dibra-agent`
 	stdout, stderr, err := client.Run(cmd)
 	if err != nil {
 		t.Logf("Agent stderr: %s", stderr)
@@ -1039,7 +1041,7 @@ func TestPlaybook_ScriptCleanupAfterExecution(t *testing.T) {
 echo "test cleanup"
 `)
 
-	remoteExec(t, client, "rm -f /tmp/.goansible-script-*")
+	remoteExec(t, client, "rm -f /tmp/.dibra-script-*")
 
 	playbook := playbookHeader + `
   - name: Run script
@@ -1052,7 +1054,7 @@ echo "test cleanup"
 		t.Fatalf("Expected success, got: %s", output)
 	}
 
-	leftoverScripts := remoteExec(t, client, "ls /tmp/.goansible-script-* 2>/dev/null || true")
+	leftoverScripts := remoteExec(t, client, "ls /tmp/.dibra-script-* 2>/dev/null || true")
 	if leftoverScripts != "" {
 		t.Errorf("Expected cleanup of temp script files, found: %s", leftoverScripts)
 	}
@@ -1066,7 +1068,7 @@ func TestPlaybook_ScriptCleanupOnFailure(t *testing.T) {
 exit 1
 `)
 
-	remoteExec(t, client, "rm -f /tmp/.goansible-script-*")
+	remoteExec(t, client, "rm -f /tmp/.dibra-script-*")
 
 	playbook := playbookHeader + `
   - name: Run failing script
@@ -1075,7 +1077,7 @@ exit 1
 `
 	runPlaybook(t, playbook)
 
-	leftoverScripts := remoteExec(t, client, "ls /tmp/.goansible-script-* 2>/dev/null || true")
+	leftoverScripts := remoteExec(t, client, "ls /tmp/.dibra-script-* 2>/dev/null || true")
 	if leftoverScripts != "" {
 		t.Errorf("Expected cleanup of temp script files even on failure, found: %s", leftoverScripts)
 	}

@@ -97,14 +97,14 @@ func TestPlaybook_URIDownload(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destFile := "/tmp/goansible-uri-download.txt"
+	destFile := "/tmp/dibra-uri-download.txt"
 	client.Run("rm -f " + destFile)
 
 	playbook := playbookHeader + `
   - name: Download file via URI
     uri:
       url: http://httpbin:80/robots.txt
-      dest: /tmp/goansible-uri-download.txt
+      dest: /tmp/dibra-uri-download.txt
 `
 	output := runPlaybook(t, playbook)
 
@@ -126,7 +126,7 @@ func TestPlaybook_URICreates(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	markerFile := "/tmp/goansible-uri-creates-marker"
+	markerFile := "/tmp/dibra-uri-creates-marker"
 	client.Run("touch " + markerFile)
 	defer client.Run("rm -f " + markerFile)
 
@@ -134,7 +134,7 @@ func TestPlaybook_URICreates(t *testing.T) {
   - name: Skip request if file exists
     uri:
       url: http://httpbin:80/get
-      creates: /tmp/goansible-uri-creates-marker
+      creates: /tmp/dibra-uri-creates-marker
 `
 	output := runPlaybook(t, playbook)
 
@@ -333,7 +333,7 @@ func TestPlaybook_URIDownloadToDirectory(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destDir := "/tmp/goansible-uri-download-dir"
+	destDir := "/tmp/dibra-uri-download-dir"
 	client.Run("rm -rf " + destDir)
 	client.Run("mkdir -p " + destDir)
 
@@ -341,7 +341,7 @@ func TestPlaybook_URIDownloadToDirectory(t *testing.T) {
   - name: Download file to directory
     uri:
       url: http://httpbin:80/robots.txt
-      dest: /tmp/goansible-uri-download-dir
+      dest: /tmp/dibra-uri-download-dir
 `
 	output := runPlaybook(t, playbook)
 
@@ -361,14 +361,14 @@ func TestPlaybook_URIDownloadCreatesParentDirs(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destFile := "/tmp/goansible-uri-nested/subdir/download.txt"
-	client.Run("rm -rf /tmp/goansible-uri-nested")
+	destFile := "/tmp/dibra-uri-nested/subdir/download.txt"
+	client.Run("rm -rf /tmp/dibra-uri-nested")
 
 	playbook := playbookHeader + `
   - name: Download file to nested path
     uri:
       url: http://httpbin:80/robots.txt
-      dest: /tmp/goansible-uri-nested/subdir/download.txt
+      dest: /tmp/dibra-uri-nested/subdir/download.txt
 `
 	output := runPlaybook(t, playbook)
 
@@ -380,11 +380,11 @@ func TestPlaybook_URIDownloadCreatesParentDirs(t *testing.T) {
 		t.Error("Downloaded file should exist")
 	}
 
-	if !remoteDirExists(t, client, "/tmp/goansible-uri-nested/subdir") {
+	if !remoteDirExists(t, client, "/tmp/dibra-uri-nested/subdir") {
 		t.Error("Parent directories should be created")
 	}
 
-	client.Run("rm -rf /tmp/goansible-uri-nested")
+	client.Run("rm -rf /tmp/dibra-uri-nested")
 }
 
 func TestPlaybook_URIGetNotChanged(t *testing.T) {
@@ -599,14 +599,14 @@ func TestPlaybook_URICreatesNonExistent(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	markerFile := "/tmp/goansible-uri-creates-nonexistent"
+	markerFile := "/tmp/dibra-uri-creates-nonexistent"
 	client.Run("rm -f " + markerFile)
 
 	playbook := playbookHeader + `
   - name: Request when creates file does not exist
     uri:
       url: http://httpbin:80/get
-      creates: /tmp/goansible-uri-creates-nonexistent
+      creates: /tmp/dibra-uri-creates-nonexistent
       return_content: true
 `
 	output := runPlaybook(t, playbook)
@@ -637,14 +637,14 @@ func TestPlaybook_URIImage(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destFile := "/tmp/goansible-uri-image.png"
+	destFile := "/tmp/dibra-uri-image.png"
 	client.Run("rm -f " + destFile)
 
 	playbook := playbookHeader + `
   - name: Download image
     uri:
       url: http://httpbin:80/image/png
-      dest: /tmp/goansible-uri-image.png
+      dest: /tmp/dibra-uri-image.png
 `
 	output := runPlaybook(t, playbook)
 
@@ -849,14 +849,14 @@ func TestPlaybook_URIDownloadIdempotent(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	destFile := "/tmp/goansible-uri-idempotent.txt"
+	destFile := "/tmp/dibra-uri-idempotent.txt"
 	client.Run("rm -f " + destFile)
 
 	playbook := playbookHeader + `
   - name: Download file
     uri:
       url: http://httpbin:80/robots.txt
-      dest: /tmp/goansible-uri-idempotent.txt
+      dest: /tmp/dibra-uri-idempotent.txt
 `
 	// First run
 	output := runPlaybook(t, playbook)

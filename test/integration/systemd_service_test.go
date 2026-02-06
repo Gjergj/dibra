@@ -412,7 +412,7 @@ func TestPlaybook_SystemdServiceNonExistent(t *testing.T) {
 	playbook := playbookHeader + `
   - name: Start non-existent service
     systemd_service:
-      name: goansible-nonexistent-service
+      name: dibra-nonexistent-service
       state: started
 `
 	output := runPlaybook(t, playbook)

@@ -1,6 +1,6 @@
 package docker_network
 
-import "github.com/gjergjiramku/goansible/internal/modules/docker"
+import "github.com/gjergjiramku/dibra/internal/modules/docker"
 
 type Request struct {
 	docker.CommonArgs
@@ -33,12 +33,12 @@ type Request struct {
 
 // ConnectedContainer represents a container to connect to the network with optional endpoint settings
 type ConnectedContainer struct {
-	Name        string   `json:"name"`                    // Container name or ID
-	IPv4Address string   `json:"ipv4_address,omitempty"`  // Static IPv4 address
-	IPv6Address string   `json:"ipv6_address,omitempty"`  // Static IPv6 address
-	Aliases     []string `json:"aliases,omitempty"`       // Network aliases
-	Links       []string `json:"links,omitempty"`         // Legacy links
-	DriverOpts  map[string]string `json:"driver_opts,omitempty"` // Per-container driver options
+	Name        string            `json:"name"`                   // Container name or ID
+	IPv4Address string            `json:"ipv4_address,omitempty"` // Static IPv4 address
+	IPv6Address string            `json:"ipv6_address,omitempty"` // Static IPv6 address
+	Aliases     []string          `json:"aliases,omitempty"`      // Network aliases
+	Links       []string          `json:"links,omitempty"`        // Legacy links
+	DriverOpts  map[string]string `json:"driver_opts,omitempty"`  // Per-container driver options
 }
 
 type IPAMConfig struct {

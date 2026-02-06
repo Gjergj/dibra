@@ -17,7 +17,7 @@ func TestPlaybook_DockerContainerExec(t *testing.T) {
 	remoteExec(t, client, "docker rm -f "+containerName+" || true")
 	remoteExec(t, client, "docker run -d --name "+containerName+" alpine:latest sleep 3600")
 	defer remoteExec(t, client, "docker rm -f "+containerName+" || true")
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	// 1. Execute command
 	t.Log("Step 1: Execute simple command")
@@ -62,7 +62,7 @@ func TestPlaybook_DockerContainerCopyInto(t *testing.T) {
 	remoteExec(t, client, "docker rm -f "+containerName+" || true")
 	remoteExec(t, client, "docker run -d --name "+containerName+" alpine:latest sleep 3600")
 	defer remoteExec(t, client, "docker rm -f "+containerName+" || true")
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	// 1. Copy content into container
 	t.Log("Step 1: Copy content into container")
@@ -70,7 +70,7 @@ func TestPlaybook_DockerContainerCopyInto(t *testing.T) {
   - name: Copy content to container
     docker_container_copy_into:
       container: ` + containerName + `
-      content: "Hello from GoAnsible!"
+      content: "Hello from dibra!"
       container_path: /tmp/hello.txt
       mode: "0644"
 `
@@ -84,7 +84,7 @@ func TestPlaybook_DockerContainerCopyInto(t *testing.T) {
 
 	// Verify file exists
 	fileContent := remoteExec(t, client, "docker exec "+containerName+" cat /tmp/hello.txt")
-	if !strings.Contains(fileContent, "Hello from GoAnsible!") {
+	if !strings.Contains(fileContent, "Hello from dibra!") {
 		t.Errorf("File content mismatch, got: %s", fileContent)
 	}
 

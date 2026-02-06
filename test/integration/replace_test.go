@@ -11,7 +11,7 @@ func TestPlaybook_Replace_BasicReplace(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-basic.txt"
+	testFile := "/tmp/dibra-replace-basic.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'The quick brown fox jumps over the lazy dog.\nThe fox is quick.\nFox is the animal.' > " + testFile)
@@ -52,7 +52,7 @@ func TestPlaybook_Replace_CaseInsensitive(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-case.txt"
+	testFile := "/tmp/dibra-replace-case.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'The Fox and the fox are both FOX.' > " + testFile)
@@ -82,7 +82,7 @@ func TestPlaybook_Replace_RemoveMatch(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-remove.txt"
+	testFile := "/tmp/dibra-replace-remove.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1 # comment\nline 2\nline 3 # another comment' > " + testFile)
@@ -114,7 +114,7 @@ func TestPlaybook_Replace_BeforeParameter(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-before.txt"
+	testFile := "/tmp/dibra-replace-before.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'The quick brown fox jumps over the lazy dog.\nWe promptly judged antique ivory buckles for the next prize.\nJinxed wizards pluck ivy from the big quilt.\nJaded zombies acted quaintly but kept driving their oxen forward.' > " + testFile)
@@ -150,7 +150,7 @@ func TestPlaybook_Replace_AfterParameter(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-after.txt"
+	testFile := "/tmp/dibra-replace-after.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'The quick brown fox jumps over the lazy dog.\nWe promptly judged antique ivory buckles for the next prize.\nJinxed wizards pluck ivy from the big quilt.\nJaded zombies acted quaintly but kept driving their oxen forward.' > " + testFile)
@@ -186,7 +186,7 @@ func TestPlaybook_Replace_BeforeAndAfterCombined(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-beforeafter.txt"
+	testFile := "/tmp/dibra-replace-beforeafter.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'The quick brown fox jumps over the lazy dog.\nWe promptly judged antique ivory buckles for the next prize.\nJinxed wizards pluck ivy from the big quilt.\nJaded zombies acted quaintly but kept driving their oxen forward.' > " + testFile)
@@ -227,7 +227,7 @@ func TestPlaybook_Replace_BeforeAfterNoMatch(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-nomatch.txt"
+	testFile := "/tmp/dibra-replace-nomatch.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo 'simple content' > " + testFile)
@@ -258,7 +258,7 @@ func TestPlaybook_Replace_Backreferences(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-backref.txt"
+	testFile := "/tmp/dibra-replace-backref.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'ServerName old.host.name\nServerName another.old.name' > " + testFile)
@@ -291,7 +291,7 @@ func TestPlaybook_Replace_MultilineRegexp(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-multiline.txt"
+	testFile := "/tmp/dibra-replace-multiline.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'line 1\nline 2\nline 3\nline 4' > " + testFile)
@@ -324,7 +324,7 @@ func TestPlaybook_Replace_EndOfLineMatch(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-eol.txt"
+	testFile := "/tmp/dibra-replace-eol.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("printf 'line 1.\nline 2.\nline 3.\n' > " + testFile)
@@ -357,7 +357,7 @@ func TestPlaybook_Replace_Backup(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-backup.txt"
+	testFile := "/tmp/dibra-replace-backup.txt"
 
 	client.Run("rm -f " + testFile + "*")
 	client.Run("echo 'original content' > " + testFile)
@@ -398,7 +398,7 @@ func TestPlaybook_Replace_NoMatch(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-nomatch2.txt"
+	testFile := "/tmp/dibra-replace-nomatch2.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo 'hello world' > " + testFile)
@@ -438,7 +438,7 @@ func TestPlaybook_Replace_PathIsDirectory(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testDir := "/tmp/goansible-replace-dir"
+	testDir := "/tmp/dibra-replace-dir"
 	client.Run("mkdir -p " + testDir)
 
 	playbook := playbookHeader + `
@@ -461,7 +461,7 @@ func TestPlaybook_Replace_InvalidRegexp(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-invalidre.txt"
+	testFile := "/tmp/dibra-replace-invalidre.txt"
 	client.Run("echo 'test content' > " + testFile)
 
 	playbook := playbookHeader + `
@@ -484,7 +484,7 @@ func TestPlaybook_Replace_WordBoundaries(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-word.txt"
+	testFile := "/tmp/dibra-replace-word.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'The fox is foxy.\nFoxes are foxlike.' > " + testFile)
@@ -520,7 +520,7 @@ func TestPlaybook_Replace_SpecialCharsInReplacement(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-special.txt"
+	testFile := "/tmp/dibra-replace-special.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo 'placeholder' > " + testFile)
@@ -553,7 +553,7 @@ func TestPlaybook_Replace_ApacheConfig(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-apache.txt"
+	testFile := "/tmp/dibra-replace-apache.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("cat > " + testFile + " << 'EOF'\n<VirtualHost *:80>\n    ServerName old.example.com\n    DocumentRoot /var/www/html\n</VirtualHost>\nEOF")
@@ -586,7 +586,7 @@ func TestPlaybook_Replace_SshConfig(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-ssh.txt"
+	testFile := "/tmp/dibra-replace-ssh.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e '#Port 22\nPort 22\nListenAddress 0.0.0.0' > " + testFile)
@@ -616,7 +616,7 @@ func TestPlaybook_Replace_CommentOutLines(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-comment.txt"
+	testFile := "/tmp/dibra-replace-comment.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'setting1=value1\nsetting2=value2\nsetting3=value3' > " + testFile)
@@ -649,7 +649,7 @@ func TestPlaybook_Replace_UncommentLines(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-uncomment.txt"
+	testFile := "/tmp/dibra-replace-uncomment.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e '# setting1=value1\n# setting2=value2\nsetting3=value3' > " + testFile)
@@ -682,7 +682,7 @@ func TestPlaybook_Replace_MultipleReplacementsCount(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-count.txt"
+	testFile := "/tmp/dibra-replace-count.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'aaa bbb aaa ccc aaa ddd aaa' > " + testFile)
@@ -720,7 +720,7 @@ func TestPlaybook_Replace_EmptyFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-empty.txt"
+	testFile := "/tmp/dibra-replace-empty.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("touch " + testFile)
@@ -745,7 +745,7 @@ func TestPlaybook_Replace_PreserveNewlines(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-newlines.txt"
+	testFile := "/tmp/dibra-replace-newlines.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("printf 'line1\\nline2\\nline3\\n' > " + testFile)
@@ -785,7 +785,7 @@ func TestPlaybook_Replace_HtmlFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-html.txt"
+	testFile := "/tmp/dibra-replace-html.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("cat > " + testFile + " << 'EOF'\n<html>\n<head><title>Old Title</title></head>\n<body>\n<h1>Old Header</h1>\n<p>Some content about the old system.</p>\n</body>\n</html>\nEOF")
@@ -815,7 +815,7 @@ func TestPlaybook_Replace_ConfigBetweenMarkers(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-markers.txt"
+	testFile := "/tmp/dibra-replace-markers.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("cat > " + testFile + " << 'EOF'\n# Global settings\nglobal_option=true\n\n# BEGIN MANAGED\nmanaged_option1=old1\nmanaged_option2=old2\n# END MANAGED\n\n# Other settings\nother_option=value\nEOF")
@@ -850,7 +850,7 @@ func TestPlaybook_Replace_IPAddress(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-ip.txt"
+	testFile := "/tmp/dibra-replace-ip.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e '127.0.0.1 localhost\n192.168.1.100 oldserver\n10.0.0.1 gateway' > " + testFile)
@@ -886,7 +886,7 @@ func TestPlaybook_Replace_JsonFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-json.txt"
+	testFile := "/tmp/dibra-replace-json.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run(`echo '{"name": "old_value", "version": "1.0.0"}' > ` + testFile)
@@ -916,7 +916,7 @@ func TestPlaybook_Replace_NginxUpstream(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-nginx.txt"
+	testFile := "/tmp/dibra-replace-nginx.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("cat > " + testFile + " << 'EOF'\nupstream backend {\n    server 192.168.1.10:8080;\n    server 192.168.1.11:8080;\n}\nEOF")
@@ -949,7 +949,7 @@ func TestPlaybook_Replace_Validate(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-validate.txt"
+	testFile := "/tmp/dibra-replace-validate.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo 'valid content' > " + testFile)
@@ -975,7 +975,7 @@ func TestPlaybook_Replace_ValidateFails(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-validatefail.txt"
+	testFile := "/tmp/dibra-replace-validatefail.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo 'valid content' > " + testFile)
@@ -1006,7 +1006,7 @@ func TestPlaybook_Replace_LargeFile(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-large.txt"
+	testFile := "/tmp/dibra-replace-large.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("for i in $(seq 1 1000); do echo \"line $i with pattern_to_replace here\"; done > " + testFile)
@@ -1036,7 +1036,7 @@ func TestPlaybook_Replace_BinaryLikeContent(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-binary.txt"
+	testFile := "/tmp/dibra-replace-binary.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo -e 'text\\x00more text\\x00end' > " + testFile)
@@ -1061,7 +1061,7 @@ func TestPlaybook_Replace_UnicodeContent(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-unicode.txt"
+	testFile := "/tmp/dibra-replace-unicode.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo 'Héllo Wörld 你好世界' > " + testFile)
@@ -1094,7 +1094,7 @@ func TestPlaybook_Replace_TabsAndSpaces(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-whitespace.txt"
+	testFile := "/tmp/dibra-replace-whitespace.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("printf 'key\\t=\\tvalue\\n  spaced  content  \\n' > " + testFile)
@@ -1124,7 +1124,7 @@ func TestPlaybook_Replace_DotMatchesNewline(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-dotall.txt"
+	testFile := "/tmp/dibra-replace-dotall.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("printf 'start\\nmiddle\\nend\\n' > " + testFile)
@@ -1149,7 +1149,7 @@ func TestPlaybook_Replace_GreedyVsNonGreedy(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-greedy.txt"
+	testFile := "/tmp/dibra-replace-greedy.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo '<tag>content1</tag><tag>content2</tag>' > " + testFile)
@@ -1180,7 +1180,7 @@ func TestPlaybook_Replace_EscapedCharacters(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-escaped.txt"
+	testFile := "/tmp/dibra-replace-escaped.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo 'path/to/file.txt and another/path/here.txt' > " + testFile)
@@ -1210,7 +1210,7 @@ func TestPlaybook_Replace_Mode(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-mode.txt"
+	testFile := "/tmp/dibra-replace-mode.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo 'content' > " + testFile)
@@ -1242,7 +1242,7 @@ func TestPlaybook_Replace_Owner(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	testFile := "/tmp/goansible-replace-owner.txt"
+	testFile := "/tmp/dibra-replace-owner.txt"
 
 	client.Run("rm -f " + testFile)
 	client.Run("echo 'content' > " + testFile)

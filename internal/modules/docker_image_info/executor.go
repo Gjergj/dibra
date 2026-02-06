@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/docker/docker/api/types"
-	"github.com/gjergjiramku/goansible/internal/modules/docker"
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 // Execute inspects Docker images and returns their configuration
@@ -48,19 +48,19 @@ func Execute(req Request) Response {
 
 func convertImageToMap(inspect types.ImageInspect) map[string]interface{} {
 	img := map[string]interface{}{
-		"id":            inspect.ID,
-		"repo_tags":     inspect.RepoTags,
-		"repo_digests":  inspect.RepoDigests,
-		"parent":        inspect.Parent,
-		"comment":       inspect.Comment,
-		"created":       inspect.Created,
+		"id":             inspect.ID,
+		"repo_tags":      inspect.RepoTags,
+		"repo_digests":   inspect.RepoDigests,
+		"parent":         inspect.Parent,
+		"comment":        inspect.Comment,
+		"created":        inspect.Created,
 		"docker_version": inspect.DockerVersion,
-		"author":        inspect.Author,
-		"architecture":  inspect.Architecture,
-		"os":            inspect.Os,
-		"os_version":    inspect.OsVersion,
-		"size":          inspect.Size,
-		"virtual_size":  inspect.Size, // VirtualSize is deprecated, use Size
+		"author":         inspect.Author,
+		"architecture":   inspect.Architecture,
+		"os":             inspect.Os,
+		"os_version":     inspect.OsVersion,
+		"size":           inspect.Size,
+		"virtual_size":   inspect.Size, // VirtualSize is deprecated, use Size
 	}
 
 	// Config

@@ -1,13 +1,13 @@
 package docker_swarm_info
 
-import "github.com/gjergjiramku/goansible/internal/modules/docker"
+import "github.com/gjergjiramku/dibra/internal/modules/docker"
 
 // Request represents the module arguments
 type Request struct {
 	docker.CommonArgs
 
-	Nodes    bool `json:"nodes"`    // Include node list
-	Verbose  bool `json:"verbose"`  // Include detailed node info
+	Nodes   bool `json:"nodes"`   // Include node list
+	Verbose bool `json:"verbose"` // Include detailed node info
 }
 
 // Response represents the module return value

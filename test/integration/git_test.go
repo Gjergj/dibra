@@ -17,9 +17,11 @@ type GitResponse struct {
 	RemoteURLChanged bool   `json:"remote_url_changed,omitempty"`
 }
 
-func getGitResult(t *testing.T, client interface{ Run(string) (string, string, error) }, args string) GitResponse {
+func getGitResult(t *testing.T, client interface {
+	Run(string) (string, string, error)
+}, args string) GitResponse {
 	t.Helper()
-	cmd := `echo '{"module":"git","args":` + args + `}' | /tmp/.goansible-agent`
+	cmd := `echo '{"module":"git","args":` + args + `}' | /tmp/.dibra-agent`
 	stdout, stderr, err := client.Run(cmd)
 	if err != nil {
 		t.Logf("Agent stderr: %s", stderr)
@@ -32,7 +34,9 @@ func getGitResult(t *testing.T, client interface{ Run(string) (string, string, e
 	return resp
 }
 
-func setupGitConfig(t *testing.T, client interface{ Run(string) (string, string, error) }) {
+func setupGitConfig(t *testing.T, client interface {
+	Run(string) (string, string, error)
+}) {
 	t.Helper()
 	client.Run("git config --global user.email 'test@example.com'")
 	client.Run("git config --global user.name 'Test User'")
@@ -40,7 +44,9 @@ func setupGitConfig(t *testing.T, client interface{ Run(string) (string, string,
 	client.Run("git config --global protocol.file.allow always")
 }
 
-func createTestRepo(t *testing.T, client interface{ Run(string) (string, string, error) }, path string) string {
+func createTestRepo(t *testing.T, client interface {
+	Run(string) (string, string, error)
+}, path string) string {
 	t.Helper()
 	client.Run("rm -rf " + path)
 	client.Run("mkdir -p " + path)
@@ -53,7 +59,9 @@ func createTestRepo(t *testing.T, client interface{ Run(string) (string, string,
 	return strings.TrimSpace(stdout)
 }
 
-func createTestRepoWithBranches(t *testing.T, client interface{ Run(string) (string, string, error) }, path string) {
+func createTestRepoWithBranches(t *testing.T, client interface {
+	Run(string) (string, string, error)
+}, path string) {
 	t.Helper()
 	createTestRepo(t, client, path)
 	client.Run("cd " + path + " && git checkout -b develop")
@@ -63,7 +71,9 @@ func createTestRepoWithBranches(t *testing.T, client interface{ Run(string) (str
 	client.Run("cd " + path + " && git checkout main")
 }
 
-func createTestRepoWithTags(t *testing.T, client interface{ Run(string) (string, string, error) }, path string) {
+func createTestRepoWithTags(t *testing.T, client interface {
+	Run(string) (string, string, error)
+}, path string) {
 	t.Helper()
 	createTestRepo(t, client, path)
 	client.Run("cd " + path + " && git tag v1.0.0")
@@ -79,7 +89,7 @@ func TestPlaybook_GitCloneBasic(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	runPlaybook(t, playbookHeader+`
   - name: Upload agent

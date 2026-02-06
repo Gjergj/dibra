@@ -19,7 +19,7 @@ func TestPlaybook_DockerVolume(t *testing.T) {
 
 	// Cleanup
 	remoteExec(t, client, "docker volume rm "+volName+" || true")
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	// 1. Create volume with driver options and labels
 	t.Log("Step 1: Create volume with options and labels")
@@ -126,7 +126,7 @@ func TestPlaybook_DockerSecretHashIdempotency(t *testing.T) {
 
 	// Cleanup
 	remoteExec(t, client, "docker secret rm "+secretName+" || true")
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	// 1. Create secret
 	t.Log("Step 1: Create secret")
@@ -146,9 +146,9 @@ func TestPlaybook_DockerSecretHashIdempotency(t *testing.T) {
 	}
 
 	// Verify hash label exists
-	hashLabel := remoteExec(t, client, "docker secret inspect "+secretName+" --format '{{index .Spec.Labels \"goansible.data_hash\"}}'")
+	hashLabel := remoteExec(t, client, "docker secret inspect "+secretName+" --format '{{index .Spec.Labels \"dibra.data_hash\"}}'")
 	if strings.TrimSpace(hashLabel) == "" {
-		t.Error("Expected goansible.data_hash label to be set")
+		t.Error("Expected dibra.data_hash label to be set")
 	}
 	initialHash := strings.TrimSpace(hashLabel)
 	t.Logf("Initial hash: %s", initialHash)
@@ -178,7 +178,7 @@ func TestPlaybook_DockerSecretHashIdempotency(t *testing.T) {
 	}
 
 	// Verify hash changed
-	newHashLabel := remoteExec(t, client, "docker secret inspect "+secretName+" --format '{{index .Spec.Labels \"goansible.data_hash\"}}'")
+	newHashLabel := remoteExec(t, client, "docker secret inspect "+secretName+" --format '{{index .Spec.Labels \"dibra.data_hash\"}}'")
 	newHash := strings.TrimSpace(newHashLabel)
 	if newHash == initialHash {
 		t.Error("Expected hash to change when data changed")
@@ -205,7 +205,7 @@ func TestPlaybook_DockerConfigHashIdempotency(t *testing.T) {
 
 	// Cleanup
 	remoteExec(t, client, "docker config rm "+configName+" || true")
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	// 1. Create config
 	t.Log("Step 1: Create config")
@@ -225,9 +225,9 @@ func TestPlaybook_DockerConfigHashIdempotency(t *testing.T) {
 	}
 
 	// Verify hash label
-	hashLabel := remoteExec(t, client, "docker config inspect "+configName+" --format '{{index .Spec.Labels \"goansible.data_hash\"}}'")
+	hashLabel := remoteExec(t, client, "docker config inspect "+configName+" --format '{{index .Spec.Labels \"dibra.data_hash\"}}'")
 	if strings.TrimSpace(hashLabel) == "" {
-		t.Error("Expected goansible.data_hash label to be set")
+		t.Error("Expected dibra.data_hash label to be set")
 	}
 
 	// 2. Same data - should NOT change
@@ -292,7 +292,7 @@ func TestPlaybook_DockerPrune(t *testing.T) {
 	remoteExec(t, client, "docker run --name prune-test-container -d alpine sleep 1 || true")
 	remoteExec(t, client, "sleep 2") // Wait for container to exit
 	remoteExec(t, client, "docker volume create prune-test-volume --label prune=yes || true")
-	remoteExec(t, client, "rm -f /tmp/.goansible-agent")
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	// 1. Prune containers with filter
 	t.Log("Step 1: Prune stopped containers")

@@ -1,7 +1,7 @@
 package docker_volume_info
 
 import (
-	"github.com/gjergjiramku/goansible/internal/modules/docker"
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 // Execute inspects a Docker volume and returns its full configuration
@@ -34,13 +34,13 @@ func Execute(req Request) Response {
 
 	// Convert to map for flexible JSON output
 	volume := map[string]interface{}{
-		"name":        inspect.Name,
-		"driver":      inspect.Driver,
-		"mountpoint":  inspect.Mountpoint,
-		"created_at":  inspect.CreatedAt,
-		"scope":       inspect.Scope,
-		"labels":      inspect.Labels,
-		"options":     inspect.Options,
+		"name":       inspect.Name,
+		"driver":     inspect.Driver,
+		"mountpoint": inspect.Mountpoint,
+		"created_at": inspect.CreatedAt,
+		"scope":      inspect.Scope,
+		"labels":     inspect.Labels,
+		"options":    inspect.Options,
 	}
 
 	// Status (if available)
