@@ -114,22 +114,22 @@ scoops:
     license: "MIT"
 
 # Chocolatey (Windows)
-chocolateys:
-  - name: dibra
-    ids:
-      - controller-archive
-    owners: Gjergj
-    authors: Gjergj Ramku
-    project_url: "https://github.com/Gjergj/dibra"
-    license_url: "https://github.com/Gjergj/dibra/blob/main/LICENSE"
-    require_license_acceptance: false
-    bug_tracker_url: "https://github.com/Gjergj/dibra/issues"
-    description: "A minimal Ansible-like configuration management tool written in Go"
-    summary: "dibra - Ansible-like configuration management in Go"
-    release_notes: "https://github.com/Gjergj/dibra/releases/tag/v{{ .Version }}"
-    tags: "automation configuration-management devops infrastructure ansible"
-    skip_publish: false
-    api_key: "{{ .Env.CHOCOLATEY_API_KEY }}"
+# chocolateys:
+#   - name: dibra
+#     ids:
+#       - controller-archive
+#     owners: Gjergj
+#     authors: Gjergj Ramku
+#     project_url: "https://github.com/Gjergj/dibra"
+#     license_url: "https://github.com/Gjergj/dibra/blob/main/LICENSE"
+#     require_license_acceptance: false
+#     bug_tracker_url: "https://github.com/Gjergj/dibra/issues"
+#     description: "A minimal Ansible-like configuration management tool written in Go"
+#     summary: "dibra - Ansible-like configuration management in Go"
+#     release_notes: "https://github.com/Gjergj/dibra/releases/tag/v{{ .Version }}"
+#     tags: "automation configuration-management devops infrastructure ansible"
+#     skip_publish: false
+#     api_key: "{{ .Env.CHOCOLATEY_API_KEY }}"
 
 # Linux packages (deb/rpm)
 nfpms:
