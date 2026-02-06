@@ -26,10 +26,13 @@ type Request struct {
 }
 
 type Response struct {
-	Changed bool              `json:"changed"`
-	Failed  bool              `json:"failed"`
-	Msg     string            `json:"msg,omitempty"`
-	Image   map[string]string `json:"image,omitempty"`
-	Stdout  string            `json:"stdout,omitempty"`
-	Stderr  string            `json:"stderr,omitempty"`
+	Changed  bool              `json:"changed"`
+	Failed   bool              `json:"failed"`
+	Msg      string            `json:"msg,omitempty"`
+	Image    map[string]string `json:"image,omitempty"`
+	ImageID  string            `json:"image_id,omitempty"`  // The resulting image ID
+	Digest   string            `json:"digest,omitempty"`    // The image digest (if pushed)
+	Stdout   string            `json:"stdout,omitempty"`
+	Stderr   string            `json:"stderr,omitempty"`
+	Logs     []string          `json:"logs,omitempty"`      // Build log lines
 }

@@ -1,28 +1,32 @@
 package docker_config
 
 import (
+	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/swarm"
+	"github.com/docker/docker/client"
 	"github.com/gjergjiramku/goansible/internal/modules/docker"
 )
 
 func Execute(req Request) Response {
 	cli, err := docker.GetClient(req.CommonArgs)
 	if err != nil {
-		return Response{Failed: true, Msg: fmt.Sprintf("failed to create docker client: %v", err)}
+		return Response{Failed: true, Msg: docker.WrapError("create client", "", err).Error()}
 	}
 	defer cli.Close()
 
 	ctx, cancel := docker.GetContext(req.CommonArgs)
 	defer cancel()
 
-	// 1. Check if Config exists
+	// List configs to find existing one
 	configs, err := cli.ConfigList(ctx, types.ConfigListOptions{})
 	if err != nil {
-		return Response{Failed: true, Msg: fmt.Sprintf("failed to list configs: %v", err)}
+		return Response{Failed: true, Msg: docker.WrapError("list configs", "", err).Error()}
 	}
 
 	var existingConfig *swarm.Config
@@ -43,14 +47,14 @@ func Execute(req Request) Response {
 		if existingConfig != nil {
 			err := cli.ConfigRemove(ctx, existingConfig.ID)
 			if err != nil {
-				return Response{Failed: true, Msg: fmt.Sprintf("failed to remove config: %v", err)}
+				return Response{Failed: true, Msg: docker.WrapError("remove config", req.Name, err).Error()}
 			}
 			return Response{Changed: true, Msg: "config removed"}
 		}
 		return Response{Changed: false, Msg: "config already absent"}
 	}
 
-	// State present
+	// State present - decode data
 	var data []byte
 	if req.Data != "" {
 		if req.DataIsB64 {
@@ -64,6 +68,16 @@ func Execute(req Request) Response {
 		}
 	}
 
+	// Calculate hash for idempotency
+	dataHash := computeHash(data)
+
+	// Merge labels with hash label
+	labels := make(map[string]string)
+	for k, v := range req.Labels {
+		labels[k] = v
+	}
+	labels[DataHashLabel] = dataHash
+
 	if existingConfig == nil {
 		if req.Data == "" {
 			return Response{Failed: true, Msg: "data is required when creating a config"}
@@ -72,72 +86,91 @@ func Execute(req Request) Response {
 		spec := swarm.ConfigSpec{
 			Annotations: swarm.Annotations{
 				Name:   req.Name,
-				Labels: req.Labels,
+				Labels: labels,
 			},
 			Data: data,
 		}
 
 		resp, err := cli.ConfigCreate(ctx, spec)
 		if err != nil {
-			return Response{Failed: true, Msg: fmt.Sprintf("failed to create config: %v", err)}
+			return Response{Failed: true, Msg: docker.WrapError("create config", req.Name, err).Error()}
 		}
-		return Response{Changed: true, Msg: "config created", ConfigID: resp.ID}
+		return Response{Changed: true, Msg: "config created", ConfigID: resp.ID, DataHash: dataHash}
 	}
 
-	// Existing Config: Immutable data, mutable labels.
-	updateNeeded := false
-	recreateNeeded := false
+	// Config exists - check if update needed
+	// Docker configs are immutable, but we can check hash to see if data would change
 
-	// Compare labels
-	if req.Labels != nil {
-		if len(existingConfig.Spec.Labels) != len(req.Labels) {
-			updateNeeded = true
-		} else {
-			for k, v := range req.Labels {
-				if existingConfig.Spec.Labels[k] != v {
-					updateNeeded = true
-					break
-				}
-			}
-		}
-	}
+	existingHash := existingConfig.Spec.Labels[DataHashLabel]
+	labelsMatch := compareLabelsIgnoringHash(existingConfig.Spec.Labels, labels)
 
+	// If force is set, always recreate
 	if req.Force {
-		recreateNeeded = true
+		return recreateConfig(ctx, cli, existingConfig, req.Name, labels, data, dataHash)
 	}
 
-	if recreateNeeded {
-		err := cli.ConfigRemove(ctx, existingConfig.ID)
-		if err != nil {
-			return Response{Failed: true, Msg: fmt.Sprintf("failed to remove config for recreation: %v", err)}
-		}
-
-		spec := swarm.ConfigSpec{
-			Annotations: swarm.Annotations{
-				Name:   req.Name,
-				Labels: req.Labels,
-			},
-			Data: data,
-		}
-		resp, err := cli.ConfigCreate(ctx, spec)
-		if err != nil {
-			return Response{Failed: true, Msg: fmt.Sprintf("failed to re-create config: %v", err)}
-		}
-		return Response{Changed: true, Msg: "config recreated", ConfigID: resp.ID}
+	// If data hash matches and labels match, no change needed
+	if existingHash == dataHash && labelsMatch {
+		return Response{Changed: false, Msg: "config already present (data and labels unchanged)", ConfigID: existingConfig.ID, DataHash: dataHash}
 	}
 
-	if updateNeeded {
+	// If only labels differ (not data), we can update in place
+	if existingHash == dataHash && !labelsMatch {
 		spec := existingConfig.Spec
-		if req.Labels != nil {
-			spec.Labels = req.Labels
-		}
+		spec.Labels = labels
 
 		err = cli.ConfigUpdate(ctx, existingConfig.ID, existingConfig.Version, spec)
 		if err != nil {
-			return Response{Failed: true, Msg: fmt.Sprintf("failed to update config: %v", err)}
+			return Response{Failed: true, Msg: docker.WrapError("update config labels", req.Name, err).Error()}
 		}
-		return Response{Changed: true, Msg: "config updated"}
+		return Response{Changed: true, Msg: "config labels updated", ConfigID: existingConfig.ID, DataHash: dataHash}
 	}
 
-	return Response{Changed: false, Msg: "config already present", ConfigID: existingConfig.ID}
+	// Data differs - must recreate
+	return recreateConfig(ctx, cli, existingConfig, req.Name, labels, data, dataHash)
+}
+
+// recreateConfig removes and recreates a config (required for data changes since configs are immutable)
+func recreateConfig(ctx context.Context, cli *client.Client, existingConfig *swarm.Config, name string, labels map[string]string, data []byte, dataHash string) Response {
+	err := cli.ConfigRemove(ctx, existingConfig.ID)
+	if err != nil {
+		return Response{Failed: true, Msg: docker.WrapError("remove config for recreation", name, err).Error()}
+	}
+
+	spec := swarm.ConfigSpec{
+		Annotations: swarm.Annotations{
+			Name:   name,
+			Labels: labels,
+		},
+		Data: data,
+	}
+	resp, err := cli.ConfigCreate(ctx, spec)
+	if err != nil {
+		return Response{Failed: true, Msg: docker.WrapError("recreate config", name, err).Error()}
+	}
+	return Response{Changed: true, Msg: "config recreated (data changed)", ConfigID: resp.ID, DataHash: dataHash}
+}
+
+// computeHash returns SHA256 hash of data
+func computeHash(data []byte) string {
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])
+}
+
+// compareLabelsIgnoringHash compares labels ignoring the data hash label
+func compareLabelsIgnoringHash(existing, desired map[string]string) bool {
+	// Copy maps without hash label
+	e := make(map[string]string)
+	d := make(map[string]string)
+	for k, v := range existing {
+		if k != DataHashLabel {
+			e[k] = v
+		}
+	}
+	for k, v := range desired {
+		if k != DataHashLabel {
+			d[k] = v
+		}
+	}
+	return docker.CompareMaps(e, d)
 }

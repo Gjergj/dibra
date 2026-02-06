@@ -515,7 +515,32 @@ Prunes unused Docker resources (system prune, or specific types).
     images: true
     images_filters:
       dangling: "true"
+
+- name: Prune with filters
+  docker_prune:
+    containers: true
+    containers_filters:
+      until: "24h"
+    images: true
+    images_filters:
+      dangling: "false"
+    builder: true
+    builder_cache_all: true
 ```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `containers` | `false` | Prune stopped containers. |
+| `containers_filters` | | Filter containers to prune (e.g., `until: "24h"`). |
+| `images` | `false` | Prune unused images. |
+| `images_filters` | | Filter images to prune (e.g., `dangling: "true"`). |
+| `networks` | `false` | Prune unused networks. |
+| `networks_filters` | | Filter networks to prune. |
+| `volumes` | `false` | Prune unused volumes. |
+| `volumes_filters` | | Filter volumes to prune (e.g., `label: "temp"`). |
+| `builder` | `false` | Prune build cache. |
+| `builder_cache_all` | `false` | Remove all build cache, not just dangling. |
+| `builder_cache_filters` | | Filter build cache to prune. |
 
 ### docker_login
 
@@ -532,7 +557,28 @@ Log into a Docker registry.
     registry: https://myregistry.com
     username: myuser
     password: mypassword
+
+- name: Logout from registry
+  docker_login:
+    registry: https://myregistry.com
+    state: absent
 ```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `username` | | Username for registry authentication. |
+| `password` | | Password for registry authentication. |
+| `registry` | `https://index.docker.io/v1/` | Registry URL. |
+| `email` | | Email for registry (legacy). |
+| `config_path` | `~/.docker/config.json` | Path to Docker config file. |
+| `state` | `present` | `present` to login, `absent` to logout. |
+| `relogin` | `false` | Force re-login even if credentials match. |
+| `validate` | `true` | Validate credentials via registry ping before storing. |
+
+**Notes**:
+- If a credential helper (`credsStore`) is configured for the registry, the module will fail with an error message explaining that credentials must be managed through the helper.
+- Credentials are stored in `config.json` with proper file permissions (0600).
+- File locking prevents concurrent writes to the config file.
 
 ### docker_swarm
 
@@ -648,6 +694,17 @@ Manage Docker Swarm secrets.
     state: absent
 ```
 
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `name` | required | Name of the secret. |
+| `data` | | Secret data (required when creating). |
+| `data_is_b64` | `false` | If true, decode data from base64. |
+| `labels` | | Labels to apply to the secret. |
+| `state` | `present` | `present` to create, `absent` to remove. |
+| `force` | `false` | Force recreate even if hash matches. |
+
+**Idempotency**: The module stores a SHA256 hash of the data in a label (`goansible.data_hash`) to detect changes. Since Docker secrets are immutable, the module recreates the secret if the data hash changes.
+
 ### docker_config
 
 Manage Docker Swarm configs.
@@ -664,6 +721,17 @@ Manage Docker Swarm configs.
     name: my-config
     state: absent
 ```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `name` | required | Name of the config. |
+| `data` | | Config data (required when creating). |
+| `data_is_b64` | `false` | If true, decode data from base64. |
+| `labels` | | Labels to apply to the config. |
+| `state` | `present` | `present` to create, `absent` to remove. |
+| `force` | `false` | Force recreate even if hash matches. |
+
+**Idempotency**: The module stores a SHA256 hash of the data in a label (`goansible.data_hash`) to detect changes. Since Docker configs are immutable, the module recreates the config if the data hash changes. Labels can be updated in-place without recreating.
 
 ### docker_stack
 
@@ -2773,6 +2841,18 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_Unarchive` | Unarchive module Basic tar extraction + idempotency |
 | `TestPlaybook_Tempfile` | Tempfile module: file/directory creation, prefix/suffix, custom path, permissions |
 | `TestPlaybook_Reboot` | Reboot module: boot time commands, search paths, test commands, shutdown detection |
+| `TestPlaybook_DockerSwarmServiceHealthcheck` | Swarm service healthcheck configuration (Phase 6.3.1) |
+| `TestPlaybook_DockerSwarmServiceDNS` | Swarm service DNS configuration (Phase 6.3.2) |
+| `TestPlaybook_DockerSwarmServiceMounts` | Swarm service mounts configuration (Phase 6.3.4) |
+| `TestPlaybook_DockerSwarmServiceUpdateConfig` | Swarm service update/rollback configuration (Phase 6.2) |
+| `TestPlaybook_DockerSwarmServiceIdempotency` | Swarm service improved idempotency (Phase 6.4) |
+| `TestPlaybook_DockerNodeLabelsToRemove` | Node label removal support (Phase 6.5.3) |
+| `TestPlaybook_DockerSwarmServiceInfo` | Swarm service info module (Phase 6.6) |
+| `TestPlaybook_DockerNodeInfo` | Node info module (Phase 6.7) |
+| `TestPlaybook_DockerVolume` | Volume deep compare, driver options, metadata, recreate (Phase 7.4) |
+| `TestPlaybook_DockerSecretHashIdempotency` | Secret hash-based idempotency, data change detection (Phase 7.3) |
+| `TestPlaybook_DockerConfigHashIdempotency` | Config hash-based idempotency, label-only updates (Phase 7.3) |
+| `TestPlaybook_DockerPrune` | Prune filter improvements (Phase 7.2) |
 
 Each test:
 1. Runs a playbook via `go run ./cmd/controller`
