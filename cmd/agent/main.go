@@ -41,6 +41,8 @@ import (
 	"github.com/gjergjiramku/goansible/internal/modules/docker_volume_info"
 	"github.com/gjergjiramku/goansible/internal/modules/docker_host_info"
 	"github.com/gjergjiramku/goansible/internal/modules/docker_swarm_info"
+	"github.com/gjergjiramku/goansible/internal/modules/docker_swarm_service_info"
+	"github.com/gjergjiramku/goansible/internal/modules/docker_node_info"
 	"github.com/gjergjiramku/goansible/internal/modules/file"
 	"github.com/gjergjiramku/goansible/internal/modules/git"
 	"github.com/gjergjiramku/goansible/internal/modules/group"
@@ -510,6 +512,22 @@ func main() {
 			return
 		}
 		writeJSON(docker_swarm_info.Execute(req))
+
+	case "docker_swarm_service_info":
+		var req docker_swarm_service_info.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse docker_swarm_service_info request: %v", err))
+			return
+		}
+		writeJSON(docker_swarm_service_info.Execute(req))
+
+	case "docker_node_info":
+		var req docker_node_info.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse docker_node_info request: %v", err))
+			return
+		}
+		writeJSON(docker_node_info.Execute(req))
 
 	default:
 		writeError(fmt.Sprintf("unknown module: %s", modReq.Module))

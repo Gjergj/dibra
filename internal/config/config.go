@@ -77,7 +77,9 @@ type Task struct {
 	DockerNetworkInfo       *DockerNetworkInfoParams       `yaml:"docker_network_info,omitempty"`
 	DockerVolumeInfo        *DockerVolumeInfoParams        `yaml:"docker_volume_info,omitempty"`
 	DockerHostInfo          *DockerHostInfoParams          `yaml:"docker_host_info,omitempty"`
-	DockerSwarmInfo         *DockerSwarmInfoParams         `yaml:"docker_swarm_info,omitempty"`
+	DockerSwarmInfo            *DockerSwarmInfoParams            `yaml:"docker_swarm_info,omitempty"`
+	DockerSwarmServiceInfo     *DockerSwarmServiceInfoParams     `yaml:"docker_swarm_service_info,omitempty"`
+	DockerNodeInfo             *DockerNodeInfoParams             `yaml:"docker_node_info,omitempty"`
 }
 
 type DockerSwarmServiceParams struct {
@@ -97,8 +99,75 @@ type DockerSwarmServiceParams struct {
 	RestartPolicy string            `yaml:"restart_policy,omitempty"`
 	ForceUpdate   bool              `yaml:"force_update,omitempty"`
 
+	// Phase 6.1: Configs and Secrets
+	Configs []ServiceConfigReference `yaml:"configs,omitempty"`
+	Secrets []ServiceSecretReference `yaml:"secrets,omitempty"`
+
+	// Phase 6.2: Update and Rollback Configuration
+	UpdateDelay           string  `yaml:"update_delay,omitempty"`
+	UpdateParallelism     uint64  `yaml:"update_parallelism,omitempty"`
+	UpdateFailureAction   string  `yaml:"update_failure_action,omitempty"`
+	UpdateOrder           string  `yaml:"update_order,omitempty"`
+	UpdateMonitor         string  `yaml:"update_monitor,omitempty"`
+	MaxFailureRatio       float32 `yaml:"max_failure_ratio,omitempty"`
+	RollbackDelay         string  `yaml:"rollback_delay,omitempty"`
+	RollbackParallelism   uint64  `yaml:"rollback_parallelism,omitempty"`
+	RollbackFailureAction string  `yaml:"rollback_failure_action,omitempty"`
+	RollbackOrder         string  `yaml:"rollback_order,omitempty"`
+	RollbackMonitor       string  `yaml:"rollback_monitor,omitempty"`
+	RollbackMaxFailureRatio float32 `yaml:"rollback_max_failure_ratio,omitempty"`
+
+	// Phase 6.3: Additional Options
+	Healthcheck *ServiceHealthcheckParams `yaml:"healthcheck,omitempty"`
+	DNS         []string                  `yaml:"dns,omitempty"`
+	DNSSearch   []string                  `yaml:"dns_search,omitempty"`
+	DNSOptions  []string                  `yaml:"dns_options,omitempty"`
+	Hosts       []string                  `yaml:"hosts,omitempty"`
+	Mounts      []ServiceMountParams      `yaml:"mounts,omitempty"`
+
 	DockerHost string `yaml:"docker_host,omitempty"`
 	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type ServiceConfigReference struct {
+	ConfigName string `yaml:"config_name"`
+	ConfigID   string `yaml:"config_id,omitempty"`
+	FileName   string `yaml:"filename,omitempty"`
+	UID        string `yaml:"uid,omitempty"`
+	GID        string `yaml:"gid,omitempty"`
+	Mode       uint32 `yaml:"mode,omitempty"`
+}
+
+type ServiceSecretReference struct {
+	SecretName string `yaml:"secret_name"`
+	SecretID   string `yaml:"secret_id,omitempty"`
+	FileName   string `yaml:"filename,omitempty"`
+	UID        string `yaml:"uid,omitempty"`
+	GID        string `yaml:"gid,omitempty"`
+	Mode       uint32 `yaml:"mode,omitempty"`
+}
+
+type ServiceHealthcheckParams struct {
+	Test        []string `yaml:"test,omitempty"`
+	Interval    string   `yaml:"interval,omitempty"`
+	Timeout     string   `yaml:"timeout,omitempty"`
+	StartPeriod string   `yaml:"start_period,omitempty"`
+	Retries     int      `yaml:"retries,omitempty"`
+}
+
+type ServiceMountParams struct {
+	Type            string            `yaml:"type,omitempty"`
+	Source          string            `yaml:"source,omitempty"`
+	Target          string            `yaml:"target,omitempty"`
+	ReadOnly        bool              `yaml:"read_only,omitempty"`
+	Consistency     string            `yaml:"consistency,omitempty"`
+	BindPropagation string            `yaml:"bind_propagation,omitempty"`
+	VolumeDriver    string            `yaml:"volume_driver,omitempty"`
+	VolumeLabels    map[string]string `yaml:"volume_labels,omitempty"`
+	VolumeOptions   map[string]string `yaml:"volume_options,omitempty"`
+	VolumeNoCopy    bool              `yaml:"volume_no_copy,omitempty"`
+	TmpfsSize       int64             `yaml:"tmpfs_size,omitempty"`
+	TmpfsMode       uint32            `yaml:"tmpfs_mode,omitempty"`
 }
 
 type PortPublish struct {
@@ -109,13 +178,27 @@ type PortPublish struct {
 }
 
 type DockerNodeParams struct {
-	Hostname     string            `yaml:"hostname,omitempty"`
-	Self         bool              `yaml:"self,omitempty"`
-	Availability string            `yaml:"availability,omitempty"`
-	Role         string            `yaml:"role,omitempty"`
-	Labels       map[string]string `yaml:"labels,omitempty"`
-	LabelsState  string            `yaml:"labels_state,omitempty"`
+	Hostname       string            `yaml:"hostname,omitempty"`
+	Self           bool              `yaml:"self,omitempty"`
+	Availability   string            `yaml:"availability,omitempty"`
+	Role           string            `yaml:"role,omitempty"`
+	Labels         map[string]string `yaml:"labels,omitempty"`
+	LabelsState    string            `yaml:"labels_state,omitempty"`
+	LabelsToRemove []string          `yaml:"labels_to_remove,omitempty"`
 
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type DockerSwarmServiceInfoParams struct {
+	Name       string `yaml:"name"`
+	DockerHost string `yaml:"docker_host,omitempty"`
+	TLS        bool   `yaml:"tls,omitempty"`
+}
+
+type DockerNodeInfoParams struct {
+	Name       string `yaml:"name,omitempty"`
+	Self       bool   `yaml:"self,omitempty"`
 	DockerHost string `yaml:"docker_host,omitempty"`
 	TLS        bool   `yaml:"tls,omitempty"`
 }
