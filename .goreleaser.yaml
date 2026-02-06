@@ -83,7 +83,7 @@ changelog:
       - Merge branch
 
 # Homebrew tap
-homebrew:
+homebrew_casks:
   - name: dibra
     ids:
       - controller-archive
