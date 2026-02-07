@@ -3,9 +3,9 @@ hosts:
     host: 89.233.108.20
     port: 22
     user: root
-    password: "xzasNGn6qF"
+    password: "testpass"
     become: true
-    become_password: "xzasNGn6qF"
+    become_password: "testpass"
 
 tasks:
   - name: Install prerequisites

@@ -3,9 +3,9 @@ hosts:
     host: 89.233.108.20
     port: 22
     user: root
-    password: "YOUR_PASSWORD"
+    password: "testpass"
     become: true
-    become_password: "YOUR_PASSWORD"
+    become_password: "testpass"
 
 tasks:
   - name: Create /opt/myapp directory
