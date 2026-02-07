@@ -17,14 +17,20 @@ make install
 # Check version
 ./bin/dibra --version
 
-# Run playbook
-go run ./cmd/controller -config playbook.yaml
+# Run playbook (released binary — auto-downloads agent from GitHub Releases)
+dibra -config playbook.yaml
+
+# Run playbook (development — builds agent from source, requires Go)
+go run ./cmd/controller -config playbook.yaml --agent-build
+
+# Use a specific pre-built agent binary
+dibra -config playbook.yaml --agent-path /path/to/dibra-agent
 
 # Verbose output
-go run ./cmd/controller -config playbook.yaml -v
+dibra -config playbook.yaml -v
 
-# Force re-upload agent
-go run ./cmd/controller -config playbook.yaml --force-agent-upload
+# Force re-upload agent (even if versions match)
+dibra -config playbook.yaml --force-agent-upload
 
 # Run integration tests
 make test-integration
@@ -108,7 +114,7 @@ We chose an **agent-based execution model** (Option 3 from initial design):
 ```
 ┌─────────────────────┐         SSH          ┌─────────────────────┐
 │   Controller (CLI)  │ ───────────────────► │   Agent Binary      │
-│                     │  1. Cross-compile    │                     │
+│                     │  1. Resolve agent    │                     │
 │  - Parse YAML       │  2. Upload agent     │  - Receive JSON     │
 │  - SSH connection   │  3. Execute with     │  - Execute modules  │
 │  - Orchestrate      │     JSON stdin       │  - Return JSON      │
@@ -116,12 +122,40 @@ We chose an **agent-based execution model** (Option 3 from initial design):
 └─────────────────────┘                      └─────────────────────┘
 ```
 
+### Agent Resolution
+
+The controller resolves the agent binary using a three-mode strategy:
+
+| Mode | Flag | When to use |
+|------|------|-------------|
+| **Auto-download** | _(default)_ | Released binaries (brew, deb, rpm). Downloads agent from GitHub Releases matching controller version. |
+| **Build from source** | `--agent-build` | Development and integration tests. Requires Go installed. |
+| **Explicit path** | `--agent-path <path>` | Use a specific pre-built agent binary. |
+
+**Auto-download flow** (default for released binaries):
+1. Controller connects to remote host via SSH
+2. Detects remote OS/arch via `uname -s` / `uname -m`
+3. Checks local cache at `~/.dibra/cache/agents/<version>/`
+4. If not cached, downloads from `github.com/Gjergj/dibra/releases/download/v<version>/dibra-agent_<version>_<os>_<arch>.tar.gz`
+5. Extracts and caches the agent binary locally
+6. Checks remote agent version via `/tmp/.dibra-agent --version`
+7. Uploads only if remote agent is missing or version mismatches
+
+**Build from source flow** (`--agent-build`):
+1. Controller connects to remote host via SSH
+2. Detects remote OS/arch via `uname -s` / `uname -m`
+3. Cross-compiles agent with `GOOS=<os> GOARCH=<arch> CGO_ENABLED=0`
+4. Caches by source hash + target (e.g., `/tmp/dibra-cache/dibra-agent-linux-amd64-<hash>`)
+5. Uploads to remote
+
+**Version mismatch handling**: If `version.Version == "dev"` (local builds without ldflags), auto-download mode fails with an actionable error directing the user to `--agent-build` or `--agent-path`.
+
 ### Key Design Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| **Agent Delivery** | Build on demand | Cross-compiles `GOOS=linux GOARCH=amd64` when source changes; caches by source hash |
-| **Agent Caching** | Upload once, reuse | Agent stored at `/tmp/.dibra-agent`; use `--force-agent-upload` to update |
+| **Agent Delivery** | Auto-download from GitHub Releases | No Go required for end users; falls back to build-from-source for developers |
+| **Agent Caching** | Local cache + version check | Agent cached at `~/.dibra/cache/agents/`; remote stored at `/tmp/.dibra-agent`; version compared before upload |
 | **Privilege Escalation** | Controller wraps with `sudo -S` | Follows Ansible pattern; agent runs as root, doesn't handle sudo itself |
 | **Communication** | JSON over stdin/stdout | Agent reads JSON request from stdin, writes JSON response to stdout |
 | **Idempotency** | Check before change | All modules check current state before making changes |
@@ -152,7 +186,12 @@ dibra/
 │   ├── controller/main.go    # CLI orchestrator
 │   └── agent/main.go         # Remote agent binary
 ├── internal/
-│   ├── builder/builder.go    # Cross-compiles agent on demand
+│   ├── agent/                # Agent resolution (auto-download, build, explicit path)
+│   │   ├── resolver.go       # Core resolution logic (3 modes)
+│   │   ├── remote.go         # Remote OS/arch detection, version check
+│   │   ├── download.go       # GitHub Releases download
+│   │   └── extract.go        # tar.gz archive extraction
+│   ├── builder/builder.go    # Cross-compiles agent from source
 │   ├── config/config.go      # YAML playbook parsing
 │   ├── ssh/client.go         # SSH connection, SCP upload, agent execution
 │   └── modules/
