@@ -28,12 +28,16 @@ func New(projectRoot string) *Builder {
 }
 
 func (b *Builder) Build() (string, error) {
+	return b.BuildFor("linux", "amd64")
+}
+
+func (b *Builder) BuildFor(goos, goarch string) (string, error) {
 	hash, err := b.sourceHash()
 	if err != nil {
 		return "", fmt.Errorf("failed to compute source hash: %w", err)
 	}
 
-	cachedBinary := filepath.Join(b.cacheDir, fmt.Sprintf("%s-%s", binaryName, hash[:12]))
+	cachedBinary := filepath.Join(b.cacheDir, fmt.Sprintf("%s-%s-%s-%s", binaryName, goos, goarch, hash[:12]))
 	if _, err := os.Stat(cachedBinary); err == nil {
 		return cachedBinary, nil
 	}
@@ -44,14 +48,14 @@ func (b *Builder) Build() (string, error) {
 	cmd := exec.Command("go", "build", "-o", outputPath, "-ldflags", "-s -w", ".")
 	cmd.Dir = agentSrcPath
 	cmd.Env = append(os.Environ(),
-		"GOOS=linux",
-		"GOARCH=amd64",
+		"GOOS="+goos,
+		"GOARCH="+goarch,
 		"CGO_ENABLED=0",
 	)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to build agent: %w\n%s", err, output)
+		return "", fmt.Errorf("failed to build agent for %s/%s: %w\n%s", goos, goarch, err, output)
 	}
 
 	return outputPath, nil

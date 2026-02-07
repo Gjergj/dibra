@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gjergjiramku/dibra/internal/builder"
+	"github.com/gjergjiramku/dibra/internal/agent"
 	"github.com/gjergjiramku/dibra/internal/config"
 	"github.com/gjergjiramku/dibra/internal/ssh"
 	"github.com/gjergjiramku/dibra/internal/version"
@@ -46,6 +46,8 @@ func main() {
 	forceUpload := flag.Bool("force-agent-upload", false, "Force upload of agent binary")
 	verbose := flag.Bool("v", false, "Verbose output")
 	showVersion := flag.Bool("version", false, "Print version and exit")
+	agentPath := flag.String("agent-path", "", "Path to a pre-built agent binary")
+	agentBuild := flag.Bool("agent-build", false, "Build agent from source (requires Go)")
 	flag.Parse()
 
 	if *showVersion {
@@ -53,20 +55,28 @@ func main() {
 		os.Exit(0)
 	}
 
+	if *agentPath != "" && *agentBuild {
+		fatal("--agent-path and --agent-build are mutually exclusive")
+	}
+
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		fatal("Failed to load config: %v", err)
 	}
 
-	projectRoot := findProjectRoot()
-	b := builder.New(projectRoot)
-
-	fmt.Println("Building agent...")
-	agentBinary, err := b.Build()
-	if err != nil {
-		fatal("Failed to build agent: %v", err)
+	resolverMode := agent.ModeAuto
+	if *agentPath != "" {
+		resolverMode = agent.ModePath
+	} else if *agentBuild {
+		resolverMode = agent.ModeBuild
 	}
-	fmt.Printf("Agent built: %s\n", agentBinary)
+
+	resolver := agent.NewResolver(agent.Options{
+		Mode:        resolverMode,
+		AgentPath:   *agentPath,
+		Version:     version.Version,
+		ProjectRoot: findProjectRoot(),
+	})
 
 	for _, host := range cfg.Hosts {
 		fmt.Printf("\n=== Host: %s (%s) ===\n", host.Name, host.Host)
@@ -88,8 +98,41 @@ func main() {
 
 		remoteAgentPath := filepath.Join(remoteAgentDir, remoteAgentName)
 
-		exists, _ := client.FileExists(remoteAgentPath)
-		if !exists || *forceUpload {
+		fmt.Println("  Resolving agent binary...")
+		agentBinary, err := resolver.Resolve(client)
+		if err != nil {
+			fmt.Printf("  ✗ Failed to resolve agent: %v\n", err)
+			continue
+		}
+		if *verbose {
+			fmt.Printf("  Agent binary: %s\n", agentBinary)
+		}
+
+		needsUpload := *forceUpload
+		if !needsUpload {
+			exists, _ := client.FileExists(remoteAgentPath)
+			if !exists {
+				needsUpload = true
+			} else {
+				remoteVersion, err := agent.CheckRemoteAgentVersion(client, remoteAgentPath)
+				if err != nil {
+					needsUpload = true
+					if *verbose {
+						fmt.Printf("  Could not check remote agent version: %v\n", err)
+					}
+				} else {
+					localVersion := strings.TrimPrefix(version.Version, "v")
+					if remoteVersion != localVersion {
+						needsUpload = true
+						if *verbose {
+							fmt.Printf("  Remote agent version %q != local %q, uploading\n", remoteVersion, localVersion)
+						}
+					}
+				}
+			}
+		}
+
+		if needsUpload {
 			fmt.Println("  Uploading agent...")
 			if err := client.UploadFile(agentBinary, remoteAgentPath); err != nil {
 				fmt.Printf("  ✗ Failed to upload agent: %v\n", err)
@@ -101,7 +144,7 @@ func main() {
 				continue
 			}
 		} else {
-			fmt.Println("  Agent already present (use --force-agent-upload to update)")
+			fmt.Println("  Agent up-to-date on remote")
 		}
 
 		for _, task := range cfg.Tasks {
