@@ -37,11 +37,21 @@ builds:
     goarch:
       - amd64
       - arm64
+    flags:
+      - -trimpath
     ldflags:
       - -s -w
       - -X github.com/gjergjiramku/dibra/internal/version.Version={{.Version}}
       - -X github.com/gjergjiramku/dibra/internal/version.Commit={{.Commit}}
       - -X github.com/gjergjiramku/dibra/internal/version.Date={{.Date}}
+
+upx:
+  - ids:
+      - agent
+    enabled: true
+    compress: best
+    goos:
+      - linux
 
 archives:
   - id: controller-archive
