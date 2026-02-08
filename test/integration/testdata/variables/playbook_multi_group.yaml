@@ -1,0 +1,26 @@
+vars_merge: merge
+
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    groups:
+      - zzz
+      - web
+      - aaa
+      - emptygroup
+
+tasks:
+  - name: Multi-group merge order and deep merge
+    copy:
+      content: |
+        group_key_multi={{ group_key_multi }}
+        aaa_only={{ aaa_only }}
+        zzz_only={{ zzz_only }}
+        nested_a={{ nested.a }}
+        nested_c={{ nested.c }}
+        nested_common={{ nested.common }}
+      dest: /tmp/dibra-multigroup.txt
+      mode: "0644"

@@ -2739,6 +2739,12 @@ Reboots a machine, waits for it to go down, come back up, and respond to command
 ## Playbook Format
 
 ```yaml
+vars:
+  app_name: "myapp"
+vars_files:
+  - defaults.yml
+vars_merge: replace   # or "merge"
+
 hosts:
   - name: webserver1
     host: 192.168.1.100
@@ -2748,12 +2754,108 @@ hosts:
     # ssh_key_path: ~/.ssh/id_rsa
     become: true                  # Use sudo
     become_password: "sudo-password"
+    groups:
+      - web
+      - prod
 
 tasks:
   - name: Task description
+    vars:
+      task_key: value
     <module>:
-      <param>: <value>
+      <param>: "{{ app_name }}"
 ```
+
+## Variable System
+
+Dibra implements a variable system with five precedence layers, template interpolation, and magic variables. For full documentation see `docs/Variables.md`.
+
+### Precedence (Low → High)
+
+1. `group_vars/<group>.{yml,yaml,json}` — auto-loaded by group membership
+2. `host_vars/<host>.{yml,yaml,json}` — auto-loaded by host name
+3. Playbook `vars` + `vars_files` — merged, then applied as one layer
+4. Task `vars` — scoped to a single task
+5. Extra vars (`-e` / `--extra-vars`) — CLI flags, always win
+
+### Merge Strategy
+
+Set `vars_merge` at playbook root:
+
+- `replace` (default): higher precedence replaces entire key
+- `merge`: recursively merges maps; scalars and lists still replace
+
+### Template Interpolation
+
+String values in module arguments are rendered with `{{ expression }}` syntax:
+
+```yaml
+vars:
+  app_name: myapp
+  deploy_dir: "/opt/{{ app_name }}"
+
+tasks:
+  - name: Create dir
+    file:
+      path: "{{ deploy_dir }}"     # resolves to /opt/myapp
+      state: directory
+```
+
+Supports dot notation (`{{ app.port }}`), bracket notation (`{{ items[0] }}`), and nested references. Templates are resolved iteratively — if a resolved value contains more `{{ }}`, they are resolved too (up to 10 passes).
+
+### Namespaces
+
+All layers are accessible under `vars.*` even after flattening:
+
+- `vars.group` — group vars
+- `vars.host` — host vars
+- `vars.play` — play + vars_files
+- `vars.task` — task vars
+- `vars.extra` — extra vars
+
+```yaml
+content: "play_port={{ vars.play.app.port }}, effective={{ app.port }}"
+```
+
+### Magic Variables
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `inventory_hostname` | string | Current host name |
+| `group_names` | list | Groups the current host belongs to |
+| `groups` | map | Group name → list of host names |
+| `hostvars` | map | Host name → resolved vars for that host |
+
+```yaml
+content: "host={{ inventory_hostname }}, group={{ group_names[0] }}"
+content: "web0={{ groups.web[0] }}, self_port={{ hostvars[inventory_hostname].app.port }}"
+```
+
+### Inventory Vars Directory Layout
+
+```
+playbook.yaml
+group_vars/
+  web.yml
+  prod.yml
+host_vars/
+  web1.yml
+```
+
+Files are auto-loaded relative to the playbook directory. Missing files are silently skipped.
+
+### Extra Vars
+
+```bash
+dibra -config playbook.yaml -e app_port=9090
+dibra -config playbook.yaml -e "port=9090,env=prod"
+dibra -config playbook.yaml -e @production.yml
+```
+
+### Error Handling
+
+- Missing variables in `{{ }}` fail the task immediately with a clear error
+- `renderArgs` errors are surfaced and the task is skipped (errors are never silently swallowed)
 
 ## Example: Install Caddy from Third-Party Repo
 
@@ -2880,6 +2982,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_Unarchive` | Unarchive module Basic tar extraction + idempotency |
 | `TestPlaybook_Tempfile` | Tempfile module: file/directory creation, prefix/suffix, custom path, permissions |
 | `TestPlaybook_Reboot` | Reboot module: boot time commands, search paths, test commands, shutdown detection |
+| `TestPlaybook_Variables` | Variables: precedence, namespaces, vars_files, extra vars, hostvars/groups |
 | `TestPlaybook_DockerSwarmServiceHealthcheck` | Swarm service healthcheck configuration (Phase 6.3.1) |
 | `TestPlaybook_DockerSwarmServiceDNS` | Swarm service DNS configuration (Phase 6.3.2) |
 | `TestPlaybook_DockerSwarmServiceMounts` | Swarm service mounts configuration (Phase 6.3.4) |

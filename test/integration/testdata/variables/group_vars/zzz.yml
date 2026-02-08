@@ -1,0 +1,5 @@
+group_key_multi: "zzz"
+zzz_only: "zzz"
+nested:
+  c: "from_zzz"
+  common: "zzz"

@@ -1,0 +1,28 @@
+vars_merge: merge
+
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    groups:
+      - web
+
+  - name: otherhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    groups:
+      - web
+
+tasks:
+  - name: write hostvars and groups using quoted bracket notation
+    copy:
+      content: |
+        self={{ inventory_hostname }}
+        other_key={{ hostvars["otherhost"]["other_key"] }}
+        testhost_key={{ hostvars["testhost"]["host_key"] }}
+      dest: /tmp/dibra-hostvars-{{ inventory_hostname }}.txt
+      mode: "0644"

@@ -16,7 +16,9 @@ import (
 	"github.com/gjergjiramku/dibra/internal/agent"
 	"github.com/gjergjiramku/dibra/internal/config"
 	"github.com/gjergjiramku/dibra/internal/ssh"
+	"github.com/gjergjiramku/dibra/internal/vars"
 	"github.com/gjergjiramku/dibra/internal/version"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -48,6 +50,8 @@ func main() {
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	agentPath := flag.String("agent-path", "", "Path to a pre-built agent binary")
 	agentBuild := flag.Bool("agent-build", false, "Build agent from source (requires Go)")
+	extraVars := flag.String("e", "", "Extra variables (key=value or @file.yaml)")
+	extraVarsLong := flag.String("extra-vars", "", "Extra variables (key=value or @file.yaml)")
 	flag.Parse()
 
 	if *showVersion {
@@ -64,6 +68,15 @@ func main() {
 		fatal("Failed to load config: %v", err)
 	}
 
+	rawExtra := *extraVars
+	if rawExtra == "" {
+		rawExtra = *extraVarsLong
+	}
+	extraVarsMap, err := parseExtraVars(rawExtra)
+	if err != nil {
+		fatal("Failed to parse extra vars: %v", err)
+	}
+
 	resolverMode := agent.ModeAuto
 	if *agentPath != "" {
 		resolverMode = agent.ModePath
@@ -71,12 +84,46 @@ func main() {
 		resolverMode = agent.ModeBuild
 	}
 
-	resolver := agent.NewResolver(agent.Options{
+	agentResolver := agent.NewResolver(agent.Options{
 		Mode:        resolverMode,
 		AgentPath:   *agentPath,
 		Version:     version.Version,
 		ProjectRoot: findProjectRoot(),
 	})
+
+	hostInfos := make([]vars.HostInfo, 0, len(cfg.Hosts))
+	for _, host := range cfg.Hosts {
+		hostInfos = append(hostInfos, vars.HostInfo{Name: host.Name, Groups: host.Groups})
+	}
+
+	baseDir := filepath.Dir(*configPath)
+	varsResolver := vars.Resolver{
+		MergeStrategy: vars.MergeStrategy(cfg.VarsMerge),
+		InventoryDir:  baseDir,
+	}
+	inventoryVars, err := varsResolver.LoadInventoryVars(hostInfos, nil)
+	if err != nil {
+		fatal("Failed to load inventory vars: %v", err)
+	}
+
+	playVars := cfg.Vars
+	if len(cfg.VarsFiles) > 0 {
+		varsFromFiles, err := vars.LoadVarsFiles(baseDir, cfg.VarsFiles, vars.MergeStrategy(cfg.VarsMerge))
+		if err != nil {
+			fatal("Failed to load vars_files: %v", err)
+		}
+		playVars = vars.MergeMaps(playVars, varsFromFiles, vars.MergeStrategy(cfg.VarsMerge))
+	}
+
+	groupsMap := map[string][]string{}
+	for _, hostInfo := range hostInfos {
+		for _, group := range hostInfo.Groups {
+			if group == "" {
+				continue
+			}
+			groupsMap[group] = append(groupsMap[group], hostInfo.Name)
+		}
+	}
 
 	for _, host := range cfg.Hosts {
 		fmt.Printf("\n=== Host: %s (%s) ===\n", host.Name, host.Host)
@@ -99,7 +146,7 @@ func main() {
 		remoteAgentPath := filepath.Join(remoteAgentDir, remoteAgentName)
 
 		fmt.Println("  Resolving agent binary...")
-		agentBinary, err := resolver.Resolve(client)
+		agentBinary, err := agentResolver.Resolve(client)
 		if err != nil {
 			fmt.Printf("  ✗ Failed to resolve agent: %v\n", err)
 			continue
@@ -150,197 +197,321 @@ func main() {
 		for _, task := range cfg.Tasks {
 			fmt.Printf("  Task: %s\n", task.Name)
 
+			taskHostvars, err := buildHostvarsForTask(hostInfos, varsResolver, inventoryVars, playVars, task.Vars, extraVarsMap, groupsMap)
+			if err != nil {
+				fmt.Printf("    ✗ Failed to build hostvars: %v\n", err)
+				continue
+			}
+
+			resolved, err := varsResolver.ResolveHostVars(vars.ResolveRequest{
+				Host: vars.HostInfo{
+					Name:   host.Name,
+					Groups: host.Groups,
+				},
+				InventoryVars: inventoryVars,
+				PlayVars:      playVars,
+				TaskVars:      task.Vars,
+				ExtraVars:     extraVarsMap,
+			})
+			if err != nil {
+				fmt.Printf("    ✗ Failed to resolve vars: %v\n", err)
+				continue
+			}
+
+			hostvarsContext := map[string]interface{}{}
+			for name, hv := range taskHostvars {
+				hostvarsContext[name] = hv
+			}
+			groupsContext := map[string]interface{}{}
+			for groupName, members := range groupsMap {
+				membersAny := make([]interface{}, len(members))
+				for i, m := range members {
+					membersAny[i] = m
+				}
+				groupsContext[groupName] = membersAny
+			}
+			for name, ctx := range taskHostvars {
+				ctx["hostvars"] = hostvarsContext
+				ctx["groups"] = groupsContext
+				ctx["inventory_hostname"] = name
+			}
+			hostContext := taskHostvars[host.Name]
+			groupNamesAny := make([]interface{}, len(host.Groups))
+			for i, g := range host.Groups {
+				groupNamesAny[i] = g
+			}
+			hostContext["group_names"] = groupNamesAny
+			hostContext["vars"] = resolved.Namespaces
+			flattened := hostContext
+
 			var modReq ModuleRequest
 
 			switch {
 			case task.Apt != nil:
-				modReq = ModuleRequest{
-					Module: "apt",
-					Args: map[string]interface{}{
-						"packages":         task.Apt.GetPackages(),
-						"state":            task.Apt.State,
-						"update_cache":     task.Apt.UpdateCache,
-						"cache_valid_time": task.Apt.CacheValidTime,
-						"purge":            task.Apt.Purge,
-						"autoremove":       task.Apt.Autoremove,
-						"upgrade":          task.Apt.Upgrade,
-					},
+				args := map[string]interface{}{
+					"packages":         task.Apt.GetPackages(),
+					"state":            task.Apt.State,
+					"update_cache":     task.Apt.UpdateCache,
+					"cache_valid_time": task.Apt.CacheValidTime,
+					"purge":            task.Apt.Purge,
+					"autoremove":       task.Apt.Autoremove,
+					"upgrade":          task.Apt.Upgrade,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "apt", Args: renderedArgs}
 
 			case task.AptKey != nil:
-				modReq = ModuleRequest{
-					Module: "apt_key",
-					Args: map[string]interface{}{
-						"url":     task.AptKey.URL,
-						"data":    task.AptKey.Data,
-						"file":    task.AptKey.File,
-						"keyring": task.AptKey.Keyring,
-						"id":      task.AptKey.ID,
-						"state":   task.AptKey.State,
-					},
+				args := map[string]interface{}{
+					"url":     task.AptKey.URL,
+					"data":    task.AptKey.Data,
+					"file":    task.AptKey.File,
+					"keyring": task.AptKey.Keyring,
+					"id":      task.AptKey.ID,
+					"state":   task.AptKey.State,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "apt_key", Args: renderedArgs}
 
 			case task.AptRepository != nil:
-				modReq = ModuleRequest{
-					Module: "apt_repository",
-					Args: map[string]interface{}{
-						"repo":         task.AptRepository.Repo,
-						"state":        task.AptRepository.State,
-						"filename":     task.AptRepository.Filename,
-						"update_cache": task.AptRepository.UpdateCache,
-					},
+				args := map[string]interface{}{
+					"repo":         task.AptRepository.Repo,
+					"state":        task.AptRepository.State,
+					"filename":     task.AptRepository.Filename,
+					"update_cache": task.AptRepository.UpdateCache,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "apt_repository", Args: renderedArgs}
 
 			case task.File != nil:
-				modReq = ModuleRequest{
-					Module: "file",
-					Args: map[string]interface{}{
-						"path":    task.File.Path,
-						"state":   task.File.State,
-						"mode":    task.File.Mode,
-						"owner":   task.File.Owner,
-						"group":   task.File.Group,
-						"src":     task.File.Src,
-						"recurse": task.File.Recurse,
-						"force":   task.File.Force,
-						"follow":  task.File.Follow,
-					},
+				args := map[string]interface{}{
+					"path":    task.File.Path,
+					"state":   task.File.State,
+					"mode":    task.File.Mode,
+					"owner":   task.File.Owner,
+					"group":   task.File.Group,
+					"src":     task.File.Src,
+					"recurse": task.File.Recurse,
+					"force":   task.File.Force,
+					"follow":  task.File.Follow,
+				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
 				}
 
+				modReq = ModuleRequest{Module: "file", Args: renderedArgs}
+
 			case task.Fetch != nil:
-				resp := executeFetch(client, remoteAgentPath, host.Name, task.Fetch, *verbose)
+				renderedFetch, err := renderFetchParams(task.Fetch, flattened)
+				if err != nil {
+					fmt.Printf("    ✗ Failed to render fetch params: %v\n", err)
+					continue
+				}
+				resp := executeFetch(client, remoteAgentPath, host.Name, renderedFetch, *verbose)
 				printResponse(resp, *verbose)
 				continue
 
 			case task.URI != nil:
-				modReq = ModuleRequest{
-					Module: "uri",
-					Args: map[string]interface{}{
-						"url":              task.URI.URL,
-						"method":           task.URI.Method,
-						"body":             task.URI.Body,
-						"body_format":      task.URI.BodyFormat,
-						"headers":          task.URI.Headers,
-						"status_code":      task.URI.StatusCode,
-						"timeout":          task.URI.Timeout,
-						"return_content":   task.URI.ReturnContent,
-						"dest":             task.URI.Dest,
-						"creates":          task.URI.Creates,
-						"url_username":     task.URI.URLUsername,
-						"url_password":     task.URI.URLPassword,
-						"force_basic_auth": task.URI.ForceBasicAuth,
-						"follow_redirects": task.URI.FollowRedirects,
-						"validate_certs":   task.URI.ValidateCerts,
-					},
+				args := map[string]interface{}{
+					"url":              task.URI.URL,
+					"method":           task.URI.Method,
+					"body":             task.URI.Body,
+					"body_format":      task.URI.BodyFormat,
+					"headers":          task.URI.Headers,
+					"status_code":      task.URI.StatusCode,
+					"timeout":          task.URI.Timeout,
+					"return_content":   task.URI.ReturnContent,
+					"dest":             task.URI.Dest,
+					"creates":          task.URI.Creates,
+					"url_username":     task.URI.URLUsername,
+					"url_password":     task.URI.URLPassword,
+					"force_basic_auth": task.URI.ForceBasicAuth,
+					"follow_redirects": task.URI.FollowRedirects,
+					"validate_certs":   task.URI.ValidateCerts,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "uri", Args: renderedArgs}
 
 			case task.Cron != nil:
-				modReq = ModuleRequest{
-					Module: "cron",
-					Args: map[string]interface{}{
-						"name":         task.Cron.Name,
-						"user":         task.Cron.User,
-						"job":          task.Cron.Job,
-						"state":        task.Cron.State,
-						"minute":       task.Cron.Minute,
-						"hour":         task.Cron.Hour,
-						"day":          task.Cron.Day,
-						"month":        task.Cron.Month,
-						"weekday":      task.Cron.Weekday,
-						"special_time": task.Cron.SpecialTime,
-						"disabled":     task.Cron.Disabled,
-						"backup":       task.Cron.Backup,
-						"cron_file":    task.Cron.CronFile,
-						"env":          task.Cron.Env,
-						"insertafter":  task.Cron.InsertAfter,
-						"insertbefore": task.Cron.InsertBefore,
-					},
+				args := map[string]interface{}{
+					"name":         task.Cron.Name,
+					"user":         task.Cron.User,
+					"job":          task.Cron.Job,
+					"state":        task.Cron.State,
+					"minute":       task.Cron.Minute,
+					"hour":         task.Cron.Hour,
+					"day":          task.Cron.Day,
+					"month":        task.Cron.Month,
+					"weekday":      task.Cron.Weekday,
+					"special_time": task.Cron.SpecialTime,
+					"disabled":     task.Cron.Disabled,
+					"backup":       task.Cron.Backup,
+					"cron_file":    task.Cron.CronFile,
+					"env":          task.Cron.Env,
+					"insertafter":  task.Cron.InsertAfter,
+					"insertbefore": task.Cron.InsertBefore,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "cron", Args: renderedArgs}
 
 			case task.UFW != nil:
-				modReq = ModuleRequest{
-					Module: "ufw",
-					Args: map[string]interface{}{
-						"state":              task.UFW.State,
-						"logging":            task.UFW.Logging,
-						"default":            task.UFW.Default,
-						"policy":             task.UFW.Policy,
-						"direction":          task.UFW.Direction,
-						"rule":               task.UFW.Rule,
-						"delete":             task.UFW.Delete,
-						"insert":             task.UFW.Insert,
-						"insert_relative_to": task.UFW.InsertRelativeTo,
-						"interface":          task.UFW.Interface,
-						"if":                 task.UFW.If,
-						"interface_in":       task.UFW.InterfaceIn,
-						"if_in":              task.UFW.IfIn,
-						"interface_out":      task.UFW.InterfaceOut,
-						"if_out":             task.UFW.IfOut,
-						"from_ip":            task.UFW.FromIP,
-						"from":               task.UFW.From,
-						"src":                task.UFW.Src,
-						"from_port":          task.UFW.FromPort,
-						"to_ip":              task.UFW.ToIP,
-						"dest":               task.UFW.Dest,
-						"to":                 task.UFW.To,
-						"to_port":            task.UFW.ToPort,
-						"port":               task.UFW.Port,
-						"proto":              task.UFW.Proto,
-						"protocol":           task.UFW.Protocol,
-						"name":               task.UFW.Name,
-						"app":                task.UFW.App,
-						"route":              task.UFW.Route,
-						"log":                task.UFW.Log,
-						"comment":            task.UFW.Comment,
-					},
+				args := map[string]interface{}{
+					"state":              task.UFW.State,
+					"logging":            task.UFW.Logging,
+					"default":            task.UFW.Default,
+					"policy":             task.UFW.Policy,
+					"direction":          task.UFW.Direction,
+					"rule":               task.UFW.Rule,
+					"delete":             task.UFW.Delete,
+					"insert":             task.UFW.Insert,
+					"insert_relative_to": task.UFW.InsertRelativeTo,
+					"interface":          task.UFW.Interface,
+					"if":                 task.UFW.If,
+					"interface_in":       task.UFW.InterfaceIn,
+					"if_in":              task.UFW.IfIn,
+					"interface_out":      task.UFW.InterfaceOut,
+					"if_out":             task.UFW.IfOut,
+					"from_ip":            task.UFW.FromIP,
+					"from":               task.UFW.From,
+					"src":                task.UFW.Src,
+					"from_port":          task.UFW.FromPort,
+					"to_ip":              task.UFW.ToIP,
+					"dest":               task.UFW.Dest,
+					"to":                 task.UFW.To,
+					"to_port":            task.UFW.ToPort,
+					"port":               task.UFW.Port,
+					"proto":              task.UFW.Proto,
+					"protocol":           task.UFW.Protocol,
+					"name":               task.UFW.Name,
+					"app":                task.UFW.App,
+					"route":              task.UFW.Route,
+					"log":                task.UFW.Log,
+					"comment":            task.UFW.Comment,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "ufw", Args: renderedArgs}
 
 			case task.User != nil:
-				modReq = ModuleRequest{
-					Module: "user",
-					Args: map[string]interface{}{
-						"name":               task.User.Name,
-						"state":              task.User.State,
-						"uid":                task.User.UID,
-						"group":              task.User.Group,
-						"groups":             task.User.Groups,
-						"append":             task.User.Append,
-						"shell":              task.User.Shell,
-						"home":               task.User.Home,
-						"create_home":        task.User.CreateHome,
-						"move_home":          task.User.MoveHome,
-						"system":             task.User.System,
-						"password":           task.User.Password,
-						"password_lock":      task.User.PasswordLock,
-						"update_password":    task.User.UpdatePassword,
-						"comment":            task.User.Comment,
-						"expires":            task.User.Expires,
-						"remove":             task.User.Remove,
-						"force":              task.User.Force,
-						"skeleton":           task.User.Skeleton,
-						"non_unique":         task.User.NonUnique,
-						"generate_ssh_key":   task.User.GenerateSSHKey,
-						"ssh_key_bits":       task.User.SSHKeyBits,
-						"ssh_key_type":       task.User.SSHKeyType,
-						"ssh_key_file":       task.User.SSHKeyFile,
-						"ssh_key_comment":    task.User.SSHKeyComment,
-						"ssh_key_passphrase": task.User.SSHKeyPassphrase,
-					},
+				args := map[string]interface{}{
+					"name":               task.User.Name,
+					"state":              task.User.State,
+					"uid":                task.User.UID,
+					"group":              task.User.Group,
+					"groups":             task.User.Groups,
+					"append":             task.User.Append,
+					"shell":              task.User.Shell,
+					"home":               task.User.Home,
+					"create_home":        task.User.CreateHome,
+					"move_home":          task.User.MoveHome,
+					"system":             task.User.System,
+					"password":           task.User.Password,
+					"password_lock":      task.User.PasswordLock,
+					"update_password":    task.User.UpdatePassword,
+					"comment":            task.User.Comment,
+					"expires":            task.User.Expires,
+					"remove":             task.User.Remove,
+					"force":              task.User.Force,
+					"skeleton":           task.User.Skeleton,
+					"non_unique":         task.User.NonUnique,
+					"generate_ssh_key":   task.User.GenerateSSHKey,
+					"ssh_key_bits":       task.User.SSHKeyBits,
+					"ssh_key_type":       task.User.SSHKeyType,
+					"ssh_key_file":       task.User.SSHKeyFile,
+					"ssh_key_comment":    task.User.SSHKeyComment,
+					"ssh_key_passphrase": task.User.SSHKeyPassphrase,
+				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
 				}
 
+				modReq = ModuleRequest{Module: "user", Args: renderedArgs}
+
 			case task.Group != nil:
-				modReq = ModuleRequest{
-					Module: "group",
-					Args: map[string]interface{}{
-						"name":       task.Group.Name,
-						"state":      task.Group.State,
-						"gid":        task.Group.GID,
-						"system":     task.Group.System,
-						"local":      task.Group.Local,
-						"non_unique": task.Group.NonUnique,
-						"force":      task.Group.Force,
-					},
+				args := map[string]interface{}{
+					"name":       task.Group.Name,
+					"state":      task.Group.State,
+					"gid":        task.Group.GID,
+					"system":     task.Group.System,
+					"local":      task.Group.Local,
+					"non_unique": task.Group.NonUnique,
+					"force":      task.Group.Force,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "group", Args: renderedArgs}
 
 			case task.Copy != nil:
 				copyArgs := map[string]interface{}{
@@ -374,44 +545,72 @@ func main() {
 					copyArgs["checksum"] = localChecksum
 				}
 
-				modReq = ModuleRequest{
-					Module: "copy",
-					Args:   copyArgs,
+				renderedArgs, err := renderArgs(copyArgs, flattened)
+
+
+				if err != nil {
+
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+
+					continue
+
+
 				}
+
+
+				modReq = ModuleRequest{Module: "copy", Args: renderedArgs}
 
 			case task.SystemdService != nil || task.Systemd != nil:
 				params := task.SystemdService
 				if params == nil {
 					params = task.Systemd
 				}
-				modReq = ModuleRequest{
-					Module: "systemd_service",
-					Args: map[string]interface{}{
-						"name":          params.Name,
-						"state":         params.State,
-						"enabled":       params.Enabled,
-						"masked":        params.Masked,
-						"daemon_reload": params.DaemonReload,
-						"daemon_reexec": params.DaemonReexec,
-						"scope":         params.Scope,
-						"no_block":      params.NoBlock,
-						"force":         params.Force,
-					},
+				args := map[string]interface{}{
+					"name":          params.Name,
+					"state":         params.State,
+					"enabled":       params.Enabled,
+					"masked":        params.Masked,
+					"daemon_reload": params.DaemonReload,
+					"daemon_reexec": params.DaemonReexec,
+					"scope":         params.Scope,
+					"no_block":      params.NoBlock,
+					"force":         params.Force,
+				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
 				}
 
+				modReq = ModuleRequest{Module: "systemd_service", Args: renderedArgs}
+
 			case task.Service != nil:
-				modReq = ModuleRequest{
-					Module: "service",
-					Args: map[string]interface{}{
-						"name":      task.Service.Name,
-						"state":     task.Service.State,
-						"enabled":   task.Service.Enabled,
-						"arguments": task.Service.Arguments,
-						"pattern":   task.Service.Pattern,
-						"sleep":     task.Service.Sleep,
-						"use":       task.Service.Use,
-					},
+				args := map[string]interface{}{
+					"name":      task.Service.Name,
+					"state":     task.Service.State,
+					"enabled":   task.Service.Enabled,
+					"arguments": task.Service.Arguments,
+					"pattern":   task.Service.Pattern,
+					"sleep":     task.Service.Sleep,
+					"use":       task.Service.Use,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "service", Args: renderedArgs}
 
 			case task.ServiceFacts != nil:
 				modReq = ModuleRequest{
@@ -420,12 +619,18 @@ func main() {
 				}
 
 			case task.Ping != nil:
-				modReq = ModuleRequest{
-					Module: "ping",
-					Args: map[string]interface{}{
-						"data": task.Ping.Data,
-					},
+				args := map[string]interface{}{"data": task.Ping.Data}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
 				}
+
+				modReq = ModuleRequest{Module: "ping", Args: renderedArgs}
 
 			case task.Command != nil:
 				stdinAddNewline := true
@@ -436,19 +641,27 @@ func main() {
 				if task.Command.StripEmptyEnds != nil {
 					stripEmptyEnds = *task.Command.StripEmptyEnds
 				}
-				modReq = ModuleRequest{
-					Module: "command",
-					Args: map[string]interface{}{
-						"cmd":               task.Command.Cmd,
-						"argv":              task.Command.Argv,
-						"chdir":             task.Command.Chdir,
-						"creates":           task.Command.Creates,
-						"removes":           task.Command.Removes,
-						"stdin":             task.Command.Stdin,
-						"stdin_add_newline": stdinAddNewline,
-						"strip_empty_ends":  stripEmptyEnds,
-					},
+				args := map[string]interface{}{
+					"cmd":               task.Command.Cmd,
+					"argv":              task.Command.Argv,
+					"chdir":             task.Command.Chdir,
+					"creates":           task.Command.Creates,
+					"removes":           task.Command.Removes,
+					"stdin":             task.Command.Stdin,
+					"stdin_add_newline": stdinAddNewline,
+					"strip_empty_ends":  stripEmptyEnds,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "command", Args: renderedArgs}
 
 			case task.Shell != nil:
 				stdinAddNewline := true
@@ -459,22 +672,35 @@ func main() {
 				if task.Shell.StripEmptyEnds != nil {
 					stripEmptyEnds = *task.Shell.StripEmptyEnds
 				}
-				modReq = ModuleRequest{
-					Module: "shell",
-					Args: map[string]interface{}{
-						"cmd":               task.Shell.Cmd,
-						"chdir":             task.Shell.Chdir,
-						"creates":           task.Shell.Creates,
-						"removes":           task.Shell.Removes,
-						"stdin":             task.Shell.Stdin,
-						"stdin_add_newline": stdinAddNewline,
-						"strip_empty_ends":  stripEmptyEnds,
-						"executable":        task.Shell.Executable,
-					},
+				args := map[string]interface{}{
+					"cmd":               task.Shell.Cmd,
+					"chdir":             task.Shell.Chdir,
+					"creates":           task.Shell.Creates,
+					"removes":           task.Shell.Removes,
+					"stdin":             task.Shell.Stdin,
+					"stdin_add_newline": stdinAddNewline,
+					"strip_empty_ends":  stripEmptyEnds,
+					"executable":        task.Shell.Executable,
+				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
 				}
 
+				modReq = ModuleRequest{Module: "shell", Args: renderedArgs}
+
 			case task.Script != nil:
-				resp := executeScript(client, remoteAgentPath, task.Script, *verbose)
+				renderedScript, err := renderScriptParams(task.Script, flattened)
+				if err != nil {
+					fmt.Printf("    ✗ Failed to render script params: %v\n", err)
+					continue
+				}
+				resp := executeScript(client, remoteAgentPath, renderedScript, *verbose)
 				printResponse(resp, *verbose)
 				continue
 
@@ -512,10 +738,22 @@ func main() {
 					unarchiveArgs["checksum"] = localChecksum
 				}
 
-				modReq = ModuleRequest{
-					Module: "unarchive",
-					Args:   unarchiveArgs,
+				renderedArgs, err := renderArgs(unarchiveArgs, flattened)
+
+
+				if err != nil {
+
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+
+					continue
+
+
 				}
+
+
+				modReq = ModuleRequest{Module: "unarchive", Args: renderedArgs}
 
 			case task.Git != nil:
 				gitArgs := map[string]interface{}{
@@ -547,87 +785,126 @@ func main() {
 				if task.Git.Recursive != nil {
 					gitArgs["recursive"] = *task.Git.Recursive
 				}
-				modReq = ModuleRequest{
-					Module: "git",
-					Args:   gitArgs,
+				renderedArgs, err := renderArgs(gitArgs, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
 				}
+
+				modReq = ModuleRequest{Module: "git", Args: renderedArgs}
 
 			case task.Lineinfile != nil:
-				modReq = ModuleRequest{
-					Module: "lineinfile",
-					Args: map[string]interface{}{
-						"path":          task.Lineinfile.Path,
-						"line":          task.Lineinfile.Line,
-						"regexp":        task.Lineinfile.Regexp,
-						"search_string": task.Lineinfile.SearchString,
-						"state":         task.Lineinfile.State,
-						"backrefs":      task.Lineinfile.Backrefs,
-						"insertafter":   task.Lineinfile.InsertAfter,
-						"insertbefore":  task.Lineinfile.InsertBefore,
-						"firstmatch":    task.Lineinfile.FirstMatch,
-						"create":        task.Lineinfile.Create,
-						"backup":        task.Lineinfile.Backup,
-						"mode":          task.Lineinfile.Mode,
-						"owner":         task.Lineinfile.Owner,
-						"group":         task.Lineinfile.Group,
-						"validate":      task.Lineinfile.Validate,
-					},
+				args := map[string]interface{}{
+					"path":          task.Lineinfile.Path,
+					"line":          task.Lineinfile.Line,
+					"regexp":        task.Lineinfile.Regexp,
+					"search_string": task.Lineinfile.SearchString,
+					"state":         task.Lineinfile.State,
+					"backrefs":      task.Lineinfile.Backrefs,
+					"insertafter":   task.Lineinfile.InsertAfter,
+					"insertbefore":  task.Lineinfile.InsertBefore,
+					"firstmatch":    task.Lineinfile.FirstMatch,
+					"create":        task.Lineinfile.Create,
+					"backup":        task.Lineinfile.Backup,
+					"mode":          task.Lineinfile.Mode,
+					"owner":         task.Lineinfile.Owner,
+					"group":         task.Lineinfile.Group,
+					"validate":      task.Lineinfile.Validate,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "lineinfile", Args: renderedArgs}
 
 			case task.Blockinfile != nil:
-				modReq = ModuleRequest{
-					Module: "blockinfile",
-					Args: map[string]interface{}{
-						"path":            task.Blockinfile.Path,
-						"block":           task.Blockinfile.Block,
-						"marker":          task.Blockinfile.Marker,
-						"marker_begin":    task.Blockinfile.MarkerBegin,
-						"marker_end":      task.Blockinfile.MarkerEnd,
-						"insertafter":     task.Blockinfile.InsertAfter,
-						"insertbefore":    task.Blockinfile.InsertBefore,
-						"state":           task.Blockinfile.State,
-						"create":          task.Blockinfile.Create,
-						"backup":          task.Blockinfile.Backup,
-						"mode":            task.Blockinfile.Mode,
-						"owner":           task.Blockinfile.Owner,
-						"group":           task.Blockinfile.Group,
-						"validate":        task.Blockinfile.Validate,
-						"prepend_newline": task.Blockinfile.PrependNewline,
-						"append_newline":  task.Blockinfile.AppendNewline,
-					},
+				args := map[string]interface{}{
+					"path":            task.Blockinfile.Path,
+					"block":           task.Blockinfile.Block,
+					"marker":          task.Blockinfile.Marker,
+					"marker_begin":    task.Blockinfile.MarkerBegin,
+					"marker_end":      task.Blockinfile.MarkerEnd,
+					"insertafter":     task.Blockinfile.InsertAfter,
+					"insertbefore":    task.Blockinfile.InsertBefore,
+					"state":           task.Blockinfile.State,
+					"create":          task.Blockinfile.Create,
+					"backup":          task.Blockinfile.Backup,
+					"mode":            task.Blockinfile.Mode,
+					"owner":           task.Blockinfile.Owner,
+					"group":           task.Blockinfile.Group,
+					"validate":        task.Blockinfile.Validate,
+					"prepend_newline": task.Blockinfile.PrependNewline,
+					"append_newline":  task.Blockinfile.AppendNewline,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "blockinfile", Args: renderedArgs}
 
 			case task.Replace != nil:
-				modReq = ModuleRequest{
-					Module: "replace",
-					Args: map[string]interface{}{
-						"path":     task.Replace.Path,
-						"regexp":   task.Replace.Regexp,
-						"replace":  task.Replace.Replace,
-						"after":    task.Replace.After,
-						"before":   task.Replace.Before,
-						"backup":   task.Replace.Backup,
-						"mode":     task.Replace.Mode,
-						"owner":    task.Replace.Owner,
-						"group":    task.Replace.Group,
-						"validate": task.Replace.Validate,
-					},
+				args := map[string]interface{}{
+					"path":     task.Replace.Path,
+					"regexp":   task.Replace.Regexp,
+					"replace":  task.Replace.Replace,
+					"after":    task.Replace.After,
+					"before":   task.Replace.Before,
+					"backup":   task.Replace.Backup,
+					"mode":     task.Replace.Mode,
+					"owner":    task.Replace.Owner,
+					"group":    task.Replace.Group,
+					"validate": task.Replace.Validate,
+				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
 				}
 
+				modReq = ModuleRequest{Module: "replace", Args: renderedArgs}
+
 			case task.IptablesState != nil:
-				modReq = ModuleRequest{
-					Module: "iptables_state",
-					Args: map[string]interface{}{
-						"path":       task.IptablesState.Path,
-						"state":      task.IptablesState.State,
-						"table":      task.IptablesState.Table,
-						"counters":   task.IptablesState.Counters,
-						"noflush":    task.IptablesState.Noflush,
-						"ip_version": task.IptablesState.IPVersion,
-						"wait":       task.IptablesState.Wait,
-						"modprobe":   task.IptablesState.Modprobe,
-					},
+				args := map[string]interface{}{
+					"path":       task.IptablesState.Path,
+					"state":      task.IptablesState.State,
+					"table":      task.IptablesState.Table,
+					"counters":   task.IptablesState.Counters,
+					"noflush":    task.IptablesState.Noflush,
+					"ip_version": task.IptablesState.IPVersion,
+					"wait":       task.IptablesState.Wait,
+					"modprobe":   task.IptablesState.Modprobe,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "iptables_state", Args: renderedArgs}
 
 			case task.Iptables != nil:
 				iptablesArgs := map[string]interface{}{
@@ -683,10 +960,17 @@ func main() {
 						"flags_set": task.Iptables.TcpFlags.FlagsSet,
 					}
 				}
-				modReq = ModuleRequest{
-					Module: "iptables",
-					Args:   iptablesArgs,
+				renderedArgs, err := renderArgs(iptablesArgs, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
 				}
+
+				modReq = ModuleRequest{Module: "iptables", Args: renderedArgs}
 
 			case task.Tempfile != nil:
 				tempfileArgs := map[string]interface{}{
@@ -697,110 +981,133 @@ func main() {
 				if task.Tempfile.Prefix != nil {
 					tempfileArgs["prefix"] = *task.Tempfile.Prefix
 				}
-				modReq = ModuleRequest{
-					Module: "tempfile",
-					Args:   tempfileArgs,
+				renderedArgs, err := renderArgs(tempfileArgs, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
 				}
+
+				modReq = ModuleRequest{Module: "tempfile", Args: renderedArgs}
 
 			case task.DockerContainer != nil:
-				modReq = ModuleRequest{
-					Module: "docker_container",
-					Args: map[string]interface{}{
-						"name":            task.DockerContainer.Name,
-						"image":           task.DockerContainer.Image,
-						"state":           task.DockerContainer.State,
-						"command":         task.DockerContainer.Command,
-						"entrypoint":      task.DockerContainer.Entrypoint,
-						"args":            task.DockerContainer.Args,
-						"env":             task.DockerContainer.Env,
-						"exposed_ports":   task.DockerContainer.ExposedPorts,
-						"ports":           task.DockerContainer.Ports,
-						"volumes":         task.DockerContainer.Volumes,
-						"network_mode":    task.DockerContainer.NetworkMode,
-						"networks":        task.DockerContainer.Networks,
-						"networks_append": task.DockerContainer.NetworksAppend,
-						"restart_policy":  task.DockerContainer.RestartPolicy,
-						"auto_remove":     task.DockerContainer.AutoRemove,
-						"privileged":      task.DockerContainer.Privileged,
-						"user":            task.DockerContainer.User,
-						"working_dir":     task.DockerContainer.WorkingDir,
-						"hostname":        task.DockerContainer.Hostname,
-						"domainname":      task.DockerContainer.Domainname,
-						"labels":          task.DockerContainer.Labels,
-						"links":           task.DockerContainer.Links,
-						"log_driver":      task.DockerContainer.LogDriver,
-						"log_options":     task.DockerContainer.LogOptions,
-						// Tier 1 options
-						"cap_add":     task.DockerContainer.CapAdd,
-						"cap_drop":    task.DockerContainer.CapDrop,
-						"devices":     task.DockerContainer.Devices,
-						"healthcheck": task.DockerContainer.Healthcheck,
-						"init":        task.DockerContainer.Init,
-						"tmpfs":       task.DockerContainer.Tmpfs,
-						"shm_size":    task.DockerContainer.ShmSize,
-						// Tier 2 options
-						"ulimits":      task.DockerContainer.Ulimits,
-						"sysctls":      task.DockerContainer.Sysctls,
-						"security_opt": task.DockerContainer.SecurityOpt,
-						"cpus":         task.DockerContainer.CPUs,
-						"memory":       task.DockerContainer.Memory,
-						"memory_swap":  task.DockerContainer.MemorySwap,
-						"pids_limit":   task.DockerContainer.PidsLimit,
-						// Idempotency control
-						"comparisons":  task.DockerContainer.Comparisons,
-						"recreate":     task.DockerContainer.Recreate,
-						"force_kill":   task.DockerContainer.ForceKill,
-						"keep_volumes": task.DockerContainer.KeepVolumes,
-						// Pull behavior
-						"pull": task.DockerContainer.Pull,
-						// Registry auth
-						"registry_username": task.DockerContainer.RegistryUsername,
-						"registry_password": task.DockerContainer.RegistryPassword,
-						// Common options
-						"docker_host":    task.DockerContainer.DockerHost,
-						"tls":            task.DockerContainer.TLS,
-						"validate_certs": task.DockerContainer.ValidateCerts,
-						"ca_path":        task.DockerContainer.CAPath,
-						"client_cert":    task.DockerContainer.ClientCert,
-						"client_key":     task.DockerContainer.ClientKey,
-						"api_version":    task.DockerContainer.APIVersion,
-						"timeout":        task.DockerContainer.Timeout,
-						"debug":          task.DockerContainer.Debug,
-					},
+				args := map[string]interface{}{
+					"name":            task.DockerContainer.Name,
+					"image":           task.DockerContainer.Image,
+					"state":           task.DockerContainer.State,
+					"command":         task.DockerContainer.Command,
+					"entrypoint":      task.DockerContainer.Entrypoint,
+					"args":            task.DockerContainer.Args,
+					"env":             task.DockerContainer.Env,
+					"exposed_ports":   task.DockerContainer.ExposedPorts,
+					"ports":           task.DockerContainer.Ports,
+					"volumes":         task.DockerContainer.Volumes,
+					"network_mode":    task.DockerContainer.NetworkMode,
+					"networks":        task.DockerContainer.Networks,
+					"networks_append": task.DockerContainer.NetworksAppend,
+					"restart_policy":  task.DockerContainer.RestartPolicy,
+					"auto_remove":     task.DockerContainer.AutoRemove,
+					"privileged":      task.DockerContainer.Privileged,
+					"user":            task.DockerContainer.User,
+					"working_dir":     task.DockerContainer.WorkingDir,
+					"hostname":        task.DockerContainer.Hostname,
+					"domainname":      task.DockerContainer.Domainname,
+					"labels":          task.DockerContainer.Labels,
+					"links":           task.DockerContainer.Links,
+					"log_driver":      task.DockerContainer.LogDriver,
+					"log_options":     task.DockerContainer.LogOptions,
+					// Tier 1 options
+					"cap_add":     task.DockerContainer.CapAdd,
+					"cap_drop":    task.DockerContainer.CapDrop,
+					"devices":     task.DockerContainer.Devices,
+					"healthcheck": task.DockerContainer.Healthcheck,
+					"init":        task.DockerContainer.Init,
+					"tmpfs":       task.DockerContainer.Tmpfs,
+					"shm_size":    task.DockerContainer.ShmSize,
+					// Tier 2 options
+					"ulimits":      task.DockerContainer.Ulimits,
+					"sysctls":      task.DockerContainer.Sysctls,
+					"security_opt": task.DockerContainer.SecurityOpt,
+					"cpus":         task.DockerContainer.CPUs,
+					"memory":       task.DockerContainer.Memory,
+					"memory_swap":  task.DockerContainer.MemorySwap,
+					"pids_limit":   task.DockerContainer.PidsLimit,
+					// Idempotency control
+					"comparisons":  task.DockerContainer.Comparisons,
+					"recreate":     task.DockerContainer.Recreate,
+					"force_kill":   task.DockerContainer.ForceKill,
+					"keep_volumes": task.DockerContainer.KeepVolumes,
+					// Pull behavior
+					"pull": task.DockerContainer.Pull,
+					// Registry auth
+					"registry_username": task.DockerContainer.RegistryUsername,
+					"registry_password": task.DockerContainer.RegistryPassword,
+					// Common options
+					"docker_host":    task.DockerContainer.DockerHost,
+					"tls":            task.DockerContainer.TLS,
+					"validate_certs": task.DockerContainer.ValidateCerts,
+					"ca_path":        task.DockerContainer.CAPath,
+					"client_cert":    task.DockerContainer.ClientCert,
+					"client_key":     task.DockerContainer.ClientKey,
+					"api_version":    task.DockerContainer.APIVersion,
+					"timeout":        task.DockerContainer.Timeout,
+					"debug":          task.DockerContainer.Debug,
+				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
 				}
 
+				modReq = ModuleRequest{Module: "docker_container", Args: renderedArgs}
+
 			case task.DockerImage != nil:
-				modReq = ModuleRequest{
-					Module: "docker_image",
-					Args: map[string]interface{}{
-						"name":              task.DockerImage.Name,
-						"tag":               task.DockerImage.Tag,
-						"repository":        task.DockerImage.Repository,
-						"state":             task.DockerImage.State,
-						"source":            task.DockerImage.Source,
-						"push":              task.DockerImage.Push,
-						"archive_path":      task.DockerImage.ArchivePath,
-						"dockerfile":        task.DockerImage.DockerFile,
-						"build.path":        task.DockerImage.BuildPath,
-						"keep_image":        task.DockerImage.KeepImage,
-						"pull":              task.DockerImage.Pull,
-						"force_pull":        task.DockerImage.ForcePull,
-						"force_remove":      task.DockerImage.ForceRemove,
-						"force_tag":         task.DockerImage.ForceTag,
-						"force_source":      task.DockerImage.ForceSource,
-						"registry_username": task.DockerImage.RegistryUsername,
-						"registry_password": task.DockerImage.RegistryPassword,
-						"docker_host":       task.DockerImage.DockerHost,
-						"tls":               task.DockerImage.TLS,
-						"validate_certs":    task.DockerImage.ValidateCerts,
-						"ca_path":           task.DockerImage.CAPath,
-						"client_cert":       task.DockerImage.ClientCert,
-						"client_key":        task.DockerImage.ClientKey,
-						"api_version":       task.DockerImage.APIVersion,
-						"timeout":           task.DockerImage.Timeout,
-						"debug":             task.DockerImage.Debug,
-					},
+				args := map[string]interface{}{
+					"name":              task.DockerImage.Name,
+					"tag":               task.DockerImage.Tag,
+					"repository":        task.DockerImage.Repository,
+					"state":             task.DockerImage.State,
+					"source":            task.DockerImage.Source,
+					"push":              task.DockerImage.Push,
+					"archive_path":      task.DockerImage.ArchivePath,
+					"dockerfile":        task.DockerImage.DockerFile,
+					"build.path":        task.DockerImage.BuildPath,
+					"keep_image":        task.DockerImage.KeepImage,
+					"pull":              task.DockerImage.Pull,
+					"force_pull":        task.DockerImage.ForcePull,
+					"force_remove":      task.DockerImage.ForceRemove,
+					"force_tag":         task.DockerImage.ForceTag,
+					"force_source":      task.DockerImage.ForceSource,
+					"registry_username": task.DockerImage.RegistryUsername,
+					"registry_password": task.DockerImage.RegistryPassword,
+					"docker_host":       task.DockerImage.DockerHost,
+					"tls":               task.DockerImage.TLS,
+					"validate_certs":    task.DockerImage.ValidateCerts,
+					"ca_path":           task.DockerImage.CAPath,
+					"client_cert":       task.DockerImage.ClientCert,
+					"client_key":        task.DockerImage.ClientKey,
+					"api_version":       task.DockerImage.APIVersion,
+					"timeout":           task.DockerImage.Timeout,
+					"debug":             task.DockerImage.Debug,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_image", Args: renderedArgs}
 
 			case task.DockerNetwork != nil:
 				// Convert config types to module request args
@@ -841,109 +1148,149 @@ func main() {
 					connected = append(connected, connCfg)
 				}
 
-				modReq = ModuleRequest{
-					Module: "docker_network",
-					Args: map[string]interface{}{
-						"name":                task.DockerNetwork.Name,
-						"state":               task.DockerNetwork.State,
-						"driver":              task.DockerNetwork.Driver,
-						"options":             task.DockerNetwork.Options,
-						"ipam_config":         ipamConfigs,
-						"labels":              task.DockerNetwork.Labels,
-						"internal":            task.DockerNetwork.Internal,
-						"attachable":          task.DockerNetwork.Attachable,
-						"scope":               task.DockerNetwork.Scope,
-						"force":               task.DockerNetwork.Force,
-						"connected":           connected,
-						"appends":             task.DockerNetwork.Appends,
-						"enable_ipv6":         task.DockerNetwork.EnableIPv6,
-						"config_only":         task.DockerNetwork.ConfigOnly,
-						"config_from":         task.DockerNetwork.ConfigFrom,
-						"ingress":             task.DockerNetwork.Ingress,
-						"ipam_driver":         task.DockerNetwork.IPAMDriver,
-						"ipam_driver_options": task.DockerNetwork.IPAMDriverOptions,
-						"docker_host":         task.DockerNetwork.DockerHost,
-						"tls":                 task.DockerNetwork.TLS,
-						"validate_certs":      task.DockerNetwork.ValidateCerts,
-						"ca_path":             task.DockerNetwork.CAPath,
-						"client_cert":         task.DockerNetwork.ClientCert,
-						"client_key":          task.DockerNetwork.ClientKey,
-						"api_version":         task.DockerNetwork.APIVersion,
-						"timeout":             task.DockerNetwork.Timeout,
-						"debug":               task.DockerNetwork.Debug,
-					},
+				args := map[string]interface{}{
+					"name":                task.DockerNetwork.Name,
+					"state":               task.DockerNetwork.State,
+					"driver":              task.DockerNetwork.Driver,
+					"options":             task.DockerNetwork.Options,
+					"ipam_config":         ipamConfigs,
+					"labels":              task.DockerNetwork.Labels,
+					"internal":            task.DockerNetwork.Internal,
+					"attachable":          task.DockerNetwork.Attachable,
+					"scope":               task.DockerNetwork.Scope,
+					"force":               task.DockerNetwork.Force,
+					"connected":           connected,
+					"appends":             task.DockerNetwork.Appends,
+					"enable_ipv6":         task.DockerNetwork.EnableIPv6,
+					"config_only":         task.DockerNetwork.ConfigOnly,
+					"config_from":         task.DockerNetwork.ConfigFrom,
+					"ingress":             task.DockerNetwork.Ingress,
+					"ipam_driver":         task.DockerNetwork.IPAMDriver,
+					"ipam_driver_options": task.DockerNetwork.IPAMDriverOptions,
+					"docker_host":         task.DockerNetwork.DockerHost,
+					"tls":                 task.DockerNetwork.TLS,
+					"validate_certs":      task.DockerNetwork.ValidateCerts,
+					"ca_path":             task.DockerNetwork.CAPath,
+					"client_cert":         task.DockerNetwork.ClientCert,
+					"client_key":          task.DockerNetwork.ClientKey,
+					"api_version":         task.DockerNetwork.APIVersion,
+					"timeout":             task.DockerNetwork.Timeout,
+					"debug":               task.DockerNetwork.Debug,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_network", Args: renderedArgs}
 
 			case task.DockerVolume != nil:
-				modReq = ModuleRequest{
-					Module: "docker_volume",
-					Args: map[string]interface{}{
-						"name":           task.DockerVolume.Name,
-						"state":          task.DockerVolume.State,
-						"driver":         task.DockerVolume.Driver,
-						"driver_options": task.DockerVolume.DriverOptions,
-						"labels":         task.DockerVolume.Labels,
-						"recreate":       task.DockerVolume.Recreate,
-						"force":          task.DockerVolume.Force,
-						"docker_host":    task.DockerVolume.DockerHost,
-						"tls":            task.DockerVolume.TLS,
-						"validate_certs": task.DockerVolume.ValidateCerts,
-						"ca_path":        task.DockerVolume.CAPath,
-						"client_cert":    task.DockerVolume.ClientCert,
-						"client_key":     task.DockerVolume.ClientKey,
-						"api_version":    task.DockerVolume.APIVersion,
-						"timeout":        task.DockerVolume.Timeout,
-						"debug":          task.DockerVolume.Debug,
-					},
+				args := map[string]interface{}{
+					"name":           task.DockerVolume.Name,
+					"state":          task.DockerVolume.State,
+					"driver":         task.DockerVolume.Driver,
+					"driver_options": task.DockerVolume.DriverOptions,
+					"labels":         task.DockerVolume.Labels,
+					"recreate":       task.DockerVolume.Recreate,
+					"force":          task.DockerVolume.Force,
+					"docker_host":    task.DockerVolume.DockerHost,
+					"tls":            task.DockerVolume.TLS,
+					"validate_certs": task.DockerVolume.ValidateCerts,
+					"ca_path":        task.DockerVolume.CAPath,
+					"client_cert":    task.DockerVolume.ClientCert,
+					"client_key":     task.DockerVolume.ClientKey,
+					"api_version":    task.DockerVolume.APIVersion,
+					"timeout":        task.DockerVolume.Timeout,
+					"debug":          task.DockerVolume.Debug,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_volume", Args: renderedArgs}
 
 			case task.DockerPrune != nil:
-				modReq = ModuleRequest{
-					Module: "docker_prune",
-					Args: map[string]interface{}{
-						"containers":     task.DockerPrune.Containers,
-						"images":         task.DockerPrune.Images,
-						"networks":       task.DockerPrune.Networks,
-						"volumes":        task.DockerPrune.Volumes,
-						"builder":        task.DockerPrune.Builder,
-						"images_filters": task.DockerPrune.ImagesFilters,
-						"docker_host":    task.DockerPrune.DockerHost,
-						"tls":            task.DockerPrune.TLS,
-					},
+				args := map[string]interface{}{
+					"containers":     task.DockerPrune.Containers,
+					"images":         task.DockerPrune.Images,
+					"networks":       task.DockerPrune.Networks,
+					"volumes":        task.DockerPrune.Volumes,
+					"builder":        task.DockerPrune.Builder,
+					"images_filters": task.DockerPrune.ImagesFilters,
+					"docker_host":    task.DockerPrune.DockerHost,
+					"tls":            task.DockerPrune.TLS,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_prune", Args: renderedArgs}
 
 			case task.DockerLogin != nil:
-				modReq = ModuleRequest{
-					Module: "docker_login",
-					Args: map[string]interface{}{
-						"username":    task.DockerLogin.Username,
-						"password":    task.DockerLogin.Password,
-						"registry":    task.DockerLogin.Registry,
-						"email":       task.DockerLogin.Email,
-						"config_path": task.DockerLogin.ConfigPath,
-						"state":       task.DockerLogin.State,
-						"relogin":     task.DockerLogin.Relogin,
-						"docker_host": task.DockerLogin.DockerHost,
-						"tls":         task.DockerLogin.TLS,
-					},
+				args := map[string]interface{}{
+					"username":    task.DockerLogin.Username,
+					"password":    task.DockerLogin.Password,
+					"registry":    task.DockerLogin.Registry,
+					"email":       task.DockerLogin.Email,
+					"config_path": task.DockerLogin.ConfigPath,
+					"state":       task.DockerLogin.State,
+					"relogin":     task.DockerLogin.Relogin,
+					"docker_host": task.DockerLogin.DockerHost,
+					"tls":         task.DockerLogin.TLS,
+				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
 				}
 
+				modReq = ModuleRequest{Module: "docker_login", Args: renderedArgs}
+
 			case task.DockerSwarm != nil:
-				modReq = ModuleRequest{
-					Module: "docker_swarm",
-					Args: map[string]interface{}{
-						"state":             task.DockerSwarm.State,
-						"advertise_addr":    task.DockerSwarm.AdvertiseAddr,
-						"listen_addr":       task.DockerSwarm.ListenAddr,
-						"force_new_cluster": task.DockerSwarm.ForceNewCluster,
-						"remote_addrs":      task.DockerSwarm.RemoteAddrs,
-						"join_token":        task.DockerSwarm.JoinToken,
-						"node_id":           task.DockerSwarm.NodeID,
-						"force":             task.DockerSwarm.Force,
-						"docker_host":       task.DockerSwarm.DockerHost,
-						"tls":               task.DockerSwarm.TLS,
-					},
+				args := map[string]interface{}{
+					"state":             task.DockerSwarm.State,
+					"advertise_addr":    task.DockerSwarm.AdvertiseAddr,
+					"listen_addr":       task.DockerSwarm.ListenAddr,
+					"force_new_cluster": task.DockerSwarm.ForceNewCluster,
+					"remote_addrs":      task.DockerSwarm.RemoteAddrs,
+					"join_token":        task.DockerSwarm.JoinToken,
+					"node_id":           task.DockerSwarm.NodeID,
+					"force":             task.DockerSwarm.Force,
+					"docker_host":       task.DockerSwarm.DockerHost,
+					"tls":               task.DockerSwarm.TLS,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_swarm", Args: renderedArgs}
 
 			case task.DockerSwarmService != nil:
 				// Convert PortPublish params
@@ -957,245 +1304,333 @@ func main() {
 					})
 				}
 
-				modReq = ModuleRequest{
-					Module: "docker_swarm_service",
-					Args: map[string]interface{}{
-						"name":           task.DockerSwarmService.Name,
-						"image":          task.DockerSwarmService.Image,
-						"state":          task.DockerSwarmService.State,
-						"replicas":       task.DockerSwarmService.Replicas,
-						"args":           task.DockerSwarmService.Args,
-						"command":        task.DockerSwarmService.Command,
-						"env":            task.DockerSwarmService.Env,
-						"publish":        publishes,
-						"networks":       task.DockerSwarmService.Networks,
-						"labels":         task.DockerSwarmService.Labels,
-						"limit_cpu":      task.DockerSwarmService.LimitCPU,
-						"limit_memory":   task.DockerSwarmService.LimitMemory,
-						"constraint":     task.DockerSwarmService.Constraint,
-						"restart_policy": task.DockerSwarmService.RestartPolicy,
-						"force_update":   task.DockerSwarmService.ForceUpdate,
-						// Phase 6.1: Configs and Secrets
-						"configs": task.DockerSwarmService.Configs,
-						"secrets": task.DockerSwarmService.Secrets,
-						// Phase 6.2: Update/Rollback config
-						"update_delay":               task.DockerSwarmService.UpdateDelay,
-						"update_parallelism":         task.DockerSwarmService.UpdateParallelism,
-						"update_failure_action":      task.DockerSwarmService.UpdateFailureAction,
-						"update_order":               task.DockerSwarmService.UpdateOrder,
-						"update_monitor":             task.DockerSwarmService.UpdateMonitor,
-						"max_failure_ratio":          task.DockerSwarmService.MaxFailureRatio,
-						"rollback_delay":             task.DockerSwarmService.RollbackDelay,
-						"rollback_parallelism":       task.DockerSwarmService.RollbackParallelism,
-						"rollback_failure_action":    task.DockerSwarmService.RollbackFailureAction,
-						"rollback_order":             task.DockerSwarmService.RollbackOrder,
-						"rollback_monitor":           task.DockerSwarmService.RollbackMonitor,
-						"rollback_max_failure_ratio": task.DockerSwarmService.RollbackMaxFailureRatio,
-						// Phase 6.3: Additional options
-						"healthcheck": task.DockerSwarmService.Healthcheck,
-						"dns":         task.DockerSwarmService.DNS,
-						"dns_search":  task.DockerSwarmService.DNSSearch,
-						"dns_options": task.DockerSwarmService.DNSOptions,
-						"hosts":       task.DockerSwarmService.Hosts,
-						"mounts":      task.DockerSwarmService.Mounts,
-						"docker_host": task.DockerSwarmService.DockerHost,
-						"tls":         task.DockerSwarmService.TLS,
-					},
+				args := map[string]interface{}{
+					"name":           task.DockerSwarmService.Name,
+					"image":          task.DockerSwarmService.Image,
+					"state":          task.DockerSwarmService.State,
+					"replicas":       task.DockerSwarmService.Replicas,
+					"args":           task.DockerSwarmService.Args,
+					"command":        task.DockerSwarmService.Command,
+					"env":            task.DockerSwarmService.Env,
+					"publish":        publishes,
+					"networks":       task.DockerSwarmService.Networks,
+					"labels":         task.DockerSwarmService.Labels,
+					"limit_cpu":      task.DockerSwarmService.LimitCPU,
+					"limit_memory":   task.DockerSwarmService.LimitMemory,
+					"constraint":     task.DockerSwarmService.Constraint,
+					"restart_policy": task.DockerSwarmService.RestartPolicy,
+					"force_update":   task.DockerSwarmService.ForceUpdate,
+					// Phase 6.1: Configs and Secrets
+					"configs": task.DockerSwarmService.Configs,
+					"secrets": task.DockerSwarmService.Secrets,
+					// Phase 6.2: Update/Rollback config
+					"update_delay":               task.DockerSwarmService.UpdateDelay,
+					"update_parallelism":         task.DockerSwarmService.UpdateParallelism,
+					"update_failure_action":      task.DockerSwarmService.UpdateFailureAction,
+					"update_order":               task.DockerSwarmService.UpdateOrder,
+					"update_monitor":             task.DockerSwarmService.UpdateMonitor,
+					"max_failure_ratio":          task.DockerSwarmService.MaxFailureRatio,
+					"rollback_delay":             task.DockerSwarmService.RollbackDelay,
+					"rollback_parallelism":       task.DockerSwarmService.RollbackParallelism,
+					"rollback_failure_action":    task.DockerSwarmService.RollbackFailureAction,
+					"rollback_order":             task.DockerSwarmService.RollbackOrder,
+					"rollback_monitor":           task.DockerSwarmService.RollbackMonitor,
+					"rollback_max_failure_ratio": task.DockerSwarmService.RollbackMaxFailureRatio,
+					// Phase 6.3: Additional options
+					"healthcheck": task.DockerSwarmService.Healthcheck,
+					"dns":         task.DockerSwarmService.DNS,
+					"dns_search":  task.DockerSwarmService.DNSSearch,
+					"dns_options": task.DockerSwarmService.DNSOptions,
+					"hosts":       task.DockerSwarmService.Hosts,
+					"mounts":      task.DockerSwarmService.Mounts,
+					"docker_host": task.DockerSwarmService.DockerHost,
+					"tls":         task.DockerSwarmService.TLS,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_swarm_service", Args: renderedArgs}
 
 			case task.DockerNode != nil:
-				modReq = ModuleRequest{
-					Module: "docker_node",
-					Args: map[string]interface{}{
-						"hostname":         task.DockerNode.Hostname,
-						"self":             task.DockerNode.Self,
-						"availability":     task.DockerNode.Availability,
-						"role":             task.DockerNode.Role,
-						"labels":           task.DockerNode.Labels,
-						"labels_state":     task.DockerNode.LabelsState,
-						"labels_to_remove": task.DockerNode.LabelsToRemove,
-						"docker_host":      task.DockerNode.DockerHost,
-						"tls":              task.DockerNode.TLS,
-					},
+				args := map[string]interface{}{
+					"hostname":         task.DockerNode.Hostname,
+					"self":             task.DockerNode.Self,
+					"availability":     task.DockerNode.Availability,
+					"role":             task.DockerNode.Role,
+					"labels":           task.DockerNode.Labels,
+					"labels_state":     task.DockerNode.LabelsState,
+					"labels_to_remove": task.DockerNode.LabelsToRemove,
+					"docker_host":      task.DockerNode.DockerHost,
+					"tls":              task.DockerNode.TLS,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_node", Args: renderedArgs}
 
 			case task.DockerCompose != nil:
-				modReq = ModuleRequest{
-					Module: "docker_compose",
-					Args: map[string]interface{}{
-						"project_src":    task.DockerCompose.ProjectSrc,
-						"project_name":   task.DockerCompose.ProjectName,
-						"files":          task.DockerCompose.Files,
-						"state":          task.DockerCompose.State,
-						"services":       task.DockerCompose.Services,
-						"scale":          task.DockerCompose.Scale,
-						"build":          task.DockerCompose.Build,
-						"pull":           task.DockerCompose.Pull,
-						"remove_orphans": task.DockerCompose.RemoveOrphans,
-						"env":            task.DockerCompose.Env,
-						"profiles":       task.DockerCompose.Profiles,
-						"docker_host":    task.DockerCompose.DockerHost,
-						"tls":            task.DockerCompose.TLS,
-					},
+				args := map[string]interface{}{
+					"project_src":    task.DockerCompose.ProjectSrc,
+					"project_name":   task.DockerCompose.ProjectName,
+					"files":          task.DockerCompose.Files,
+					"state":          task.DockerCompose.State,
+					"services":       task.DockerCompose.Services,
+					"scale":          task.DockerCompose.Scale,
+					"build":          task.DockerCompose.Build,
+					"pull":           task.DockerCompose.Pull,
+					"remove_orphans": task.DockerCompose.RemoveOrphans,
+					"env":            task.DockerCompose.Env,
+					"profiles":       task.DockerCompose.Profiles,
+					"docker_host":    task.DockerCompose.DockerHost,
+					"tls":            task.DockerCompose.TLS,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_compose", Args: renderedArgs}
 
 			case task.DockerComposeV2Run != nil:
-				modReq = ModuleRequest{
-					Module: "docker_compose_v2_run",
-					Args: map[string]interface{}{
-						"project_src":       task.DockerComposeV2Run.ProjectSrc,
-						"project_name":      task.DockerComposeV2Run.ProjectName,
-						"files":             task.DockerComposeV2Run.Files,
-						"service":           task.DockerComposeV2Run.Service,
-						"argv":              task.DockerComposeV2Run.Argv,
-						"command":           task.DockerComposeV2Run.Command,
-						"build":             task.DockerComposeV2Run.Build,
-						"cap_add":           task.DockerComposeV2Run.CapAdd,
-						"cap_drop":          task.DockerComposeV2Run.CapDrop,
-						"entrypoint":        task.DockerComposeV2Run.EntryPoint,
-						"interactive":       task.DockerComposeV2Run.Interactive,
-						"labels":            task.DockerComposeV2Run.Labels,
-						"name":              task.DockerComposeV2Run.Name,
-						"no_deps":           task.DockerComposeV2Run.NoDeps,
-						"publish":           task.DockerComposeV2Run.Publish,
-						"quiet_pull":        task.DockerComposeV2Run.QuietPull,
-						"remove_orphans":    task.DockerComposeV2Run.RemoveOrphans,
-						"cleanup":           task.DockerComposeV2Run.Cleanup,
-						"service_ports":     task.DockerComposeV2Run.ServicePorts,
-						"use_aliases":       task.DockerComposeV2Run.UseAliases,
-						"volumes":           task.DockerComposeV2Run.Volumes,
-						"chdir":             task.DockerComposeV2Run.Chdir,
-						"detach":            task.DockerComposeV2Run.Detach,
-						"user":              task.DockerComposeV2Run.User,
-						"stdin":             task.DockerComposeV2Run.Stdin,
-						"stdin_add_newline": task.DockerComposeV2Run.StdinAddNewline,
-						"strip_empty_ends":  task.DockerComposeV2Run.StripEmptyEnds,
-						"tty":               task.DockerComposeV2Run.TTY,
-						"env":               task.DockerComposeV2Run.Env,
-						"profiles":          task.DockerComposeV2Run.Profiles,
-						"docker_host":       task.DockerComposeV2Run.DockerHost,
-						"tls":               task.DockerComposeV2Run.TLS,
-					},
+				args := map[string]interface{}{
+					"project_src":       task.DockerComposeV2Run.ProjectSrc,
+					"project_name":      task.DockerComposeV2Run.ProjectName,
+					"files":             task.DockerComposeV2Run.Files,
+					"service":           task.DockerComposeV2Run.Service,
+					"argv":              task.DockerComposeV2Run.Argv,
+					"command":           task.DockerComposeV2Run.Command,
+					"build":             task.DockerComposeV2Run.Build,
+					"cap_add":           task.DockerComposeV2Run.CapAdd,
+					"cap_drop":          task.DockerComposeV2Run.CapDrop,
+					"entrypoint":        task.DockerComposeV2Run.EntryPoint,
+					"interactive":       task.DockerComposeV2Run.Interactive,
+					"labels":            task.DockerComposeV2Run.Labels,
+					"name":              task.DockerComposeV2Run.Name,
+					"no_deps":           task.DockerComposeV2Run.NoDeps,
+					"publish":           task.DockerComposeV2Run.Publish,
+					"quiet_pull":        task.DockerComposeV2Run.QuietPull,
+					"remove_orphans":    task.DockerComposeV2Run.RemoveOrphans,
+					"cleanup":           task.DockerComposeV2Run.Cleanup,
+					"service_ports":     task.DockerComposeV2Run.ServicePorts,
+					"use_aliases":       task.DockerComposeV2Run.UseAliases,
+					"volumes":           task.DockerComposeV2Run.Volumes,
+					"chdir":             task.DockerComposeV2Run.Chdir,
+					"detach":            task.DockerComposeV2Run.Detach,
+					"user":              task.DockerComposeV2Run.User,
+					"stdin":             task.DockerComposeV2Run.Stdin,
+					"stdin_add_newline": task.DockerComposeV2Run.StdinAddNewline,
+					"strip_empty_ends":  task.DockerComposeV2Run.StripEmptyEnds,
+					"tty":               task.DockerComposeV2Run.TTY,
+					"env":               task.DockerComposeV2Run.Env,
+					"profiles":          task.DockerComposeV2Run.Profiles,
+					"docker_host":       task.DockerComposeV2Run.DockerHost,
+					"tls":               task.DockerComposeV2Run.TLS,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_compose_v2_run", Args: renderedArgs}
 
 			case task.DockerSecret != nil:
-				modReq = ModuleRequest{
-					Module: "docker_secret",
-					Args: map[string]interface{}{
-						"name":        task.DockerSecret.Name,
-						"data":        task.DockerSecret.Data,
-						"data_is_b64": task.DockerSecret.DataIsB64,
-						"labels":      task.DockerSecret.Labels,
-						"force":       task.DockerSecret.Force,
-						"state":       task.DockerSecret.State,
-						"docker_host": task.DockerSecret.DockerHost,
-						"tls":         task.DockerSecret.TLS,
-					},
+				args := map[string]interface{}{
+					"name":        task.DockerSecret.Name,
+					"data":        task.DockerSecret.Data,
+					"data_is_b64": task.DockerSecret.DataIsB64,
+					"labels":      task.DockerSecret.Labels,
+					"force":       task.DockerSecret.Force,
+					"state":       task.DockerSecret.State,
+					"docker_host": task.DockerSecret.DockerHost,
+					"tls":         task.DockerSecret.TLS,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_secret", Args: renderedArgs}
 
 			case task.DockerConfig != nil:
-				modReq = ModuleRequest{
-					Module: "docker_config",
-					Args: map[string]interface{}{
-						"name":        task.DockerConfig.Name,
-						"data":        task.DockerConfig.Data,
-						"data_is_b64": task.DockerConfig.DataIsB64,
-						"labels":      task.DockerConfig.Labels,
-						"force":       task.DockerConfig.Force,
-						"state":       task.DockerConfig.State,
-						"docker_host": task.DockerConfig.DockerHost,
-						"tls":         task.DockerConfig.TLS,
-					},
+				args := map[string]interface{}{
+					"name":        task.DockerConfig.Name,
+					"data":        task.DockerConfig.Data,
+					"data_is_b64": task.DockerConfig.DataIsB64,
+					"labels":      task.DockerConfig.Labels,
+					"force":       task.DockerConfig.Force,
+					"state":       task.DockerConfig.State,
+					"docker_host": task.DockerConfig.DockerHost,
+					"tls":         task.DockerConfig.TLS,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_config", Args: renderedArgs}
 
 			case task.DockerStack != nil:
-				modReq = ModuleRequest{
-					Module: "docker_stack",
-					Args: map[string]interface{}{
-						"name":               task.DockerStack.Name,
-						"compose_file":       task.DockerStack.ComposeFile,
-						"state":              task.DockerStack.State,
-						"with_registry_auth": task.DockerStack.WithRegistryAuth,
-						"prune":              task.DockerStack.Prune,
-						"resolve_image":      task.DockerStack.ResolveImage,
-						"docker_host":        task.DockerStack.DockerHost,
-						"tls":                task.DockerStack.TLS,
-					},
+				args := map[string]interface{}{
+					"name":               task.DockerStack.Name,
+					"compose_file":       task.DockerStack.ComposeFile,
+					"state":              task.DockerStack.State,
+					"with_registry_auth": task.DockerStack.WithRegistryAuth,
+					"prune":              task.DockerStack.Prune,
+					"resolve_image":      task.DockerStack.ResolveImage,
+					"docker_host":        task.DockerStack.DockerHost,
+					"tls":                task.DockerStack.TLS,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_stack", Args: renderedArgs}
 
 			case task.DockerContainerExec != nil:
-				modReq = ModuleRequest{
-					Module: "docker_container_exec",
-					Args: map[string]interface{}{
-						"container":         task.DockerContainerExec.Container,
-						"argv":              task.DockerContainerExec.Argv,
-						"command":           task.DockerContainerExec.Command,
-						"chdir":             task.DockerContainerExec.Chdir,
-						"detach":            task.DockerContainerExec.Detach,
-						"user":              task.DockerContainerExec.User,
-						"stdin":             task.DockerContainerExec.Stdin,
-						"stdin_add_newline": task.DockerContainerExec.StdinAddNewline,
-						"strip_empty_ends":  task.DockerContainerExec.StripEmptyEnds,
-						"tty":               task.DockerContainerExec.TTY,
-						"env":               task.DockerContainerExec.Env,
-						"docker_host":       task.DockerContainerExec.DockerHost,
-						"tls":               task.DockerContainerExec.TLS,
-					},
+				args := map[string]interface{}{
+					"container":         task.DockerContainerExec.Container,
+					"argv":              task.DockerContainerExec.Argv,
+					"command":           task.DockerContainerExec.Command,
+					"chdir":             task.DockerContainerExec.Chdir,
+					"detach":            task.DockerContainerExec.Detach,
+					"user":              task.DockerContainerExec.User,
+					"stdin":             task.DockerContainerExec.Stdin,
+					"stdin_add_newline": task.DockerContainerExec.StdinAddNewline,
+					"strip_empty_ends":  task.DockerContainerExec.StripEmptyEnds,
+					"tty":               task.DockerContainerExec.TTY,
+					"env":               task.DockerContainerExec.Env,
+					"docker_host":       task.DockerContainerExec.DockerHost,
+					"tls":               task.DockerContainerExec.TLS,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_container_exec", Args: renderedArgs}
 			case task.DockerContainerCopyInto != nil:
-				modReq = ModuleRequest{
-					Module: "docker_container_copy_into",
-					Args: map[string]interface{}{
-						"container":      task.DockerContainerCopyInto.Container,
-						"path":           task.DockerContainerCopyInto.Path,
-						"content":        task.DockerContainerCopyInto.Content,
-						"content_is_b64": task.DockerContainerCopyInto.ContentIsB64,
-						"container_path": task.DockerContainerCopyInto.ContainerPath,
-						"follow":         task.DockerContainerCopyInto.Follow,
-						"local_follow":   task.DockerContainerCopyInto.LocalFollow,
-						"owner_id":       task.DockerContainerCopyInto.OwnerID,
-						"group_id":       task.DockerContainerCopyInto.GroupID,
-						"mode":           task.DockerContainerCopyInto.Mode,
-						"force":          task.DockerContainerCopyInto.Force,
-						"docker_host":    task.DockerContainerCopyInto.DockerHost,
-						"tls":            task.DockerContainerCopyInto.TLS,
-					},
+				args := map[string]interface{}{
+					"container":      task.DockerContainerCopyInto.Container,
+					"path":           task.DockerContainerCopyInto.Path,
+					"content":        task.DockerContainerCopyInto.Content,
+					"content_is_b64": task.DockerContainerCopyInto.ContentIsB64,
+					"container_path": task.DockerContainerCopyInto.ContainerPath,
+					"follow":         task.DockerContainerCopyInto.Follow,
+					"local_follow":   task.DockerContainerCopyInto.LocalFollow,
+					"owner_id":       task.DockerContainerCopyInto.OwnerID,
+					"group_id":       task.DockerContainerCopyInto.GroupID,
+					"mode":           task.DockerContainerCopyInto.Mode,
+					"force":          task.DockerContainerCopyInto.Force,
+					"docker_host":    task.DockerContainerCopyInto.DockerHost,
+					"tls":            task.DockerContainerCopyInto.TLS,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_container_copy_into", Args: renderedArgs}
 
 			case task.DockerImageBuild != nil:
-				modReq = ModuleRequest{
-					Module: "docker_image_build",
-					Args: map[string]interface{}{
-						"name":        task.DockerImageBuild.Name,
-						"tag":         task.DockerImageBuild.Tag,
-						"path":        task.DockerImageBuild.Path,
-						"dockerfile":  task.DockerImageBuild.Dockerfile,
-						"cache_from":  task.DockerImageBuild.CacheFrom,
-						"pull":        task.DockerImageBuild.Pull,
-						"network":     task.DockerImageBuild.Network,
-						"nocache":     task.DockerImageBuild.NoCache,
-						"etc_hosts":   task.DockerImageBuild.EtcHosts,
-						"args":        task.DockerImageBuild.Args,
-						"target":      task.DockerImageBuild.Target,
-						"platform":    task.DockerImageBuild.Platform,
-						"shm_size":    task.DockerImageBuild.ShmSize,
-						"labels":      task.DockerImageBuild.Labels,
-						"rebuild":     task.DockerImageBuild.Rebuild,
-						"push":        task.DockerImageBuild.Push,
-						"docker_host": task.DockerImageBuild.DockerHost,
-						"tls":         task.DockerImageBuild.TLS,
-					},
+				args := map[string]interface{}{
+					"name":        task.DockerImageBuild.Name,
+					"tag":         task.DockerImageBuild.Tag,
+					"path":        task.DockerImageBuild.Path,
+					"dockerfile":  task.DockerImageBuild.Dockerfile,
+					"cache_from":  task.DockerImageBuild.CacheFrom,
+					"pull":        task.DockerImageBuild.Pull,
+					"network":     task.DockerImageBuild.Network,
+					"nocache":     task.DockerImageBuild.NoCache,
+					"etc_hosts":   task.DockerImageBuild.EtcHosts,
+					"args":        task.DockerImageBuild.Args,
+					"target":      task.DockerImageBuild.Target,
+					"platform":    task.DockerImageBuild.Platform,
+					"shm_size":    task.DockerImageBuild.ShmSize,
+					"labels":      task.DockerImageBuild.Labels,
+					"rebuild":     task.DockerImageBuild.Rebuild,
+					"push":        task.DockerImageBuild.Push,
+					"docker_host": task.DockerImageBuild.DockerHost,
+					"tls":         task.DockerImageBuild.TLS,
+				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
 				}
 
+				modReq = ModuleRequest{Module: "docker_image_build", Args: renderedArgs}
+
 			case task.DockerImageLoad != nil:
-				modReq = ModuleRequest{
-					Module: "docker_image_load",
-					Args: map[string]interface{}{
-						"path":        task.DockerImageLoad.Path,
-						"docker_host": task.DockerImageLoad.DockerHost,
-						"tls":         task.DockerImageLoad.TLS,
-					},
+				args := map[string]interface{}{
+					"path":        task.DockerImageLoad.Path,
+					"docker_host": task.DockerImageLoad.DockerHost,
+					"tls":         task.DockerImageLoad.TLS,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_image_load", Args: renderedArgs}
 
 			case task.DockerImageExport != nil:
 				// Handle names/name alias
@@ -1203,147 +1638,224 @@ func main() {
 				if len(names) == 0 && task.DockerImageExport.Name != "" {
 					names = []string{task.DockerImageExport.Name}
 				}
-				modReq = ModuleRequest{
-					Module: "docker_image_export",
-					Args: map[string]interface{}{
-						"names":       names,
-						"tag":         task.DockerImageExport.Tag,
-						"path":        task.DockerImageExport.Path,
-						"force":       task.DockerImageExport.Force,
-						"docker_host": task.DockerImageExport.DockerHost,
-						"tls":         task.DockerImageExport.TLS,
-					},
+				args := map[string]interface{}{
+					"names":       names,
+					"tag":         task.DockerImageExport.Tag,
+					"path":        task.DockerImageExport.Path,
+					"force":       task.DockerImageExport.Force,
+					"docker_host": task.DockerImageExport.DockerHost,
+					"tls":         task.DockerImageExport.TLS,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_image_export", Args: renderedArgs}
 
 			case task.DockerContainerInfo != nil:
-				modReq = ModuleRequest{
-					Module: "docker_container_info",
-					Args: map[string]interface{}{
-						"name":           task.DockerContainerInfo.Name,
-						"docker_host":    task.DockerContainerInfo.DockerHost,
-						"tls":            task.DockerContainerInfo.TLS,
-						"validate_certs": task.DockerContainerInfo.ValidateCerts,
-						"ca_path":        task.DockerContainerInfo.CAPath,
-						"client_cert":    task.DockerContainerInfo.ClientCert,
-						"client_key":     task.DockerContainerInfo.ClientKey,
-						"api_version":    task.DockerContainerInfo.APIVersion,
-						"timeout":        task.DockerContainerInfo.Timeout,
-						"debug":          task.DockerContainerInfo.Debug,
-					},
+				args := map[string]interface{}{
+					"name":           task.DockerContainerInfo.Name,
+					"docker_host":    task.DockerContainerInfo.DockerHost,
+					"tls":            task.DockerContainerInfo.TLS,
+					"validate_certs": task.DockerContainerInfo.ValidateCerts,
+					"ca_path":        task.DockerContainerInfo.CAPath,
+					"client_cert":    task.DockerContainerInfo.ClientCert,
+					"client_key":     task.DockerContainerInfo.ClientKey,
+					"api_version":    task.DockerContainerInfo.APIVersion,
+					"timeout":        task.DockerContainerInfo.Timeout,
+					"debug":          task.DockerContainerInfo.Debug,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_container_info", Args: renderedArgs}
 
 			case task.DockerImageInfo != nil:
-				modReq = ModuleRequest{
-					Module: "docker_image_info",
-					Args: map[string]interface{}{
-						"name":           task.DockerImageInfo.Name,
-						"docker_host":    task.DockerImageInfo.DockerHost,
-						"tls":            task.DockerImageInfo.TLS,
-						"validate_certs": task.DockerImageInfo.ValidateCerts,
-						"ca_path":        task.DockerImageInfo.CAPath,
-						"client_cert":    task.DockerImageInfo.ClientCert,
-						"client_key":     task.DockerImageInfo.ClientKey,
-						"api_version":    task.DockerImageInfo.APIVersion,
-						"timeout":        task.DockerImageInfo.Timeout,
-						"debug":          task.DockerImageInfo.Debug,
-					},
+				args := map[string]interface{}{
+					"name":           task.DockerImageInfo.Name,
+					"docker_host":    task.DockerImageInfo.DockerHost,
+					"tls":            task.DockerImageInfo.TLS,
+					"validate_certs": task.DockerImageInfo.ValidateCerts,
+					"ca_path":        task.DockerImageInfo.CAPath,
+					"client_cert":    task.DockerImageInfo.ClientCert,
+					"client_key":     task.DockerImageInfo.ClientKey,
+					"api_version":    task.DockerImageInfo.APIVersion,
+					"timeout":        task.DockerImageInfo.Timeout,
+					"debug":          task.DockerImageInfo.Debug,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_image_info", Args: renderedArgs}
 
 			case task.DockerNetworkInfo != nil:
-				modReq = ModuleRequest{
-					Module: "docker_network_info",
-					Args: map[string]interface{}{
-						"name":           task.DockerNetworkInfo.Name,
-						"docker_host":    task.DockerNetworkInfo.DockerHost,
-						"tls":            task.DockerNetworkInfo.TLS,
-						"validate_certs": task.DockerNetworkInfo.ValidateCerts,
-						"ca_path":        task.DockerNetworkInfo.CAPath,
-						"client_cert":    task.DockerNetworkInfo.ClientCert,
-						"client_key":     task.DockerNetworkInfo.ClientKey,
-						"api_version":    task.DockerNetworkInfo.APIVersion,
-						"timeout":        task.DockerNetworkInfo.Timeout,
-						"debug":          task.DockerNetworkInfo.Debug,
-					},
+				args := map[string]interface{}{
+					"name":           task.DockerNetworkInfo.Name,
+					"docker_host":    task.DockerNetworkInfo.DockerHost,
+					"tls":            task.DockerNetworkInfo.TLS,
+					"validate_certs": task.DockerNetworkInfo.ValidateCerts,
+					"ca_path":        task.DockerNetworkInfo.CAPath,
+					"client_cert":    task.DockerNetworkInfo.ClientCert,
+					"client_key":     task.DockerNetworkInfo.ClientKey,
+					"api_version":    task.DockerNetworkInfo.APIVersion,
+					"timeout":        task.DockerNetworkInfo.Timeout,
+					"debug":          task.DockerNetworkInfo.Debug,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_network_info", Args: renderedArgs}
 
 			case task.DockerVolumeInfo != nil:
-				modReq = ModuleRequest{
-					Module: "docker_volume_info",
-					Args: map[string]interface{}{
-						"name":           task.DockerVolumeInfo.Name,
-						"docker_host":    task.DockerVolumeInfo.DockerHost,
-						"tls":            task.DockerVolumeInfo.TLS,
-						"validate_certs": task.DockerVolumeInfo.ValidateCerts,
-						"ca_path":        task.DockerVolumeInfo.CAPath,
-						"client_cert":    task.DockerVolumeInfo.ClientCert,
-						"client_key":     task.DockerVolumeInfo.ClientKey,
-						"api_version":    task.DockerVolumeInfo.APIVersion,
-						"timeout":        task.DockerVolumeInfo.Timeout,
-						"debug":          task.DockerVolumeInfo.Debug,
-					},
+				args := map[string]interface{}{
+					"name":           task.DockerVolumeInfo.Name,
+					"docker_host":    task.DockerVolumeInfo.DockerHost,
+					"tls":            task.DockerVolumeInfo.TLS,
+					"validate_certs": task.DockerVolumeInfo.ValidateCerts,
+					"ca_path":        task.DockerVolumeInfo.CAPath,
+					"client_cert":    task.DockerVolumeInfo.ClientCert,
+					"client_key":     task.DockerVolumeInfo.ClientKey,
+					"api_version":    task.DockerVolumeInfo.APIVersion,
+					"timeout":        task.DockerVolumeInfo.Timeout,
+					"debug":          task.DockerVolumeInfo.Debug,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_volume_info", Args: renderedArgs}
 
 			case task.DockerHostInfo != nil:
-				modReq = ModuleRequest{
-					Module: "docker_host_info",
-					Args: map[string]interface{}{
-						"containers":     task.DockerHostInfo.Containers,
-						"images":         task.DockerHostInfo.Images,
-						"volumes":        task.DockerHostInfo.Volumes,
-						"disk_usage":     task.DockerHostInfo.DiskUsage,
-						"docker_host":    task.DockerHostInfo.DockerHost,
-						"tls":            task.DockerHostInfo.TLS,
-						"validate_certs": task.DockerHostInfo.ValidateCerts,
-						"ca_path":        task.DockerHostInfo.CAPath,
-						"client_cert":    task.DockerHostInfo.ClientCert,
-						"client_key":     task.DockerHostInfo.ClientKey,
-						"api_version":    task.DockerHostInfo.APIVersion,
-						"timeout":        task.DockerHostInfo.Timeout,
-						"debug":          task.DockerHostInfo.Debug,
-					},
+				args := map[string]interface{}{
+					"containers":     task.DockerHostInfo.Containers,
+					"images":         task.DockerHostInfo.Images,
+					"volumes":        task.DockerHostInfo.Volumes,
+					"disk_usage":     task.DockerHostInfo.DiskUsage,
+					"docker_host":    task.DockerHostInfo.DockerHost,
+					"tls":            task.DockerHostInfo.TLS,
+					"validate_certs": task.DockerHostInfo.ValidateCerts,
+					"ca_path":        task.DockerHostInfo.CAPath,
+					"client_cert":    task.DockerHostInfo.ClientCert,
+					"client_key":     task.DockerHostInfo.ClientKey,
+					"api_version":    task.DockerHostInfo.APIVersion,
+					"timeout":        task.DockerHostInfo.Timeout,
+					"debug":          task.DockerHostInfo.Debug,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_host_info", Args: renderedArgs}
 
 			case task.DockerSwarmInfo != nil:
-				modReq = ModuleRequest{
-					Module: "docker_swarm_info",
-					Args: map[string]interface{}{
-						"nodes":          task.DockerSwarmInfo.Nodes,
-						"verbose":        task.DockerSwarmInfo.Verbose,
-						"docker_host":    task.DockerSwarmInfo.DockerHost,
-						"tls":            task.DockerSwarmInfo.TLS,
-						"validate_certs": task.DockerSwarmInfo.ValidateCerts,
-						"ca_path":        task.DockerSwarmInfo.CAPath,
-						"client_cert":    task.DockerSwarmInfo.ClientCert,
-						"client_key":     task.DockerSwarmInfo.ClientKey,
-						"api_version":    task.DockerSwarmInfo.APIVersion,
-						"timeout":        task.DockerSwarmInfo.Timeout,
-						"debug":          task.DockerSwarmInfo.Debug,
-					},
+				args := map[string]interface{}{
+					"nodes":          task.DockerSwarmInfo.Nodes,
+					"verbose":        task.DockerSwarmInfo.Verbose,
+					"docker_host":    task.DockerSwarmInfo.DockerHost,
+					"tls":            task.DockerSwarmInfo.TLS,
+					"validate_certs": task.DockerSwarmInfo.ValidateCerts,
+					"ca_path":        task.DockerSwarmInfo.CAPath,
+					"client_cert":    task.DockerSwarmInfo.ClientCert,
+					"client_key":     task.DockerSwarmInfo.ClientKey,
+					"api_version":    task.DockerSwarmInfo.APIVersion,
+					"timeout":        task.DockerSwarmInfo.Timeout,
+					"debug":          task.DockerSwarmInfo.Debug,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_swarm_info", Args: renderedArgs}
 
 			case task.DockerSwarmServiceInfo != nil:
-				modReq = ModuleRequest{
-					Module: "docker_swarm_service_info",
-					Args: map[string]interface{}{
-						"name":        task.DockerSwarmServiceInfo.Name,
-						"docker_host": task.DockerSwarmServiceInfo.DockerHost,
-						"tls":         task.DockerSwarmServiceInfo.TLS,
-					},
+				args := map[string]interface{}{
+					"name":        task.DockerSwarmServiceInfo.Name,
+					"docker_host": task.DockerSwarmServiceInfo.DockerHost,
+					"tls":         task.DockerSwarmServiceInfo.TLS,
 				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
+				}
+
+				modReq = ModuleRequest{Module: "docker_swarm_service_info", Args: renderedArgs}
 
 			case task.DockerNodeInfo != nil:
-				modReq = ModuleRequest{
-					Module: "docker_node_info",
-					Args: map[string]interface{}{
-						"name":        task.DockerNodeInfo.Name,
-						"self":        task.DockerNodeInfo.Self,
-						"docker_host": task.DockerNodeInfo.DockerHost,
-						"tls":         task.DockerNodeInfo.TLS,
-					},
+				args := map[string]interface{}{
+					"name":        task.DockerNodeInfo.Name,
+					"self":        task.DockerNodeInfo.Self,
+					"docker_host": task.DockerNodeInfo.DockerHost,
+					"tls":         task.DockerNodeInfo.TLS,
+				}
+				renderedArgs, err := renderArgs(args, flattened)
+
+				if err != nil {
+
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+
+					continue
+
 				}
 
+				modReq = ModuleRequest{Module: "docker_node_info", Args: renderedArgs}
+
 			case task.Reboot != nil:
-				resp := executeReboot(client, remoteAgentPath, host, task.Reboot, *verbose)
+				renderedReboot, err := renderRebootParams(task.Reboot, flattened)
+				if err != nil {
+					fmt.Printf("    ✗ Failed to render reboot params: %v\n", err)
+					continue
+				}
+				resp := executeReboot(client, remoteAgentPath, host, renderedReboot, *verbose)
 				printResponse(resp, *verbose)
 				continue
 
@@ -1454,6 +1966,163 @@ func sha1File(path string) (string, error) {
 	}
 
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func parseExtraVars(raw string) (map[string]interface{}, error) {
+	varsMap := map[string]interface{}{}
+	if strings.TrimSpace(raw) == "" {
+		return varsMap, nil
+	}
+
+	if strings.HasPrefix(raw, "@") {
+		path := strings.TrimPrefix(raw, "@")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read extra vars file: %w", err)
+		}
+		if err := yaml.Unmarshal(data, &varsMap); err != nil {
+			return nil, fmt.Errorf("failed to parse extra vars file: %w", err)
+		}
+		return varsMap, nil
+	}
+
+	pairs := strings.Split(raw, ",")
+	for _, pair := range pairs {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid extra var %q", pair)
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		if key == "" {
+			return nil, fmt.Errorf("invalid extra var %q", pair)
+		}
+		varsMap[key] = value
+	}
+
+	return varsMap, nil
+}
+
+func renderArgs(args map[string]interface{}, context map[string]interface{}) (map[string]interface{}, error) {
+	rendered, err := vars.RenderValue(args, context)
+	if err != nil {
+		return nil, fmt.Errorf("template rendering failed: %w", err)
+	}
+	renderedMap, ok := rendered.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected render result type: %T", rendered)
+	}
+	return renderedMap, nil
+}
+
+func renderFetchParams(params *config.FetchParams, context map[string]interface{}) (*config.FetchParams, error) {
+	rendered, err := vars.RenderValue(map[string]interface{}{
+		"src":  params.Src,
+		"dest": params.Dest,
+		"flat": params.Flat,
+	}, context)
+	if err != nil {
+		return nil, err
+	}
+	data, ok := rendered.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid fetch params")
+	}
+	out := *params
+	if src, ok := data["src"].(string); ok {
+		out.Src = src
+	}
+	if dest, ok := data["dest"].(string); ok {
+		out.Dest = dest
+	}
+	return &out, nil
+}
+
+func renderScriptParams(params *config.ScriptParams, context map[string]interface{}) (*config.ScriptParams, error) {
+	rendered, err := vars.RenderValue(map[string]interface{}{
+		"cmd":        params.Cmd,
+		"chdir":      params.Chdir,
+		"creates":    params.Creates,
+		"removes":    params.Removes,
+		"executable": params.Executable,
+	}, context)
+	if err != nil {
+		return nil, err
+	}
+	data, ok := rendered.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid script params")
+	}
+	out := *params
+	if cmd, ok := data["cmd"].(string); ok {
+		out.Cmd = cmd
+	}
+	if chdir, ok := data["chdir"].(string); ok {
+		out.Chdir = chdir
+	}
+	if creates, ok := data["creates"].(string); ok {
+		out.Creates = creates
+	}
+	if removes, ok := data["removes"].(string); ok {
+		out.Removes = removes
+	}
+	if executable, ok := data["executable"].(string); ok {
+		out.Executable = executable
+	}
+	return &out, nil
+}
+
+func renderRebootParams(params *config.RebootParams, context map[string]interface{}) (*config.RebootParams, error) {
+	rendered, err := vars.RenderValue(map[string]interface{}{
+		"test_command":      params.TestCommand,
+		"msg":               params.Msg,
+		"boot_time_command": params.BootTimeCommand,
+		"reboot_command":    params.RebootCommand,
+	}, context)
+	if err != nil {
+		return nil, err
+	}
+	data, ok := rendered.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid reboot params")
+	}
+	out := *params
+	if testCommand, ok := data["test_command"].(string); ok {
+		out.TestCommand = testCommand
+	}
+	if msg, ok := data["msg"].(string); ok {
+		out.Msg = msg
+	}
+	if boot, ok := data["boot_time_command"].(string); ok {
+		out.BootTimeCommand = boot
+	}
+	if rebootCmd, ok := data["reboot_command"].(string); ok {
+		out.RebootCommand = rebootCmd
+	}
+	return &out, nil
+}
+
+func buildHostvarsForTask(hostInfos []vars.HostInfo, resolver vars.Resolver, inventory vars.InventoryVars, playVars map[string]interface{}, taskVars map[string]interface{}, extraVars map[string]interface{}, groups map[string][]string) (map[string]map[string]interface{}, error) {
+	hostvars := map[string]map[string]interface{}{}
+	for _, hostInfo := range hostInfos {
+		resolved, err := resolver.ResolveHostVars(vars.ResolveRequest{
+			Host:          hostInfo,
+			InventoryVars: inventory,
+			PlayVars:      playVars,
+			TaskVars:      taskVars,
+			ExtraVars:     extraVars,
+		})
+		if err != nil {
+			return nil, err
+		}
+		baseContext := vars.BuildContext(hostInfo.Name, hostInfo.Groups, resolved, nil, groups)
+		hostvars[hostInfo.Name] = baseContext
+	}
+	return hostvars, nil
 }
 
 func executeFetch(client *ssh.Client, agentPath, hostName string, params *config.FetchParams, verbose bool) GenericResponse {

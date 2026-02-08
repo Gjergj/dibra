@@ -1,0 +1,19 @@
+vars:
+  greeting: "play-hello"
+  color: "blue"
+
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    groups:
+      - web
+
+tasks:
+  - name: Write extra vars override output
+    copy:
+      content: "greeting={{ greeting }},color={{ color }}"
+      dest: /tmp/dibra-extra-override.txt
+      mode: "0644"

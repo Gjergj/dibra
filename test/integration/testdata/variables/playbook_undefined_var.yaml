@@ -1,0 +1,13 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+
+tasks:
+  - name: should fail on unknown var
+    copy:
+      content: "x={{ nonexistent }}"
+      dest: /tmp/dibra-should-not-write.txt
+      mode: "0644"

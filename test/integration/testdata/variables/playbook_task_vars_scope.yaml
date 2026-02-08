@@ -1,0 +1,21 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+
+tasks:
+  - name: task1 defines scoped var
+    vars:
+      scoped: "only-here"
+    copy:
+      content: "scoped={{ scoped }}"
+      dest: /tmp/dibra-task-scope-1.txt
+      mode: "0644"
+
+  - name: task2 must not see scoped var
+    copy:
+      content: "scoped={{ scoped }}"
+      dest: /tmp/dibra-task-scope-2.txt
+      mode: "0644"

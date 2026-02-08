@@ -1,0 +1,3 @@
+# Loaded via vars_files - these merge into play vars
+max_connections: 100
+retry_count: 3

@@ -1,0 +1,24 @@
+vars_merge: merge
+vars_files:
+  - vars_deep_1.yml
+  - vars_deep_2.yml
+
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    groups:
+      - web
+
+tasks:
+  - name: vars_files deep merge
+    copy:
+      content: |
+        a={{ config.a }}
+        b={{ config.b }}
+        shared_x={{ config.shared.x }}
+        shared_y={{ config.shared.y }}
+      dest: /tmp/dibra-varsfiles-deep-merge.txt
+      mode: "0644"

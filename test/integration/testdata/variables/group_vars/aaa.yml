@@ -1,0 +1,5 @@
+group_key_multi: "aaa"
+aaa_only: "aaa"
+nested:
+  a: "from_aaa"
+  common: "aaa"

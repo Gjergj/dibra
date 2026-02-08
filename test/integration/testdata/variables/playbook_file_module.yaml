@@ -1,0 +1,17 @@
+vars:
+  target_dir: /tmp/dibra-vars-dir
+  target_mode: "0755"
+
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+
+tasks:
+  - name: Create directory from variable
+    file:
+      path: "{{ target_dir }}"
+      state: directory
+      mode: "{{ target_mode }}"
