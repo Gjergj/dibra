@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
@@ -209,7 +210,11 @@ func main() {
 			fmt.Println("  Agent up-to-date on remote")
 		}
 
-		for _, task := range cfg.Tasks {
+		taskQueue := make([]config.Task, len(cfg.Tasks))
+		copy(taskQueue, cfg.Tasks)
+
+		for taskIdx := 0; taskIdx < len(taskQueue); taskIdx++ {
+			task := taskQueue[taskIdx]
 			fmt.Printf("  Task: %s\n", task.Name)
 
 			taskHostvars, err := buildHostvarsForTask(hostInfos, varsResolver, inventoryVars, playVars, task.Vars, extraVarsMap, groupsMap)
@@ -1872,6 +1877,77 @@ func main() {
 				}
 				resp := executeReboot(client, remoteAgentPath, host, renderedReboot, *verbose)
 				printResponse(resp, *verbose)
+				continue
+
+			case task.IncludeTasks != nil:
+				filePath := task.IncludeTasks.File
+				if filePath == "" {
+					fmt.Println("    ✗ include_tasks: file path is required")
+					continue
+				}
+
+				renderedPath, err := vars.RenderString(filePath, flattened)
+				if err != nil {
+					fmt.Printf("    ✗ Failed to render include_tasks path: %v\n", err)
+					continue
+				}
+
+				resolveDir := baseDir
+				if task.SourceDir != "" {
+					resolveDir = task.SourceDir
+				}
+
+				if !filepath.IsAbs(renderedPath) {
+					renderedPath = filepath.Join(resolveDir, renderedPath)
+				}
+				renderedPath = filepath.Clean(renderedPath)
+
+				data, err := os.ReadFile(renderedPath)
+				if err != nil {
+					fmt.Printf("    ✗ include_tasks: failed to read %q: %v\n", renderedPath, err)
+					continue
+				}
+
+				var includedTasks []config.Task
+				dec := yaml.NewDecoder(bytes.NewReader(data))
+				if err := dec.Decode(&includedTasks); err != nil {
+					fmt.Printf("    ✗ include_tasks: failed to parse %q: %v\n", renderedPath, err)
+					continue
+				}
+
+				includeBaseDir := filepath.Dir(renderedPath)
+				for i := range includedTasks {
+					includedTasks[i].SourceDir = includeBaseDir
+				}
+
+				if len(task.Vars) > 0 {
+					for i := range includedTasks {
+						if includedTasks[i].Vars == nil {
+							includedTasks[i].Vars = make(map[string]interface{})
+						}
+						merged := make(map[string]interface{})
+						for k, v := range task.Vars {
+							merged[k] = v
+						}
+						for k, v := range includedTasks[i].Vars {
+							merged[k] = v
+						}
+						includedTasks[i].Vars = merged
+					}
+				}
+
+				includedTasks, err = config.ExpandImportTasks(includedTasks, includeBaseDir, renderImportPath)
+				if err != nil {
+					fmt.Printf("    ✗ include_tasks: failed to expand nested imports in %q: %v\n", renderedPath, err)
+					continue
+				}
+
+				tail := make([]config.Task, len(taskQueue[taskIdx+1:]))
+				copy(tail, taskQueue[taskIdx+1:])
+				taskQueue = append(taskQueue[:taskIdx+1], includedTasks...)
+				taskQueue = append(taskQueue, tail...)
+
+				fmt.Printf("    ✓ included %d task(s) from %s\n", len(includedTasks), filepath.Base(renderedPath))
 				continue
 
 			default:

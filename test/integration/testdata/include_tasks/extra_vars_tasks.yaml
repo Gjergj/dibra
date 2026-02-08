@@ -1,0 +1,5 @@
+- name: Write extra var
+  copy:
+    content: "{{ custom_msg }}"
+    dest: /tmp/dibra-include-extra.txt
+    mode: "0644"

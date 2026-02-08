@@ -1,0 +1,5 @@
+- name: Imported via include chain
+  copy:
+    content: "import-in-include"
+    dest: /tmp/dibra-import-in-include.txt
+    mode: "0644"

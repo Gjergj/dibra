@@ -1,0 +1,23 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Task before include
+    copy:
+      content: "before-include"
+      dest: /tmp/dibra-include-before.txt
+      mode: "0644"
+
+  - name: Include basic tasks
+    include_tasks: basic_tasks.yaml
+
+  - name: Task after include
+    copy:
+      content: "after-include"
+      dest: /tmp/dibra-include-after.txt
+      mode: "0644"

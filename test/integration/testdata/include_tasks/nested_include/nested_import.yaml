@@ -1,0 +1,2 @@
+- name: Import adjacent from nested
+  import_tasks: adjacent_tasks.yaml

@@ -1,0 +1,2 @@
+- name: Include adjacent from nested
+  include_tasks: adjacent_tasks.yaml

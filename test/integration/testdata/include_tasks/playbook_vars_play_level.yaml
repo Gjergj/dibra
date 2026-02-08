@@ -1,0 +1,15 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+vars:
+  app_name: myapp
+  app_version: v1.0
+
+tasks:
+  - name: Include tasks that use play vars
+    include_tasks: play_vars_tasks.yaml

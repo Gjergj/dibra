@@ -1,0 +1,5 @@
+- name: Write vars from include
+  copy:
+    content: "greeting={{ greeting }},target={{ target }}"
+    dest: /tmp/dibra-include-vars.txt
+    mode: "0644"

@@ -1,0 +1,11 @@
+- name: Included order 2
+  copy:
+    content: "order-2"
+    dest: /tmp/dibra-include-order2.txt
+    mode: "0644"
+
+- name: Included order 3
+  copy:
+    content: "order-3"
+    dest: /tmp/dibra-include-order3.txt
+    mode: "0644"

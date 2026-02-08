@@ -1,0 +1,23 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: First regular task
+    copy:
+      content: "order-1"
+      dest: /tmp/dibra-include-order1.txt
+      mode: "0644"
+
+  - name: Include tasks
+    include_tasks: order_tasks.yaml
+
+  - name: Last regular task
+    copy:
+      content: "order-4"
+      dest: /tmp/dibra-include-order4.txt
+      mode: "0644"

@@ -1,0 +1,5 @@
+- name: Templated task two (nested)
+  copy:
+    content: "templated-two"
+    dest: /tmp/dibra-include-templated2.txt
+    mode: "0644"

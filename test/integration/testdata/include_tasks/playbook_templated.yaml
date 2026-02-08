@@ -1,0 +1,14 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+vars:
+  task_file: templated/one.yaml
+
+tasks:
+  - name: Include with templated path
+    include_tasks: "{{ task_file }}"

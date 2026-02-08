@@ -1,0 +1,14 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Include with vars that get overridden
+    vars:
+      greeting: hello
+      target: world
+    include_tasks: vars_override_tasks.yaml

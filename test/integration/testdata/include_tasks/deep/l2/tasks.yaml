@@ -1,0 +1,8 @@
+- name: Deep level 2
+  copy:
+    content: "deep-level2"
+    dest: /tmp/dibra-include-deep2.txt
+    mode: "0644"
+
+- name: Include level 3
+  include_tasks: l3/tasks.yaml

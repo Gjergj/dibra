@@ -1,0 +1,8 @@
+- name: Level 1 included task
+  copy:
+    content: "level1-task"
+    dest: /tmp/dibra-include-level1.txt
+    mode: "0644"
+
+- name: Nested include level 2
+  include_tasks: level2/level2_tasks.yaml

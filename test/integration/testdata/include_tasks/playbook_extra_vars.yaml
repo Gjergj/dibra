@@ -1,0 +1,11 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Include tasks using extra vars
+    include_tasks: extra_vars_tasks.yaml

@@ -1,0 +1,14 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Include file that includes adjacent file
+    include_tasks: nested_include/nested_include.yaml
+
+  - name: Include file that imports adjacent file
+    include_tasks: nested_include/nested_import.yaml

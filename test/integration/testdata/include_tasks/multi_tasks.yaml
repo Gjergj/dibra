@@ -1,0 +1,5 @@
+- name: Multi include marker
+  copy:
+    content: "multi-include-marker"
+    dest: /tmp/dibra-include-multi.txt
+    mode: "0644"

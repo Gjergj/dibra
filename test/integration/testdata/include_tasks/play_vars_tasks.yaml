@@ -1,0 +1,5 @@
+- name: Write play vars
+  copy:
+    content: "app={{ app_name }},version={{ app_version }}"
+    dest: /tmp/dibra-include-play-vars.txt
+    mode: "0644"

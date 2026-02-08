@@ -2823,6 +2823,58 @@ Imports a list of tasks from another YAML file, inserting them into the current 
 - Circular import → `circular import detected: a.yaml -> b.yaml -> a.yaml`
 - Max depth exceeded → `maximum nesting depth (50) exceeded`
 
+## include_tasks
+
+Includes a list of tasks from another YAML file at runtime (dynamic include). Unlike `import_tasks` which expands at parse time, `include_tasks` expands during execution, giving it access to the full variable context including host vars and task vars.
+
+```yaml
+# Free-form syntax
+- name: Include common tasks
+  include_tasks: common/setup.yaml
+
+# Explicit file parameter
+- name: Include with file param
+  include_tasks:
+    file: common/setup.yaml
+
+# With vars (inherited by included tasks as defaults)
+- name: Include with variables
+  vars:
+    app_port: 8080
+  include_tasks: app/deploy.yaml
+
+# Templated path (all vars available including host vars)
+- name: Include dynamic path
+  include_tasks: "{{ task_file }}"
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `file` | required | Path to the YAML file containing tasks. Relative paths resolve relative to the file containing the directive. |
+
+**Key behaviors**:
+- **Dynamic include**: Tasks are expanded at runtime during the task execution loop. This means all variable sources (host vars, task vars, extra vars) are available for path templating.
+- **Relative paths**: Resolved relative to the directory of the file containing the `include_tasks` directive. Nested includes correctly resolve relative to their own file's directory.
+- **Nested includes**: Included files can contain both `include_tasks` and `import_tasks` directives.
+- **Vars inheritance**: `vars` on the `include_tasks` directive are inherited by all included tasks as defaults. The included task's own `vars` take precedence.
+- **Templated paths**: File paths support `{{ }}` template interpolation using the full variable context (host vars, play vars, task vars, extra vars).
+- **Same file twice**: The same file can be included multiple times in different places.
+- **Absolute paths**: Absolute file paths are also supported.
+- **Execution order**: Included tasks are inserted immediately after the include directive and executed before subsequent tasks.
+
+**Differences from import_tasks**:
+
+| Feature | `import_tasks` | `include_tasks` |
+|---------|---------------|-----------------|
+| Expansion time | Parse time (static) | Runtime (dynamic) |
+| Variable context for path | Play vars + extra vars only | Full context (host vars, task vars, etc.) |
+| Circular detection | Yes (with import chain) | No (handled naturally by execution) |
+
+**Error cases**:
+- Missing file path → `file path is required`
+- File not found → `failed to read`
+- Parse error → `failed to parse`
+
 ## Variable System
 
 Dibra implements a variable system with five precedence layers, template interpolation, and magic variables. For full documentation see `docs/Variables.md`.

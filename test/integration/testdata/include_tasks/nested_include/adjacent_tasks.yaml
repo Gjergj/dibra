@@ -1,0 +1,5 @@
+- name: Adjacent task via include
+  copy:
+    content: "adjacent-include"
+    dest: /tmp/dibra-include-adjacent.txt
+    mode: "0644"

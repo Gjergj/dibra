@@ -1,0 +1,17 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Include basic tasks
+    include_tasks: basic_tasks.yaml
+
+  - name: Include multi tasks
+    include_tasks: multi_tasks.yaml
+
+  - name: Include ping
+    include_tasks: ping_tasks.yaml

@@ -1,0 +1,11 @@
+- name: Create file via include
+  copy:
+    content: "mixed-include-file"
+    dest: /tmp/dibra-include-mixed.txt
+    mode: "0644"
+
+- name: Create directory via include
+  file:
+    path: /tmp/dibra-include-mixed-dir
+    state: directory
+    mode: "0755"

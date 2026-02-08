@@ -48,10 +48,30 @@ func (p *ImportTasksParams) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
+type IncludeTasksParams struct {
+	File string `yaml:"file,omitempty"`
+}
+
+func (p *IncludeTasksParams) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		p.File = node.Value
+		return nil
+	}
+	type alias IncludeTasksParams
+	var a alias
+	if err := node.Decode(&a); err != nil {
+		return err
+	}
+	*p = IncludeTasksParams(a)
+	return nil
+}
+
 type Task struct {
 	Name                    string                         `yaml:"name"`
 	Vars                    map[string]interface{}         `yaml:"vars,omitempty"`
 	ImportTasks             *ImportTasksParams             `yaml:"import_tasks,omitempty"`
+	IncludeTasks            *IncludeTasksParams            `yaml:"include_tasks,omitempty"`
+	SourceDir               string                         `yaml:"-"`
 	Apt                     *AptParams                     `yaml:"apt,omitempty"`
 	AptKey                  *AptKeyParams                  `yaml:"apt_key,omitempty"`
 	AptRepository           *AptRepositoryParams           `yaml:"apt_repository,omitempty"`
@@ -1142,6 +1162,11 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 			// Handle import_tasks with scalar string value (free-form syntax)
 			if key == "import_tasks" && value.Kind == yaml.ScalarNode && value.Tag != "!!null" {
 				t.ImportTasks = &ImportTasksParams{File: value.Value}
+			}
+
+			// Handle include_tasks with scalar string value (free-form syntax)
+			if key == "include_tasks" && value.Kind == yaml.ScalarNode && value.Tag != "!!null" {
+				t.IncludeTasks = &IncludeTasksParams{File: value.Value}
 			}
 		}
 	}

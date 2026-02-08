@@ -1,0 +1,8 @@
+- name: Templated task one
+  copy:
+    content: "templated-one"
+    dest: /tmp/dibra-include-templated.txt
+    mode: "0644"
+
+- name: Nested include from templated
+  include_tasks: two.yaml

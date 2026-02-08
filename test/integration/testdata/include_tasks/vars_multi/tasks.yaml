@@ -1,0 +1,4 @@
+- name: Include inner with vars
+  vars:
+    color: blue
+  include_tasks: inner/tasks.yaml

@@ -1,0 +1,11 @@
+- name: Create file from included task
+  copy:
+    content: "included-task-was-here"
+    dest: /tmp/dibra-include-basic.txt
+    mode: "0644"
+
+- name: Create second file from included task
+  copy:
+    content: "second-included-task"
+    dest: /tmp/dibra-include-basic2.txt
+    mode: "0644"

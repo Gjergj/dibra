@@ -1,0 +1,5 @@
+- name: Deep level 3
+  copy:
+    content: "deep-level3"
+    dest: /tmp/dibra-include-deep3.txt
+    mode: "0644"

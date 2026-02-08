@@ -1,0 +1,5 @@
+- name: Subdirectory included task
+  copy:
+    content: "from-subtasks-dir"
+    dest: /tmp/dibra-include-subdir.txt
+    mode: "0644"

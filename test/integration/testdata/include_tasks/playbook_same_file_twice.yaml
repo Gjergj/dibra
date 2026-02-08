@@ -1,0 +1,20 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Include basic first time
+    include_tasks: basic_tasks.yaml
+
+  - name: Between includes
+    copy:
+      content: "between-includes"
+      dest: /tmp/dibra-include-between.txt
+      mode: "0644"
+
+  - name: Include basic second time
+    include_tasks: basic_tasks.yaml

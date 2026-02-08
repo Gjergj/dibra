@@ -1,0 +1,12 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Include using file param syntax
+    include_tasks:
+      file: basic_tasks.yaml
