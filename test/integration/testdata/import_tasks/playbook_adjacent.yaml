@@ -1,0 +1,11 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Import adjacent tasks (which also import deeper)
+    import_tasks: nested/adjacent_import.yaml

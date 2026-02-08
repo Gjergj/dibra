@@ -1,0 +1,5 @@
+- name: Write inherited var
+  copy:
+    content: "greeting={{ greeting }},target={{ target }}"
+    dest: /tmp/dibra-import-vars.txt
+    mode: "0644"

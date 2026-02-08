@@ -1,0 +1,5 @@
+- name: Task in B
+  ping:
+
+- name: Import A from B (circular)
+  import_tasks: a.yaml

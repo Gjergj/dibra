@@ -1,0 +1,17 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Import first set of tasks
+    import_tasks: basic_tasks.yaml
+
+  - name: Import second set of tasks
+    import_tasks: multiple_imports_tasks.yaml
+
+  - name: Import ping tasks
+    import_tasks: ping_tasks.yaml

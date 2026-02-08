@@ -1,0 +1,7 @@
+- name: Write overridden var
+  vars:
+    target: overridden
+  copy:
+    content: "greeting={{ greeting }},target={{ target }}"
+    dest: /tmp/dibra-import-vars-override.txt
+    mode: "0644"

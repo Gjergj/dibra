@@ -1,0 +1,23 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Task before import
+    copy:
+      content: "before-import"
+      dest: /tmp/dibra-import-before.txt
+      mode: "0644"
+
+  - name: Import basic tasks
+    import_tasks: basic_tasks.yaml
+
+  - name: Task after import
+    copy:
+      content: "after-import"
+      dest: /tmp/dibra-import-after.txt
+      mode: "0644"

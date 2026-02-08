@@ -193,6 +193,7 @@ dibra/
 │   │   └── extract.go        # tar.gz archive extraction
 │   ├── builder/builder.go    # Cross-compiles agent from source
 │   ├── config/config.go      # YAML playbook parsing
+│   │   └── import_tasks.go   # import_tasks static expansion
 │   ├── ssh/client.go         # SSH connection, SCP upload, agent execution
 │   └── modules/
 │       ├── apt/              # Package management
@@ -2766,6 +2767,62 @@ tasks:
       <param>: "{{ app_name }}"
 ```
 
+## import_tasks
+
+Imports a list of tasks from another YAML file, inserting them into the current playbook at parse time (static include). This is a controller-side directive, not a remote module.
+
+```yaml
+# Free-form syntax
+- name: Import common tasks
+  import_tasks: common/setup.yaml
+
+# Explicit file parameter
+- name: Import with file param
+  import_tasks:
+    file: common/setup.yaml
+
+# With vars (inherited by imported tasks as defaults)
+- name: Import with variables
+  vars:
+    app_port: 8080
+  import_tasks: app/deploy.yaml
+
+# Templated path (play vars + extra vars available)
+- name: Import dynamic path
+  import_tasks: "{{ tasks_dir }}/setup.yaml"
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `file` | required | Path to the YAML file containing tasks. Relative paths resolve relative to the file containing the directive. |
+
+**Imported file format**: The file must contain a YAML list of tasks at the root level:
+```yaml
+- name: First task
+  copy:
+    content: "hello"
+    dest: /tmp/hello.txt
+
+- name: Second task
+  ping:
+```
+
+**Key behaviors**:
+- **Static include**: Tasks are expanded at parse time, before execution begins. The `import_tasks` directive is replaced by the imported tasks in the flat task list.
+- **Relative paths**: Resolved relative to the directory of the file containing the `import_tasks` directive (not the top-level playbook). This enables nested imports to reference sibling files correctly.
+- **Nested imports**: Imported files can themselves contain `import_tasks` directives (up to 50 levels deep).
+- **Circular detection**: Circular imports are detected and reported with the full import chain.
+- **Vars inheritance**: `vars` on the `import_tasks` directive are inherited by all imported tasks as defaults. The imported task's own `vars` take precedence over inherited vars.
+- **Templated paths**: File paths support `{{ }}` template interpolation using play-level vars, vars_files, and extra vars. Host-specific variables are NOT available (expansion happens once, before the host loop).
+- **Same file twice**: The same file can be imported multiple times in different places.
+- **Absolute paths**: Absolute file paths are also supported.
+
+**Error cases**:
+- Missing file path → `file path is required`
+- File not found → `failed to load`
+- Circular import → `circular import detected: a.yaml -> b.yaml -> a.yaml`
+- Max depth exceeded → `maximum nesting depth (50) exceeded`
+
 ## Variable System
 
 Dibra implements a variable system with five precedence layers, template interpolation, and magic variables. For full documentation see `docs/Variables.md`.
@@ -2983,6 +3040,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_Tempfile` | Tempfile module: file/directory creation, prefix/suffix, custom path, permissions |
 | `TestPlaybook_Reboot` | Reboot module: boot time commands, search paths, test commands, shutdown detection |
 | `TestPlaybook_Variables` | Variables: precedence, namespaces, vars_files, extra vars, hostvars/groups |
+| `TestPlaybook_ImportTasks` | import_tasks: basic, free-form/file syntax, subdirectory, nested, circular detection, vars inheritance/override, multiple imports, mixed modules, templated paths, execution order, idempotency, absolute paths, extra vars |
 | `TestPlaybook_DockerSwarmServiceHealthcheck` | Swarm service healthcheck configuration (Phase 6.3.1) |
 | `TestPlaybook_DockerSwarmServiceDNS` | Swarm service DNS configuration (Phase 6.3.2) |
 | `TestPlaybook_DockerSwarmServiceMounts` | Swarm service mounts configuration (Phase 6.3.4) |

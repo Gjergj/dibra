@@ -1,0 +1,5 @@
+- name: Create marker from multi-import file
+  copy:
+    content: "multi-import-marker"
+    dest: /tmp/dibra-import-multi.txt
+    mode: "0644"

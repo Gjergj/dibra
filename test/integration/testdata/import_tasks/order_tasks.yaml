@@ -1,0 +1,3 @@
+- name: Write middle from imported
+  shell:
+    cmd: echo -n "2," >> /tmp/dibra-import-order.txt

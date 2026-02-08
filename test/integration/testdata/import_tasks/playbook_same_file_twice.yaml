@@ -1,0 +1,20 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Import ping tasks first time
+    import_tasks: ping_tasks.yaml
+
+  - name: Task between imports
+    copy:
+      content: "between-imports"
+      dest: /tmp/dibra-import-between.txt
+      mode: "0644"
+
+  - name: Import ping tasks second time
+    import_tasks: ping_tasks.yaml

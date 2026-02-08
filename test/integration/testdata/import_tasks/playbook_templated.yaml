@@ -1,0 +1,14 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+vars:
+  tasks_dir: subtasks
+
+tasks:
+  - name: Import using templated path
+    import_tasks: "{{ tasks_dir }}/sub_tasks.yaml"

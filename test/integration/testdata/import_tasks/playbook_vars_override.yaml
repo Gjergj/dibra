@@ -1,0 +1,14 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Import with vars that get overridden
+    vars:
+      greeting: hello
+      target: world
+    import_tasks: vars_inherit/tasks_with_own_vars.yaml

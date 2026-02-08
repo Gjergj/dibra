@@ -1,0 +1,32 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Regular task 1
+    copy:
+      content: "regular-1"
+      dest: /tmp/dibra-import-interleave1.txt
+      mode: "0644"
+
+  - name: Import basic tasks
+    import_tasks: basic_tasks.yaml
+
+  - name: Regular task 2
+    copy:
+      content: "regular-2"
+      dest: /tmp/dibra-import-interleave2.txt
+      mode: "0644"
+
+  - name: Import ping tasks
+    import_tasks: ping_tasks.yaml
+
+  - name: Regular task 3
+    copy:
+      content: "regular-3"
+      dest: /tmp/dibra-import-interleave3.txt
+      mode: "0644"

@@ -1,0 +1,8 @@
+- name: Task from adjacent file
+  copy:
+    content: "adjacent-import"
+    dest: /tmp/dibra-import-adjacent.txt
+    mode: "0644"
+
+- name: Import deeper from adjacent
+  import_tasks: deeper/level2.yaml

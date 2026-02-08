@@ -1,0 +1,11 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Import from subdirectory
+    import_tasks: subtasks/sub_tasks.yaml

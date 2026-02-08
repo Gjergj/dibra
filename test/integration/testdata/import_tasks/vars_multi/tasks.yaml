@@ -1,0 +1,4 @@
+- name: Import inner with vars
+  vars:
+    color: blue
+  import_tasks: inner/tasks.yaml

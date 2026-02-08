@@ -1,0 +1,5 @@
+- name: Create file from subdirectory task
+  copy:
+    content: "from-subtasks-dir"
+    dest: /tmp/dibra-import-subdir.txt
+    mode: "0644"

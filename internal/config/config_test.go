@@ -9,7 +9,7 @@ import (
 func TestLoad_StrictParsing_UnknownTopLevel(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "playbook.yaml")
-	os.WriteFile(p, []byte(`
+	_ = os.WriteFile(p, []byte(`
 hosts: []
 tasks: []
 bogus_field: true
@@ -25,7 +25,7 @@ bogus_field: true
 func TestLoad_StrictParsing_UnknownHostField(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "playbook.yaml")
-	os.WriteFile(p, []byte(`
+	_ = os.WriteFile(p, []byte(`
 hosts:
   - name: test
     host: 1.2.3.4
@@ -44,7 +44,7 @@ tasks: []
 func TestLoad_StrictParsing_UnknownTaskField(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "playbook.yaml")
-	os.WriteFile(p, []byte(`
+	_ = os.WriteFile(p, []byte(`
 hosts: []
 tasks:
   - name: test
@@ -61,7 +61,7 @@ tasks:
 func TestLoad_StrictParsing_ValidPlaybook(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "playbook.yaml")
-	os.WriteFile(p, []byte(`
+	_ = os.WriteFile(p, []byte(`
 hosts:
   - name: test
     host: 1.2.3.4

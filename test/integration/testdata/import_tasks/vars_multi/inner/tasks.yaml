@@ -1,0 +1,5 @@
+- name: Write multi-level var
+  copy:
+    content: "color={{ color }}"
+    dest: /tmp/dibra-import-vars-multi.txt
+    mode: "0644"

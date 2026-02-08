@@ -1,0 +1,11 @@
+- name: Create file from imported task
+  copy:
+    content: "imported-task-was-here"
+    dest: /tmp/dibra-import-basic.txt
+    mode: "0644"
+
+- name: Create second file from imported task
+  copy:
+    content: "second-imported-task"
+    dest: /tmp/dibra-import-basic2.txt
+    mode: "0644"

@@ -1,0 +1,3 @@
+- name: Run command from imported file
+  command:
+    cmd: echo imported-command-output

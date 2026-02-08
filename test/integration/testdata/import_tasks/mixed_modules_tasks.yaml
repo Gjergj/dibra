@@ -1,0 +1,14 @@
+- name: Ping from mixed import
+  ping:
+
+- name: Create file from mixed import
+  copy:
+    content: "mixed-import-file"
+    dest: /tmp/dibra-import-mixed.txt
+    mode: "0644"
+
+- name: Create directory from mixed import
+  file:
+    path: /tmp/dibra-import-mixed-dir
+    state: directory
+    mode: "0755"

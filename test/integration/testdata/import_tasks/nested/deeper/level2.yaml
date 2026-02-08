@@ -1,0 +1,5 @@
+- name: Level 2 task
+  copy:
+    content: "level2-task"
+    dest: /tmp/dibra-import-level2.txt
+    mode: "0644"

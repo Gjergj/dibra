@@ -1,0 +1,11 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Import using free-form syntax
+    import_tasks: basic_tasks.yaml

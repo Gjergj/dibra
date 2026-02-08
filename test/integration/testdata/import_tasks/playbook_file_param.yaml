@@ -1,0 +1,12 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Import using file parameter
+    import_tasks:
+      file: basic_tasks.yaml

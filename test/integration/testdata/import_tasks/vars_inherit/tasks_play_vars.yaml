@@ -1,0 +1,5 @@
+- name: Write play-level vars from imported tasks
+  copy:
+    content: "app={{ app_name }},version={{ app_version }}"
+    dest: /tmp/dibra-import-play-vars.txt
+    mode: "0644"

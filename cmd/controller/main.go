@@ -115,6 +115,21 @@ func main() {
 		playVars = vars.MergeMaps(playVars, varsFromFiles, vars.MergeStrategy(cfg.VarsMerge))
 	}
 
+	renderImportPath := func(s string) (string, error) {
+		ctx := make(map[string]interface{})
+		for k, v := range playVars {
+			ctx[k] = v
+		}
+		for k, v := range extraVarsMap {
+			ctx[k] = v
+		}
+		return vars.RenderString(s, ctx)
+	}
+	cfg.Tasks, err = config.ExpandImportTasks(cfg.Tasks, baseDir, renderImportPath)
+	if err != nil {
+		fatal("Failed to expand import_tasks: %v", err)
+	}
+
 	groupsMap := map[string][]string{}
 	for _, hostInfo := range hostInfos {
 		for _, group := range hostInfo.Groups {

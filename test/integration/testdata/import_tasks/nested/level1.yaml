@@ -1,0 +1,8 @@
+- name: Level 1 task
+  copy:
+    content: "level1-task"
+    dest: /tmp/dibra-import-level1.txt
+    mode: "0644"
+
+- name: Import level 2 tasks
+  import_tasks: deeper/level2.yaml

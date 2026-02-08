@@ -30,9 +30,28 @@ type Host struct {
 	Groups         []string `yaml:"groups,omitempty"`
 }
 
+type ImportTasksParams struct {
+	File string `yaml:"file,omitempty"`
+}
+
+func (p *ImportTasksParams) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		p.File = node.Value
+		return nil
+	}
+	type alias ImportTasksParams
+	var a alias
+	if err := node.Decode(&a); err != nil {
+		return err
+	}
+	*p = ImportTasksParams(a)
+	return nil
+}
+
 type Task struct {
 	Name                    string                         `yaml:"name"`
 	Vars                    map[string]interface{}         `yaml:"vars,omitempty"`
+	ImportTasks             *ImportTasksParams             `yaml:"import_tasks,omitempty"`
 	Apt                     *AptParams                     `yaml:"apt,omitempty"`
 	AptKey                  *AptKeyParams                  `yaml:"apt_key,omitempty"`
 	AptRepository           *AptRepositoryParams           `yaml:"apt_repository,omitempty"`
@@ -1118,6 +1137,11 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 						t.Reboot = &RebootParams{}
 					}
 				}
+			}
+
+			// Handle import_tasks with scalar string value (free-form syntax)
+			if key == "import_tasks" && value.Kind == yaml.ScalarNode && value.Tag != "!!null" {
+				t.ImportTasks = &ImportTasksParams{File: value.Value}
 			}
 		}
 	}

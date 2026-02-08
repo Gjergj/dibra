@@ -1,0 +1,15 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+vars:
+  app_name: myapp
+  app_version: "1.0"
+
+tasks:
+  - name: Import tasks that use play-level vars
+    import_tasks: vars_inherit/tasks_play_vars.yaml
