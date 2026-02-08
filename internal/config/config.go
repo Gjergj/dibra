@@ -8,23 +8,28 @@ import (
 )
 
 type Config struct {
-	Hosts []Host `yaml:"hosts"`
-	Tasks []Task `yaml:"tasks"`
+	Hosts     []Host                 `yaml:"hosts"`
+	Tasks     []Task                 `yaml:"tasks"`
+	Vars      map[string]interface{} `yaml:"vars,omitempty"`
+	VarsFiles []string               `yaml:"vars_files,omitempty"`
+	VarsMerge string                 `yaml:"vars_merge,omitempty"`
 }
 
 type Host struct {
-	Name           string `yaml:"name"`
-	Host           string `yaml:"host"`
-	Port           int    `yaml:"port"`
-	User           string `yaml:"user"`
-	Password       string `yaml:"password"`
-	SSHKeyPath     string `yaml:"ssh_key_path"`
-	Become         bool   `yaml:"become"`
-	BecomePassword string `yaml:"become_password"`
+	Name           string   `yaml:"name"`
+	Host           string   `yaml:"host"`
+	Port           int      `yaml:"port"`
+	User           string   `yaml:"user"`
+	Password       string   `yaml:"password"`
+	SSHKeyPath     string   `yaml:"ssh_key_path"`
+	Become         bool     `yaml:"become"`
+	BecomePassword string   `yaml:"become_password"`
+	Groups         []string `yaml:"groups,omitempty"`
 }
 
 type Task struct {
 	Name                    string                         `yaml:"name"`
+	Vars                    map[string]interface{}         `yaml:"vars,omitempty"`
 	Apt                     *AptParams                     `yaml:"apt,omitempty"`
 	AptKey                  *AptKeyParams                  `yaml:"apt_key,omitempty"`
 	AptRepository           *AptRepositoryParams           `yaml:"apt_repository,omitempty"`
@@ -77,9 +82,9 @@ type Task struct {
 	DockerNetworkInfo       *DockerNetworkInfoParams       `yaml:"docker_network_info,omitempty"`
 	DockerVolumeInfo        *DockerVolumeInfoParams        `yaml:"docker_volume_info,omitempty"`
 	DockerHostInfo          *DockerHostInfoParams          `yaml:"docker_host_info,omitempty"`
-	DockerSwarmInfo            *DockerSwarmInfoParams            `yaml:"docker_swarm_info,omitempty"`
-	DockerSwarmServiceInfo     *DockerSwarmServiceInfoParams     `yaml:"docker_swarm_service_info,omitempty"`
-	DockerNodeInfo             *DockerNodeInfoParams             `yaml:"docker_node_info,omitempty"`
+	DockerSwarmInfo         *DockerSwarmInfoParams         `yaml:"docker_swarm_info,omitempty"`
+	DockerSwarmServiceInfo  *DockerSwarmServiceInfoParams  `yaml:"docker_swarm_service_info,omitempty"`
+	DockerNodeInfo          *DockerNodeInfoParams          `yaml:"docker_node_info,omitempty"`
 }
 
 type DockerSwarmServiceParams struct {
@@ -104,17 +109,17 @@ type DockerSwarmServiceParams struct {
 	Secrets []ServiceSecretReference `yaml:"secrets,omitempty"`
 
 	// Phase 6.2: Update and Rollback Configuration
-	UpdateDelay           string  `yaml:"update_delay,omitempty"`
-	UpdateParallelism     uint64  `yaml:"update_parallelism,omitempty"`
-	UpdateFailureAction   string  `yaml:"update_failure_action,omitempty"`
-	UpdateOrder           string  `yaml:"update_order,omitempty"`
-	UpdateMonitor         string  `yaml:"update_monitor,omitempty"`
-	MaxFailureRatio       float32 `yaml:"max_failure_ratio,omitempty"`
-	RollbackDelay         string  `yaml:"rollback_delay,omitempty"`
-	RollbackParallelism   uint64  `yaml:"rollback_parallelism,omitempty"`
-	RollbackFailureAction string  `yaml:"rollback_failure_action,omitempty"`
-	RollbackOrder         string  `yaml:"rollback_order,omitempty"`
-	RollbackMonitor       string  `yaml:"rollback_monitor,omitempty"`
+	UpdateDelay             string  `yaml:"update_delay,omitempty"`
+	UpdateParallelism       uint64  `yaml:"update_parallelism,omitempty"`
+	UpdateFailureAction     string  `yaml:"update_failure_action,omitempty"`
+	UpdateOrder             string  `yaml:"update_order,omitempty"`
+	UpdateMonitor           string  `yaml:"update_monitor,omitempty"`
+	MaxFailureRatio         float32 `yaml:"max_failure_ratio,omitempty"`
+	RollbackDelay           string  `yaml:"rollback_delay,omitempty"`
+	RollbackParallelism     uint64  `yaml:"rollback_parallelism,omitempty"`
+	RollbackFailureAction   string  `yaml:"rollback_failure_action,omitempty"`
+	RollbackOrder           string  `yaml:"rollback_order,omitempty"`
+	RollbackMonitor         string  `yaml:"rollback_monitor,omitempty"`
 	RollbackMaxFailureRatio float32 `yaml:"rollback_max_failure_ratio,omitempty"`
 
 	// Phase 6.3: Additional Options
@@ -604,30 +609,30 @@ type IptablesParams struct {
 }
 
 type DockerContainerParams struct {
-	Name          string            `yaml:"name"`
-	Image         string            `yaml:"image,omitempty"`
-	State         string            `yaml:"state,omitempty"`
-	Command       interface{}       `yaml:"command,omitempty"`
-	Entrypoint    interface{}       `yaml:"entrypoint,omitempty"`
-	Args          []string          `yaml:"args,omitempty"`
-	Env           map[string]string `yaml:"env,omitempty"`
-	ExposedPorts  []string          `yaml:"exposed_ports,omitempty"`
-	Ports         []string          `yaml:"ports,omitempty"`
-	Volumes       []string          `yaml:"volumes,omitempty"`
-	NetworkMode   string            `yaml:"network_mode,omitempty"`
-	Networks      []DockerNetwork   `yaml:"networks,omitempty"`
-	NetworksAppend bool             `yaml:"networks_append,omitempty"`
-	RestartPolicy string            `yaml:"restart_policy,omitempty"`
-	AutoRemove    bool              `yaml:"auto_remove,omitempty"`
-	Privileged    bool              `yaml:"privileged,omitempty"`
-	User          string            `yaml:"user,omitempty"`
-	WorkingDir    string            `yaml:"working_dir,omitempty"`
-	Hostname      string            `yaml:"hostname,omitempty"`
-	Domainname    string            `yaml:"domainname,omitempty"`
-	Labels        map[string]string `yaml:"labels,omitempty"`
-	Links         []string          `yaml:"links,omitempty"`
-	LogDriver     string            `yaml:"log_driver,omitempty"`
-	LogOptions    map[string]string `yaml:"log_options,omitempty"`
+	Name           string            `yaml:"name"`
+	Image          string            `yaml:"image,omitempty"`
+	State          string            `yaml:"state,omitempty"`
+	Command        interface{}       `yaml:"command,omitempty"`
+	Entrypoint     interface{}       `yaml:"entrypoint,omitempty"`
+	Args           []string          `yaml:"args,omitempty"`
+	Env            map[string]string `yaml:"env,omitempty"`
+	ExposedPorts   []string          `yaml:"exposed_ports,omitempty"`
+	Ports          []string          `yaml:"ports,omitempty"`
+	Volumes        []string          `yaml:"volumes,omitempty"`
+	NetworkMode    string            `yaml:"network_mode,omitempty"`
+	Networks       []DockerNetwork   `yaml:"networks,omitempty"`
+	NetworksAppend bool              `yaml:"networks_append,omitempty"`
+	RestartPolicy  string            `yaml:"restart_policy,omitempty"`
+	AutoRemove     bool              `yaml:"auto_remove,omitempty"`
+	Privileged     bool              `yaml:"privileged,omitempty"`
+	User           string            `yaml:"user,omitempty"`
+	WorkingDir     string            `yaml:"working_dir,omitempty"`
+	Hostname       string            `yaml:"hostname,omitempty"`
+	Domainname     string            `yaml:"domainname,omitempty"`
+	Labels         map[string]string `yaml:"labels,omitempty"`
+	Links          []string          `yaml:"links,omitempty"`
+	LogDriver      string            `yaml:"log_driver,omitempty"`
+	LogOptions     map[string]string `yaml:"log_options,omitempty"`
 
 	// Capabilities (Tier 1)
 	CapAdd  []string `yaml:"cap_add,omitempty"`
@@ -1171,6 +1176,14 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	if cfg.VarsMerge == "" {
+		cfg.VarsMerge = "replace"
+	}
+
+	if cfg.VarsMerge != "replace" && cfg.VarsMerge != "merge" {
+		return nil, fmt.Errorf("invalid vars_merge %q (expected replace or merge)", cfg.VarsMerge)
 	}
 
 	for i := range cfg.Hosts {

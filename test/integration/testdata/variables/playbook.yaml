@@ -1,0 +1,43 @@
+vars_merge: merge
+vars:
+  greeting: "hello"
+  app:
+    name: "play"
+    port: 8080
+vars_files:
+  - vars_files.yml
+
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    groups:
+      - web
+
+tasks:
+  - name: Write variable summary
+    copy:
+      content: |
+        greeting={{ greeting }}
+        app_name={{ app.name }}
+        app_port={{ app.port }}
+        merged_value={{ vars.play.merge_key }}
+        namespace_group={{ vars.group.group_key }}
+        namespace_host={{ vars.host.host_key }}
+        namespace_extra={{ vars.extra.extra_key }}
+        inventory={{ inventory_hostname }}
+        group_names={{ group_names[0] }}
+        groups_members={{ groups.web[0] }}
+        hostvars_self={{ hostvars.testhost.inventory_hostname }}
+        hostvars_key={{ hostvars.testhost.host_key }}
+      dest: /tmp/dibra-vars.txt
+      mode: "0644"
+  - name: Task overrides
+    vars:
+      task_key: "task-value"
+    copy:
+      content: "task={{ vars.task.task_key }}"
+      dest: /tmp/dibra-task.txt
+      mode: "0644"

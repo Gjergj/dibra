@@ -1,0 +1,23 @@
+vars:
+  fetch_path: /tmp/{{ fetch_name }}.txt
+
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    groups:
+      - web
+
+tasks:
+  - name: Create file for fetch
+    copy:
+      content: "fetch={{ fetch_name }}"
+      dest: "{{ fetch_path }}"
+      mode: "0644"
+  - name: Fetch file
+    fetch:
+      src: "{{ fetch_path }}"
+      dest: /tmp/dibra-fetch/
+      flat: true

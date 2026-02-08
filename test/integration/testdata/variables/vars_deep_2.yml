@@ -1,0 +1,4 @@
+config:
+  b: "B"
+  shared:
+    y: 2

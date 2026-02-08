@@ -1,0 +1,4 @@
+config:
+  a: "A"
+  shared:
+    x: 1

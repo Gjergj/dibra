@@ -1,0 +1,24 @@
+vars:
+  base: "/opt"
+  app_name: "myapp"
+  deploy_dir: "{{ base }}/{{ app_name }}"
+  config_dir: "{{ deploy_dir }}/config"
+  file_name: "settings.yml"
+  final_path: "{{ config_dir }}/{{ file_name }}"
+
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+
+tasks:
+  - name: iterative rendering chain
+    copy:
+      content: |
+        deploy_dir={{ deploy_dir }}
+        config_dir={{ config_dir }}
+        final_path={{ final_path }}
+      dest: /tmp/dibra-iterative.txt
+      mode: "0644"

@@ -1,0 +1,3 @@
+app:
+  port: 9090
+merge_key: "from_vars_file"

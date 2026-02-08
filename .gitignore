@@ -24,4 +24,4 @@ Thumbs.db
 
 # Local config (if any)
 *.local.yaml
-*playbook.yaml
+samples/playbook.yaml

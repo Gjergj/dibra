@@ -1,0 +1,7 @@
+group_key: "group-value"
+merge_key: "group-merge"
+group_key_multi: "web"
+web_only: "web"
+nested:
+  b: "from_web"
+  common: "web"

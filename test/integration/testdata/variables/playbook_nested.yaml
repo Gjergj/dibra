@@ -1,0 +1,25 @@
+vars:
+  db:
+    host: "db.example.com"
+    port: 5432
+    creds:
+      user: "admin"
+      pass: "secret"
+  items:
+    - first
+    - second
+    - third
+
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+
+tasks:
+  - name: Write nested vars output
+    copy:
+      content: "db_host={{ db.host }},db_port={{ db.port }},db_user={{ db.creds.user }},item0={{ items[0] }},item2={{ items[2] }}"
+      dest: /tmp/dibra-nested.txt
+      mode: "0644"

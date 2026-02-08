@@ -1,0 +1,22 @@
+vars_merge: replace
+vars:
+  app:
+    name: "play"
+    port: 8080
+  base_dir: /tmp/dibra-replace-test
+
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    groups:
+      - web
+
+tasks:
+  - name: Write replace merge output
+    copy:
+      content: "app_name={{ app.name }},base_dir={{ base_dir }}"
+      dest: /tmp/dibra-replace.txt
+      mode: "0644"
