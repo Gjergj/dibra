@@ -1,8 +1,11 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"reflect"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -1034,8 +1037,53 @@ func (a *AptParams) GetPackages() []string {
 	}
 }
 
+// knownYAMLKeys returns the set of valid YAML keys for a struct type.
+func knownYAMLKeys(t reflect.Type) map[string]bool {
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	keys := make(map[string]bool)
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		tag := f.Tag.Get("yaml")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		name := strings.SplitN(tag, ",", 2)[0]
+		if name != "" {
+			keys[name] = true
+		}
+	}
+	return keys
+}
+
+// checkUnknownFields validates that all keys in a YAML mapping node are known
+// fields for the given struct type. Returns an error listing unknown fields.
+func checkUnknownFields(node *yaml.Node, t reflect.Type) error {
+	if node.Kind != yaml.MappingNode {
+		return nil
+	}
+	known := knownYAMLKeys(t)
+	var unknown []string
+	for i := 0; i < len(node.Content); i += 2 {
+		key := node.Content[i].Value
+		if !known[key] {
+			unknown = append(unknown, fmt.Sprintf("%q (line %d)", key, node.Content[i].Line))
+		}
+	}
+	if len(unknown) > 0 {
+		return fmt.Errorf("unknown fields: %s", strings.Join(unknown, ", "))
+	}
+	return nil
+}
+
 func (t *Task) UnmarshalYAML(node *yaml.Node) error {
-	// First, unmarshal into an alias type to get normal behavior
+	// Check for unknown fields before decoding
+	if err := checkUnknownFields(node, reflect.TypeOf(Task{})); err != nil {
+		return fmt.Errorf("task: %w", err)
+	}
+
+	// Unmarshal into an alias type to get normal behavior
 	type TaskAlias Task
 	var alias TaskAlias
 	if err := node.Decode(&alias); err != nil {
@@ -1174,7 +1222,9 @@ func Load(path string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
