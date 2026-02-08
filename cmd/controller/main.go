@@ -197,6 +197,13 @@ func main() {
 
 		if needsUpload {
 			fmt.Println("  Uploading agent...")
+			if host.Become && host.User != "root" {
+				_, _, err := client.RunWithSudo(fmt.Sprintf("rm -f %s", remoteAgentPath))
+				if err != nil {
+					fmt.Printf("  ✗ Failed to remove agent: %v\n", err)
+					continue
+				}
+			}
 			if err := client.UploadFile(agentBinary, remoteAgentPath); err != nil {
 				fmt.Printf("  ✗ Failed to upload agent: %v\n", err)
 				continue
@@ -567,18 +574,13 @@ func main() {
 
 				renderedArgs, err := renderArgs(copyArgs, flattened)
 
-
 				if err != nil {
-
 
 					fmt.Printf("    ✗ Failed to render args: %v\n", err)
 
-
 					continue
 
-
 				}
-
 
 				modReq = ModuleRequest{Module: "copy", Args: renderedArgs}
 
@@ -760,18 +762,13 @@ func main() {
 
 				renderedArgs, err := renderArgs(unarchiveArgs, flattened)
 
-
 				if err != nil {
-
 
 					fmt.Printf("    ✗ Failed to render args: %v\n", err)
 
-
 					continue
 
-
 				}
-
 
 				modReq = ModuleRequest{Module: "unarchive", Args: renderedArgs}
 

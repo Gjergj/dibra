@@ -292,12 +292,16 @@ func TestPlaybook_DockerVolumes(t *testing.T) {
 	defer remoteExec(t, client, "docker rm -f "+containerName+" || true")
 
 	t.Run("bind mount", func(t *testing.T) {
-		// Create test directory
-		remoteExec(t, client, "mkdir -p /tmp/docker-test-vol")
-		remoteExec(t, client, "echo 'test content' > /tmp/docker-test-vol/test.txt")
-		defer remoteExec(t, client, "rm -rf /tmp/docker-test-vol")
+		volumeName := "dibra-test-vol"
+		remoteExec(t, client, "docker volume rm -f "+volumeName+" || true")
+		defer remoteExec(t, client, "docker volume rm -f "+volumeName+" || true")
 
 		playbook := playbookHeader + `
+  - name: Create test volume
+    docker_volume:
+      name: ` + volumeName + `
+      state: present
+
   - name: Create container with volume
     docker_container:
       name: ` + containerName + `
@@ -305,14 +309,17 @@ func TestPlaybook_DockerVolumes(t *testing.T) {
       state: started
       command: ["sleep", "300"]
       volumes:
-        - "/tmp/docker-test-vol:/data:ro"
+        - "` + volumeName + `:/data"
 `
 		output := runPlaybook(t, playbook)
 		if strings.Contains(output, "FAILED") {
 			t.Fatalf("Failed: %s", output)
 		}
 
-		// Verify mount
+		// Write test content into the volume via the container
+		remoteExec(t, client, "docker exec "+containerName+" sh -c 'echo test content > /data/test.txt'")
+
+		// Verify mount works
 		content := remoteExec(t, client, "docker exec "+containerName+" cat /data/test.txt")
 		if !strings.Contains(content, "test content") {
 			t.Errorf("Expected 'test content', got: %s", content)

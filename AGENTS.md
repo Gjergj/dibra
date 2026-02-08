@@ -3093,6 +3093,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_Reboot` | Reboot module: boot time commands, search paths, test commands, shutdown detection |
 | `TestPlaybook_Variables` | Variables: precedence, namespaces, vars_files, extra vars, hostvars/groups |
 | `TestPlaybook_ImportTasks` | import_tasks: basic, free-form/file syntax, subdirectory, nested, circular detection, vars inheritance/override, multiple imports, mixed modules, templated paths, execution order, idempotency, absolute paths, extra vars |
+| `TestPlaybook_IncludeTasks` | include_tasks: basic, free-form/file syntax, subdirectory, nested includes, vars inheritance/override, multiple includes, mixed modules, templated paths (play vars, host vars, extra vars), nested include+import interaction, execution order, idempotency, absolute paths, extra vars, deeply nested 3 levels |
 | `TestPlaybook_DockerSwarmServiceHealthcheck` | Swarm service healthcheck configuration (Phase 6.3.1) |
 | `TestPlaybook_DockerSwarmServiceDNS` | Swarm service DNS configuration (Phase 6.3.2) |
 | `TestPlaybook_DockerSwarmServiceMounts` | Swarm service mounts configuration (Phase 6.3.4) |
