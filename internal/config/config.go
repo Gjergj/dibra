@@ -100,6 +100,7 @@ type Task struct {
 	Iptables                *IptablesParams                `yaml:"iptables,omitempty"`
 	IptablesState           *IptablesStateParams           `yaml:"iptables_state,omitempty"`
 	Tempfile                *TempfileParams                `yaml:"tempfile,omitempty"`
+	Find                    *FindParams                    `yaml:"find,omitempty"`
 	Reboot                  *RebootParams                  `yaml:"reboot,omitempty"`
 	DockerContainer         *DockerContainerParams         `yaml:"docker_container,omitempty"`
 	DockerImage             *DockerImageParams             `yaml:"docker_image,omitempty"`
@@ -259,6 +260,32 @@ type TempfileParams struct {
 	Prefix *string `yaml:"prefix,omitempty"`
 	Suffix string  `yaml:"suffix,omitempty"`
 	State  string  `yaml:"state,omitempty"`
+}
+
+type FindParams struct {
+	Paths             []string `yaml:"paths,omitempty"`
+	Path              []string `yaml:"path,omitempty"`
+	Name              []string `yaml:"name,omitempty"`
+	Patterns          []string `yaml:"patterns,omitempty"`
+	Pattern           []string `yaml:"pattern,omitempty"`
+	Excludes          []string `yaml:"excludes,omitempty"`
+	Exclude           []string `yaml:"exclude,omitempty"`
+	Contains          string   `yaml:"contains,omitempty"`
+	ReadWholeFile     bool     `yaml:"read_whole_file,omitempty"`
+	FileType          string   `yaml:"file_type,omitempty"`
+	Age               string   `yaml:"age,omitempty"`
+	AgeStamp          string   `yaml:"age_stamp,omitempty"`
+	Size              string   `yaml:"size,omitempty"`
+	Recurse           bool     `yaml:"recurse,omitempty"`
+	Hidden            bool     `yaml:"hidden,omitempty"`
+	Follow            bool     `yaml:"follow,omitempty"`
+	GetChecksum       bool     `yaml:"get_checksum,omitempty"`
+	ChecksumAlgorithm string   `yaml:"checksum_algorithm,omitempty"`
+	UseRegex          bool     `yaml:"use_regex,omitempty"`
+	Depth             int      `yaml:"depth,omitempty"`
+	Mode              string   `yaml:"mode,omitempty"`
+	ExactMode         *bool    `yaml:"exact_mode,omitempty"`
+	Limit             int      `yaml:"limit,omitempty"`
 }
 
 type RebootParams struct {

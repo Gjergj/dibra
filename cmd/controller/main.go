@@ -1023,6 +1023,54 @@ func main() {
 
 				modReq = ModuleRequest{Module: "tempfile", Args: renderedArgs}
 
+			case task.Find != nil:
+				paths := task.Find.Paths
+				if len(paths) == 0 {
+					paths = task.Find.Path
+				}
+				if len(paths) == 0 {
+					paths = task.Find.Name
+				}
+				patterns := task.Find.Patterns
+				if len(patterns) == 0 {
+					patterns = task.Find.Pattern
+				}
+				excludes := task.Find.Excludes
+				if len(excludes) == 0 {
+					excludes = task.Find.Exclude
+				}
+				exactMode := true
+				if task.Find.ExactMode != nil {
+					exactMode = *task.Find.ExactMode
+				}
+				args := map[string]interface{}{
+					"paths":              paths,
+					"patterns":           patterns,
+					"excludes":           excludes,
+					"contains":           task.Find.Contains,
+					"read_whole_file":    task.Find.ReadWholeFile,
+					"file_type":          task.Find.FileType,
+					"age":                task.Find.Age,
+					"age_stamp":          task.Find.AgeStamp,
+					"size":               task.Find.Size,
+					"recurse":            task.Find.Recurse,
+					"hidden":             task.Find.Hidden,
+					"follow":             task.Find.Follow,
+					"get_checksum":       task.Find.GetChecksum,
+					"checksum_algorithm": task.Find.ChecksumAlgorithm,
+					"use_regex":          task.Find.UseRegex,
+					"depth":              task.Find.Depth,
+					"mode":               task.Find.Mode,
+					"exact_mode":         exactMode,
+					"limit":              task.Find.Limit,
+				}
+				renderedArgs, err := renderArgs(args, flattened)
+				if err != nil {
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+					continue
+				}
+				modReq = ModuleRequest{Module: "find", Args: renderedArgs}
+
 			case task.DockerContainer != nil:
 				args := map[string]interface{}{
 					"name":            task.DockerContainer.Name,

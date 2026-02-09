@@ -44,6 +44,7 @@ import (
 	"github.com/gjergjiramku/dibra/internal/modules/docker_volume"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_volume_info"
 	"github.com/gjergjiramku/dibra/internal/modules/file"
+	"github.com/gjergjiramku/dibra/internal/modules/find"
 	"github.com/gjergjiramku/dibra/internal/modules/git"
 	"github.com/gjergjiramku/dibra/internal/modules/group"
 	"github.com/gjergjiramku/dibra/internal/modules/iptables"
@@ -537,6 +538,14 @@ func main() {
 			return
 		}
 		writeJSON(docker_node_info.Execute(req))
+
+	case "find":
+		var req find.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse find request: %v", err))
+			return
+		}
+		writeJSON(find.Execute(req))
 
 	default:
 		writeError(fmt.Sprintf("unknown module: %s", modReq.Module))

@@ -217,6 +217,7 @@ dibra/
 │       ├── reboot/           # Reboot machine and wait for it to come back
 │       ├── script/           # Run local scripts on remote hosts
 │       ├── slurp/            # Read file contents from remote hosts (base64)
+│       ├── find/             # Find files/directories matching criteria
        └── docker_container/ # Docker container management
 ├── test/
 │   ├── Dockerfile            # Ubuntu 22.04 + systemd + SSH
@@ -1893,6 +1894,139 @@ Internal module used by fetch. Gets file metadata and checksum.
     follow: true  # Follow symlinks
 ```
 
+### find
+
+Find files, directories, or links on remote hosts matching various criteria. This is a read-only module that never reports changes.
+
+```yaml
+# Find all .log files recursively
+- name: Find log files
+  find:
+    paths:
+      - /var/log
+    patterns:
+      - "*.log"
+    recurse: true
+
+# Find files older than 7 days
+- name: Find old files
+  find:
+    paths:
+      - /tmp
+    age: 7d
+    recurse: true
+
+# Find large files with checksums
+- name: Find large files
+  find:
+    paths:
+      - /opt/app
+    size: 100m
+    get_checksum: true
+    recurse: true
+
+# Find files using regex patterns
+- name: Find config files with regex
+  find:
+    paths:
+      - /etc
+    patterns:
+      - ".*\\.conf$"
+    use_regex: true
+    recurse: true
+
+# Find directories matching pattern
+- name: Find cache directories
+  find:
+    paths:
+      - /home
+    file_type: directory
+    patterns:
+      - ".cache"
+    recurse: true
+    hidden: true
+
+# Find files containing a pattern
+- name: Find files with TODO
+  find:
+    paths:
+      - /opt/app/src
+    contains: "TODO"
+    patterns:
+      - "*.py"
+    recurse: true
+
+# Find with multiple criteria
+- name: Find recent large logs
+  find:
+    paths:
+      - /var/log
+    patterns:
+      - "*.log"
+    age: "-7d"
+    size: 1m
+    recurse: true
+    depth: 3
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `paths` | required | List of directories to search in. Aliases: `path`, `name`. |
+| `patterns` | `["*"]` | Glob patterns (or regex if `use_regex=true`) to match filenames. Alias: `pattern`. |
+| `excludes` | `[]` | Patterns to exclude from results. Alias: `exclude`. |
+| `contains` | | Regex pattern to match against file contents (files only). |
+| `read_whole_file` | `false` | Read entire file for `contains` matching (enables cross-line matches). |
+| `file_type` | `file` | Type to find: `file`, `directory`, `link`, `any`. |
+| `age` | | File age filter. Positive = older than, negative = newer than. Units: `s`, `m`, `h`, `d`, `w`. |
+| `age_stamp` | `mtime` | Which timestamp to use for age: `mtime`, `ctime`, `atime`. |
+| `size` | | File size filter. Positive = larger than, negative = smaller than. Units: `b`, `k`, `m`, `g`, `t`. |
+| `recurse` | `false` | Search directories recursively. |
+| `hidden` | `false` | Include hidden files/directories (starting with `.`). |
+| `follow` | `false` | Follow symbolic links. |
+| `get_checksum` | `false` | Compute file checksums (regular files only). |
+| `checksum_algorithm` | `sha1` | Checksum algorithm: `md5`, `sha1`, `sha256`, `sha384`, `sha512`. |
+| `use_regex` | `false` | Treat patterns/excludes as regex instead of glob. |
+| `depth` | `0` | Maximum recursion depth (0 = unlimited). |
+| `mode` | | File permission filter (octal, e.g., `"0644"`). |
+| `exact_mode` | `true` | If true, match exact mode. If false, match minimum permissions. |
+| `limit` | `0` | Maximum number of matches to return (0 = unlimited). |
+
+**Returns**:
+```json
+{
+  "changed": false,
+  "msg": "All paths examined",
+  "files": [
+    {
+      "path": "/var/log/syslog",
+      "mode": "0644",
+      "isdir": false,
+      "isreg": true,
+      "islnk": false,
+      "uid": 0,
+      "gid": 4,
+      "size": 12345,
+      "atime": 1700000000.0,
+      "mtime": 1700000000.0,
+      "ctime": 1700000000.0,
+      "gr_name": "adm",
+      "pw_name": "root",
+      "checksum": "da39a3ee5e6b..."
+    }
+  ],
+  "matched": 1,
+  "examined": 10,
+  "skipped_paths": {}
+}
+```
+
+**Size Filter Behavior**:
+- Size filter applies only to regular files, not directories
+- When `file_type: "any"`, directories pass regardless of size filter
+- When `file_type: "directory"`, size filter is not applied
+
+**Idempotency**: Always returns `changed: false` (read-only module).
+
 ### tempfile
 
 Creates temporary files and directories. Files/directories created by this module are accessible only by the creator.
@@ -3156,6 +3290,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_DockerSecretHashIdempotency` | Secret hash-based idempotency, data change detection (Phase 7.3) |
 | `TestPlaybook_DockerConfigHashIdempotency` | Config hash-based idempotency, label-only updates (Phase 7.3) |
 | `TestPlaybook_DockerVolumePrune` | Prune filter improvements (Phase 7.2) |
+| `TestPlaybook_Find` | Find module: recursive/non-recursive search, glob/regex patterns, excludes, file_type (file/directory/link/any), age/size filters, hidden files, symlinks, depth limit, mode filtering, checksum algorithms, contains content matching, multiple paths, limit, path/pattern/exclude aliases, template variables, idempotency |
 
 Each test:
 1. Runs a playbook via `go run ./cmd/controller`
