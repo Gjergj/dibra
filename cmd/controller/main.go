@@ -654,6 +654,19 @@ func main() {
 
 				modReq = ModuleRequest{Module: "ping", Args: renderedArgs}
 
+			case task.Slurp != nil:
+				src := task.Slurp.Src
+				if src == "" {
+					src = task.Slurp.Path
+				}
+				args := map[string]interface{}{"src": src}
+				renderedArgs, err := renderArgs(args, flattened)
+				if err != nil {
+					fmt.Printf("    ✗ Failed to render args: %v\n", err)
+					continue
+				}
+				modReq = ModuleRequest{Module: "slurp", Args: renderedArgs}
+
 			case task.Command != nil:
 				stdinAddNewline := true
 				if task.Command.StdinAddNewline != nil {

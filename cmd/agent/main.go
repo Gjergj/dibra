@@ -56,6 +56,7 @@ import (
 	"github.com/gjergjiramku/dibra/internal/modules/service"
 	"github.com/gjergjiramku/dibra/internal/modules/service_facts"
 	"github.com/gjergjiramku/dibra/internal/modules/shell"
+	"github.com/gjergjiramku/dibra/internal/modules/slurp"
 	"github.com/gjergjiramku/dibra/internal/modules/stat"
 	"github.com/gjergjiramku/dibra/internal/modules/systemd_service"
 	"github.com/gjergjiramku/dibra/internal/modules/tempfile"
@@ -216,6 +217,14 @@ func main() {
 			return
 		}
 		writeJSON(ping.Execute(req))
+
+	case "slurp":
+		var req slurp.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse slurp request: %v", err))
+			return
+		}
+		writeJSON(slurp.Execute(req))
 
 	case "reboot":
 		var req reboot.Request

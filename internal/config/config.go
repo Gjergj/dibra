@@ -88,6 +88,7 @@ type Task struct {
 	Service                 *ServiceParams                 `yaml:"service,omitempty"`
 	ServiceFacts            *ServiceFactsParams            `yaml:"service_facts,omitempty"`
 	Ping                    *PingParams                    `yaml:"ping,omitempty"`
+	Slurp                   *SlurpParams                   `yaml:"slurp,omitempty"`
 	Command                 *CommandParams                 `yaml:"command,omitempty"`
 	Shell                   *ShellParams                   `yaml:"shell,omitempty"`
 	Script                  *ScriptParams                  `yaml:"script,omitempty"`
@@ -274,6 +275,11 @@ type RebootParams struct {
 
 type PingParams struct {
 	Data string `yaml:"data,omitempty"`
+}
+
+type SlurpParams struct {
+	Src  string `yaml:"src,omitempty"`
+	Path string `yaml:"path,omitempty"`
 }
 
 type CommandParams struct {

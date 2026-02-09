@@ -216,6 +216,7 @@ dibra/
 │       ├── iptables/         # Iptables firewall rule management
 │       ├── reboot/           # Reboot machine and wait for it to come back
 │       ├── script/           # Run local scripts on remote hosts
+│       ├── slurp/            # Read file contents from remote hosts (base64)
        └── docker_container/ # Docker container management
 ├── test/
 │   ├── Dockerfile            # Ubuntu 22.04 + systemd + SSH
@@ -1833,6 +1834,54 @@ Unpacks an archive after (optionally) copying it from the local machine. Support
 - For zip: Checks if all files in archive exist in destination
 - Use `creates` parameter for faster idempotency checks
 
+### slurp
+
+Reads a file from the remote host and returns its contents as base64-encoded data. This is a read-only module that never reports changes.
+
+```yaml
+# Read a file using src
+- name: Read remote config
+  slurp:
+    src: /etc/myapp/config.yaml
+
+# Read a file using path alias
+- name: Read remote file
+  slurp:
+    path: /var/run/sshd.pid
+
+# Read with variable path
+- name: Read dynamic file
+  slurp:
+    src: "{{ config_dir }}/settings.yaml"
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `src` | required | Path to the file on the remote system. Must be a file, not a directory. |
+| `path` | | Alias for `src`. |
+
+**Returns**:
+```json
+{
+  "changed": false,
+  "content": "SGVsbG8gV29ybGQK",
+  "source": "/etc/myapp/config.yaml",
+  "encoding": "base64"
+}
+```
+
+**Error Messages**:
+- File not found → `file not found: <path>`
+- Permission denied → `file is not readable: <path>`
+- Path is a directory → `source is a directory and must be a file: <path>`
+- Other errors → `unable to slurp file: <path>: <error>`
+
+**Notes**:
+- Returns base64-encoded content; decode with `base64 -d` or equivalent
+- Follows symlinks (uses `os.Stat`, not `os.Lstat`)
+- Works with binary files, empty files, proc files, and unicode content
+- Requires at least twice the RAM of the original file size
+
 ### stat
 
 Internal module used by fetch. Gets file metadata and checksum.
@@ -3090,6 +3139,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_FullDeployWorkflow` | Full app deployment: dirs, config, symlinks |
 | `TestPlaybook_Unarchive` | Unarchive module Basic tar extraction + idempotency |
 | `TestPlaybook_Tempfile` | Tempfile module: file/directory creation, prefix/suffix, custom path, permissions |
+| `TestPlaybook_Slurp` | Slurp module: text/binary/empty/unicode files, path alias, proc files, symlinks, error handling (not found, directory, unreadable, invalid path), idempotency, template variables |
 | `TestPlaybook_Reboot` | Reboot module: boot time commands, search paths, test commands, shutdown detection |
 | `TestPlaybook_Variables` | Variables: precedence, namespaces, vars_files, extra vars, hostvars/groups |
 | `TestPlaybook_ImportTasks` | import_tasks: basic, free-form/file syntax, subdirectory, nested, circular detection, vars inheritance/override, multiple imports, mixed modules, templated paths, execution order, idempotency, absolute paths, extra vars |
