@@ -1,0 +1,10 @@
+- name: Run command in included file
+  shell:
+    cmd: echo from_included
+  register: included_result
+
+- name: Write included result
+  copy:
+    content: "included={{ included_result.stdout }}"
+    dest: /tmp/dibra-register-include-result.txt
+    mode: "0644"

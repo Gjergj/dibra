@@ -113,6 +113,7 @@ func (r Resolver) ResolveHostVars(req ResolveRequest) (ResolvedVars, error) {
 		{Name: "group", Values: mergeGroupVars(req.Host.Groups, req.InventoryVars.Group, r.MergeStrategy)},
 		{Name: "host", Values: req.InventoryVars.Host[req.Host.Name]},
 		{Name: "play", Values: req.PlayVars},
+		{Name: "runtime", Values: req.RuntimeVars},
 		{Name: "task", Values: req.TaskVars},
 		{Name: "extra", Values: req.ExtraVars},
 	}
@@ -123,11 +124,12 @@ func (r Resolver) ResolveHostVars(req ResolveRequest) (ResolvedVars, error) {
 	}
 
 	namespaces := map[string]interface{}{
-		"group": layers[0].Values,
-		"host":  layers[1].Values,
-		"play":  layers[2].Values,
-		"task":  layers[3].Values,
-		"extra": layers[4].Values,
+		"group":   layers[0].Values,
+		"host":    layers[1].Values,
+		"play":    layers[2].Values,
+		"runtime": layers[3].Values,
+		"task":    layers[4].Values,
+		"extra":   layers[5].Values,
 	}
 
 	return ResolvedVars{
@@ -146,6 +148,7 @@ type ResolveRequest struct {
 	InventoryVars InventoryVars
 	PlayVars      map[string]interface{}
 	TaskVars      map[string]interface{}
+	RuntimeVars   map[string]interface{}
 	ExtraVars     map[string]interface{}
 }
 

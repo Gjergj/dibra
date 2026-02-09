@@ -20,7 +20,7 @@ func getProjectRoot() string {
 }
 
 const (
-	testHost     = "localhost"
+	testHost     = "127.0.0.1"
 	testPort     = 2222
 	testUser     = "root"
 	testPassword = "rootpass"

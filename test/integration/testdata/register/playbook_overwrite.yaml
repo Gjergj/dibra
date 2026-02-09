@@ -1,0 +1,24 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: First register
+    shell:
+      cmd: echo "first"
+    register: my_var
+
+  - name: Second register (overwrite)
+    shell:
+      cmd: echo "second"
+    register: my_var
+
+  - name: Verify overwrite
+    copy:
+      content: "{{ my_var.stdout }}"
+      dest: /tmp/dibra-overwrite.txt
+      mode: "0644"

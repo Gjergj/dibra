@@ -1,0 +1,21 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Create a directory
+    file:
+      path: /tmp/dibra-register-dir
+      state: directory
+      mode: "0755"
+    register: dir_result
+
+  - name: Write dir result
+    copy:
+      content: "path={{ dir_result.path }} changed={{ dir_result.changed }} state={{ dir_result.state }}"
+      dest: /tmp/dibra-register-file-mod.txt
+      mode: "0644"

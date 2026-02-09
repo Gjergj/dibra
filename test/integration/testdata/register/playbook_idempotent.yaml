@@ -1,0 +1,28 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Create file first time
+    copy:
+      content: "idempotent content"
+      dest: /tmp/dibra-register-idemp.txt
+      mode: "0644"
+    register: first_run
+
+  - name: Create file second time (should be idempotent)
+    copy:
+      content: "idempotent content"
+      dest: /tmp/dibra-register-idemp.txt
+      mode: "0644"
+    register: second_run
+
+  - name: Write results
+    copy:
+      content: "first_changed={{ first_run.changed }} second_changed={{ second_run.changed }}"
+      dest: /tmp/dibra-register-idemp-result.txt
+      mode: "0644"

@@ -1,0 +1,24 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Step 1 - get hostname
+    command:
+      cmd: hostname
+    register: step1
+
+  - name: Step 2 - echo step1 output
+    shell:
+      cmd: "echo got={{ step1.stdout }}"
+    register: step2
+
+  - name: Step 3 - write chained result
+    copy:
+      content: "{{ step2.stdout }}"
+      dest: /tmp/dibra-register-chain.txt
+      mode: "0644"

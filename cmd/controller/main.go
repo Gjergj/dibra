@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -141,6 +142,11 @@ func main() {
 		}
 	}
 
+	hostRuntimeVars := make(map[string]map[string]interface{})
+	for _, host := range cfg.Hosts {
+		hostRuntimeVars[host.Name] = make(map[string]interface{})
+	}
+
 	for _, host := range cfg.Hosts {
 		fmt.Printf("\n=== Host: %s (%s) ===\n", host.Name, host.Host)
 
@@ -224,7 +230,14 @@ func main() {
 			task := taskQueue[taskIdx]
 			fmt.Printf("  Task: %s\n", task.Name)
 
-			taskHostvars, err := buildHostvarsForTask(hostInfos, varsResolver, inventoryVars, playVars, task.Vars, extraVarsMap, groupsMap)
+			if task.Register != "" {
+				if err := validateVarName(task.Register); err != nil {
+					fmt.Printf("    ✗ %v\n", err)
+					continue
+				}
+			}
+
+			taskHostvars, err := buildHostvarsForTask(hostInfos, varsResolver, inventoryVars, playVars, task.Vars, extraVarsMap, hostRuntimeVars, groupsMap)
 			if err != nil {
 				fmt.Printf("    ✗ Failed to build hostvars: %v\n", err)
 				continue
@@ -239,6 +252,7 @@ func main() {
 				PlayVars:      playVars,
 				TaskVars:      task.Vars,
 				ExtraVars:     extraVarsMap,
+				RuntimeVars:   hostRuntimeVars[host.Name],
 			})
 			if err != nil {
 				fmt.Printf("    ✗ Failed to resolve vars: %v\n", err)
@@ -368,6 +382,18 @@ func main() {
 				}
 				resp := executeFetch(client, remoteAgentPath, host.Name, renderedFetch, *verbose)
 				printResponse(resp, *verbose)
+				if task.Register != "" {
+					result := genericResponseToMap(resp)
+					localDest := computeFetchDest(renderedFetch, host.Name)
+					result["dest"] = localDest
+					result["src"] = renderedFetch.Src
+					if !resp.Failed {
+						if checksum, err := sha1File(localDest); err == nil {
+							result["checksum"] = checksum
+						}
+					}
+					registerResult(hostRuntimeVars, host.Name, task, result)
+				}
 				continue
 
 			case task.URI != nil:
@@ -735,8 +761,22 @@ func main() {
 					fmt.Printf("    ✗ Failed to render script params: %v\n", err)
 					continue
 				}
-				resp := executeScript(client, remoteAgentPath, renderedScript, *verbose)
+				resp, rawJSON := executeScript(client, remoteAgentPath, renderedScript, *verbose)
 				printResponse(resp, *verbose)
+				if task.Register != "" {
+					var fullResult map[string]interface{}
+					if rawJSON != "" {
+						err = json.Unmarshal([]byte(rawJSON), &fullResult)
+						if err != nil {
+							fmt.Printf("    ✗ Failed to parse script response: %v\n", err)
+							continue
+						}
+					}
+					if fullResult == nil {
+						fullResult = genericResponseToMap(resp)
+					}
+					registerResult(hostRuntimeVars, host.Name, task, fullResult)
+				}
 				continue
 
 			case task.Unarchive != nil:
@@ -1935,6 +1975,11 @@ func main() {
 				}
 				resp := executeReboot(client, remoteAgentPath, host, renderedReboot, *verbose)
 				printResponse(resp, *verbose)
+				if task.Register != "" {
+					result := genericResponseToMap(resp)
+					result["rebooted"] = !resp.Failed
+					registerResult(hostRuntimeVars, host.Name, task, result)
+				}
 				continue
 
 			case task.IncludeTasks != nil:
@@ -2021,6 +2066,13 @@ func main() {
 			output, err := client.ExecuteAgent(remoteAgentPath, reqData)
 			if err != nil {
 				fmt.Printf("    ✗ Execution failed: %v\n", err)
+				if task.Register != "" {
+					registerResult(hostRuntimeVars, host.Name, task, map[string]interface{}{
+						"unreachable": true,
+						"failed":      true,
+						"msg":         fmt.Sprintf("Execution failed: %v", err),
+					})
+				}
 				continue
 			}
 
@@ -2032,6 +2084,12 @@ func main() {
 			if err := json.Unmarshal([]byte(jsonOutput), &resp); err != nil {
 				fmt.Printf("    ✗ Failed to parse response: %v\n", err)
 				fmt.Printf("    Raw output: %s\n", outputStr)
+				if task.Register != "" {
+					registerResult(hostRuntimeVars, host.Name, task, map[string]interface{}{
+						"failed": true,
+						"msg":    fmt.Sprintf("Failed to parse response: %v", err),
+					})
+				}
 				continue
 			}
 
@@ -2065,6 +2123,14 @@ func main() {
 
 			if *verbose && resp.Stdout != "" {
 				fmt.Printf("    Stdout: %s\n", truncate(resp.Stdout, 500))
+			}
+
+			if task.Register != "" {
+				var fullResult map[string]interface{}
+				if err := json.Unmarshal([]byte(jsonOutput), &fullResult); err != nil {
+					fullResult = genericResponseToMap(resp)
+				}
+				registerResult(hostRuntimeVars, host.Name, task, fullResult)
 			}
 		}
 	}
@@ -2100,6 +2166,101 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max] + "..."
+}
+
+var validVarNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func validateVarName(name string) error {
+	if !validVarNameRE.MatchString(name) {
+		return fmt.Errorf("invalid variable name %q: must start with a letter or underscore and contain only letters, digits, and underscores", name)
+	}
+	return nil
+}
+
+func genericResponseToMap(resp GenericResponse) map[string]interface{} {
+	result := map[string]interface{}{
+		"changed": resp.Changed,
+		"failed":  resp.Failed,
+		"rc":      resp.RC,
+		"msg":     resp.Msg,
+		"stdout":  resp.Stdout,
+		"stderr":  resp.Stderr,
+	}
+	result["stdout_lines"] = splitToInterfaceSlice(resp.Stdout)
+	result["stderr_lines"] = splitToInterfaceSlice(resp.Stderr)
+	return result
+}
+
+func splitToInterfaceSlice(s string) []interface{} {
+	if s == "" {
+		return []interface{}{}
+	}
+	parts := strings.Split(s, "\n")
+	out := make([]interface{}, len(parts))
+	for i, p := range parts {
+		out[i] = p
+	}
+	return out
+}
+
+func normalizeRegisteredResult(result map[string]interface{}) map[string]interface{} {
+	if _, ok := result["changed"]; !ok {
+		result["changed"] = false
+	}
+	if _, ok := result["failed"]; !ok {
+		result["failed"] = false
+	}
+	if _, ok := result["skipped"]; !ok {
+		result["skipped"] = false
+	}
+	if _, ok := result["msg"]; !ok {
+		result["msg"] = ""
+	}
+	if _, ok := result["stdout"]; !ok {
+		result["stdout"] = ""
+	}
+	if _, ok := result["stderr"]; !ok {
+		result["stderr"] = ""
+	}
+	if _, ok := result["rc"]; !ok {
+		result["rc"] = 0
+	}
+	if rc, ok := result["rc"].(float64); ok {
+		result["rc"] = int(rc)
+	}
+	if _, ok := result["attempts"]; !ok {
+		result["attempts"] = 1
+	}
+	if _, ok := result["retries"]; !ok {
+		result["retries"] = 0
+	}
+	if _, ok := result["stdout_lines"]; !ok {
+		stdout, _ := result["stdout"].(string)
+		result["stdout_lines"] = splitToInterfaceSlice(stdout)
+	}
+	if _, ok := result["stderr_lines"]; !ok {
+		stderr, _ := result["stderr"].(string)
+		result["stderr_lines"] = splitToInterfaceSlice(stderr)
+	}
+	return result
+}
+
+func computeFetchDest(params *config.FetchParams, hostName string) string {
+	if params.Flat {
+		dest := params.Dest
+		if strings.HasSuffix(params.Dest, "/") || isDir(params.Dest) {
+			dest = filepath.Join(params.Dest, filepath.Base(params.Src))
+		}
+		return dest
+	}
+	return filepath.Join(params.Dest, hostName, params.Src)
+}
+
+func registerResult(hostRuntimeVars map[string]map[string]interface{}, hostName string, task config.Task, result map[string]interface{}) {
+	if task.Register == "" {
+		return
+	}
+	hostRuntimeVars[hostName][task.Register] = normalizeRegisteredResult(result)
 }
 
 func sha1File(path string) (string, error) {
@@ -2255,7 +2416,7 @@ func renderRebootParams(params *config.RebootParams, context map[string]interfac
 	return &out, nil
 }
 
-func buildHostvarsForTask(hostInfos []vars.HostInfo, resolver vars.Resolver, inventory vars.InventoryVars, playVars map[string]interface{}, taskVars map[string]interface{}, extraVars map[string]interface{}, groups map[string][]string) (map[string]map[string]interface{}, error) {
+func buildHostvarsForTask(hostInfos []vars.HostInfo, resolver vars.Resolver, inventory vars.InventoryVars, playVars map[string]interface{}, taskVars map[string]interface{}, extraVars map[string]interface{}, runtimeVars map[string]map[string]interface{}, groups map[string][]string) (map[string]map[string]interface{}, error) {
 	hostvars := map[string]map[string]interface{}{}
 	for _, hostInfo := range hostInfos {
 		resolved, err := resolver.ResolveHostVars(vars.ResolveRequest{
@@ -2264,6 +2425,7 @@ func buildHostvarsForTask(hostInfos []vars.HostInfo, resolver vars.Resolver, inv
 			PlayVars:      playVars,
 			TaskVars:      taskVars,
 			ExtraVars:     extraVars,
+			RuntimeVars:   runtimeVars[hostInfo.Name],
 		})
 		if err != nil {
 			return nil, err
@@ -2408,24 +2570,24 @@ func printResponse(resp GenericResponse, verbose bool) {
 	}
 }
 
-func executeScript(client *ssh.Client, agentPath string, params *config.ScriptParams, verbose bool) GenericResponse {
+func executeScript(client *ssh.Client, agentPath string, params *config.ScriptParams, verbose bool) (GenericResponse, string) {
 	if params.Cmd == "" {
-		return GenericResponse{Failed: true, Msg: "no script path specified (cmd parameter required)"}
+		return GenericResponse{Failed: true, Msg: "no script path specified (cmd parameter required)"}, ""
 	}
 
 	scriptPath, scriptArgs := parseScriptCmd(params.Cmd)
 
 	localFile, err := os.Stat(scriptPath)
 	if err != nil {
-		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to stat local script: %v", err)}
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to stat local script: %v", err)}, ""
 	}
 	if localFile.IsDir() {
-		return GenericResponse{Failed: true, Msg: fmt.Sprintf("script path is a directory: %s", scriptPath)}
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("script path is a directory: %s", scriptPath)}, ""
 	}
 
 	localChecksum, err := sha1File(scriptPath)
 	if err != nil {
-		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to compute script checksum: %v", err)}
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to compute script checksum: %v", err)}, ""
 	}
 
 	remoteTmpPath := fmt.Sprintf("/tmp/.dibra-script-%s", localChecksum[:12])
@@ -2435,12 +2597,12 @@ func executeScript(client *ssh.Client, agentPath string, params *config.ScriptPa
 	}
 
 	if err := client.UploadFile(scriptPath, remoteTmpPath); err != nil {
-		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to upload script: %v", err)}
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to upload script: %v", err)}, ""
 	}
 
 	_, _, err = client.RunWithSudo(fmt.Sprintf("chmod +x %s", remoteTmpPath))
 	if err != nil {
-		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to chmod script: %v", err)}
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to chmod script: %v", err)}, ""
 	}
 
 	stripEmptyEnds := true
@@ -2468,7 +2630,7 @@ func executeScript(client *ssh.Client, agentPath string, params *config.ScriptPa
 	output, err := client.ExecuteAgent(agentPath, reqData)
 	if err != nil {
 		cleanupScript(client, remoteTmpPath)
-		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to execute script: %v", err)}
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to execute script: %v", err)}, ""
 	}
 
 	outputStr := strings.TrimSpace(string(output))
@@ -2478,12 +2640,12 @@ func executeScript(client *ssh.Client, agentPath string, params *config.ScriptPa
 	var resp GenericResponse
 	if err := json.Unmarshal([]byte(jsonOutput), &resp); err != nil {
 		cleanupScript(client, remoteTmpPath)
-		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to parse script response: %v", err)}
+		return GenericResponse{Failed: true, Msg: fmt.Sprintf("failed to parse script response: %v", err)}, ""
 	}
 
 	cleanupScript(client, remoteTmpPath)
 
-	return resp
+	return resp, jsonOutput
 }
 
 func parseScriptCmd(cmd string) (scriptPath string, args string) {

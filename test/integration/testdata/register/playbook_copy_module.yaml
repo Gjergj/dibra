@@ -1,0 +1,21 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Copy content to file
+    copy:
+      content: "test data for register"
+      dest: /tmp/dibra-register-copy-src.txt
+      mode: "0644"
+    register: copy_result
+
+  - name: Write copy result
+    copy:
+      content: "changed={{ copy_result.changed }} failed={{ copy_result.failed }}"
+      dest: /tmp/dibra-register-copy-result.txt
+      mode: "0644"

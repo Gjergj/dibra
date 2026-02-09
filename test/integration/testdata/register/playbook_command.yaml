@@ -1,0 +1,19 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Run echo via command
+    command:
+      cmd: echo hello world
+    register: cmd_result
+
+  - name: Write stdout from command
+    copy:
+      content: "stdout={{ cmd_result.stdout }} rc={{ cmd_result.rc }} changed={{ cmd_result.changed }}"
+      dest: /tmp/dibra-register-command.txt
+      mode: "0644"

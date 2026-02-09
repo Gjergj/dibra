@@ -1,0 +1,28 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Run a shell command
+    shell:
+      cmd: echo from_shell
+    register: shell_out
+
+  - name: Run a command module
+    command:
+      cmd: echo from_command
+    register: cmd_out
+
+  - name: Ping
+    ping:
+    register: ping_out
+
+  - name: Write all results
+    copy:
+      content: "shell={{ shell_out.stdout }} cmd={{ cmd_out.stdout }} ping={{ ping_out.ping }}"
+      dest: /tmp/dibra-register-multi.txt
+      mode: "0644"

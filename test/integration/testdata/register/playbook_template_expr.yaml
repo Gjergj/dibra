@@ -1,0 +1,26 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Get kernel version
+    command:
+      cmd: uname -r
+    register: kernel_result
+
+  - name: Create directory with registered var
+    file:
+      path: "/tmp/dibra-register-{{ kernel_result.stdout }}"
+      state: directory
+      mode: "0755"
+    register: dir_result
+
+  - name: Write dir path
+    copy:
+      content: "{{ dir_result.path }}"
+      dest: /tmp/dibra-register-template-expr.txt
+      mode: "0644"

@@ -1,0 +1,19 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Run failing command
+    shell:
+      cmd: /bin/false
+    register: result_fail
+
+  - name: Verify failed status
+    copy:
+      content: "failed={{ result_fail.failed }} rc={{ result_fail.rc }}"
+      dest: /tmp/dibra-fail.txt
+      mode: "0644"

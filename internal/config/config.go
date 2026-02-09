@@ -72,6 +72,7 @@ type Task struct {
 	ImportTasks             *ImportTasksParams             `yaml:"import_tasks,omitempty"`
 	IncludeTasks            *IncludeTasksParams            `yaml:"include_tasks,omitempty"`
 	SourceDir               string                         `yaml:"-"`
+	Register                string                         `yaml:"register,omitempty"`
 	Apt                     *AptParams                     `yaml:"apt,omitempty"`
 	AptKey                  *AptKeyParams                  `yaml:"apt_key,omitempty"`
 	AptRepository           *AptRepositoryParams           `yaml:"apt_repository,omitempty"`

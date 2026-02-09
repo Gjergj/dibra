@@ -1,0 +1,22 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Run before include
+    shell:
+      cmd: echo before_include
+    register: before_result
+
+  - name: Include tasks
+    include_tasks: included_tasks.yaml
+
+  - name: Write combined
+    copy:
+      content: "before={{ before_result.stdout }} included={{ included_result.stdout }}"
+      dest: /tmp/dibra-register-include-combined.txt
+      mode: "0644"

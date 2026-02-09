@@ -1,0 +1,20 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Create temp file
+    tempfile:
+      prefix: dibra-reg-test.
+      suffix: .tmp
+    register: tmp_result
+
+  - name: Write tempfile path
+    copy:
+      content: "path={{ tmp_result.path }} changed={{ tmp_result.changed }} state={{ tmp_result.state }}"
+      dest: /tmp/dibra-register-tempfile.txt
+      mode: "0644"

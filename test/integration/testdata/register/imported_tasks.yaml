@@ -1,0 +1,10 @@
+- name: Run command in imported file
+  shell:
+    cmd: echo from_imported
+  register: imported_result
+
+- name: Write imported result
+  copy:
+    content: "imported={{ imported_result.stdout }}"
+    dest: /tmp/dibra-register-import-result.txt
+    mode: "0644"

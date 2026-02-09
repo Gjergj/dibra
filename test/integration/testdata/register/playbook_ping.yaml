@@ -1,0 +1,18 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Ping the host
+    ping:
+    register: ping_result
+
+  - name: Write ping result
+    copy:
+      content: "ping={{ ping_result.ping }} changed={{ ping_result.changed }}"
+      dest: /tmp/dibra-register-ping.txt
+      mode: "0644"

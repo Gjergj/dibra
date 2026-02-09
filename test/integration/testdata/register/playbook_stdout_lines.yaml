@@ -1,0 +1,19 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Run multiline command
+    shell:
+      cmd: "printf 'line1\nline2\nline3'"
+    register: lines_result
+
+  - name: Write first line
+    copy:
+      content: "first={{ lines_result.stdout_lines[0] }} second={{ lines_result.stdout_lines[1] }} third={{ lines_result.stdout_lines[2] }}"
+      dest: /tmp/dibra-register-lines.txt
+      mode: "0644"

@@ -1,0 +1,19 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+tasks:
+  - name: Run echo command
+    shell:
+      cmd: echo "hello world"
+    register: echo_result
+
+  - name: Verify registered variable
+    copy:
+      content: "{{ echo_result.stdout }}"
+      dest: /tmp/dibra-register-test.txt
+      mode: "0644"
