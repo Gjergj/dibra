@@ -18,6 +18,9 @@ import (
 	"github.com/gjergjiramku/dibra/internal/agent"
 	"github.com/gjergjiramku/dibra/internal/config"
 	"github.com/gjergjiramku/dibra/internal/inventory"
+	"github.com/gjergjiramku/dibra/internal/secrets"
+	"github.com/gjergjiramku/dibra/internal/secrets/bitwarden"
+	"github.com/gjergjiramku/dibra/internal/secrets/onepassword"
 	"github.com/gjergjiramku/dibra/internal/ssh"
 	"github.com/gjergjiramku/dibra/internal/vars"
 	"github.com/gjergjiramku/dibra/internal/version"
@@ -102,6 +105,14 @@ func main() {
 		if err != nil {
 			fatal("Failed to load inventory: %v", err)
 		}
+
+		secretsResolver := secrets.NewResolver()
+		secretsResolver.Register("bw", bitwarden.NewProvider())
+		secretsResolver.Register("op", onepassword.NewProvider())
+		if err := inv.ResolveSecrets(secretsResolver); err != nil {
+			fatal("Failed to resolve inventory secrets: %v", err)
+		}
+
 		cfg.Hosts, err = inv.HostsAsConfig()
 		if err != nil {
 			fatal("Failed to convert inventory hosts: %v", err)
@@ -179,6 +190,17 @@ func main() {
 		playVars = vars.MergeMaps(playVars, varsFromFiles, vars.MergeStrategy(cfg.VarsMerge))
 	}
 
+	{
+		sr := secrets.NewResolver()
+		sr.Register("bw", bitwarden.NewProvider())
+		sr.Register("op", onepassword.NewProvider())
+		resolved, err := sr.ResolveMap(playVars)
+		if err != nil {
+			fatal("Failed to resolve secrets in play vars: %v", err)
+		}
+		playVars = resolved
+	}
+
 	renderImportPath := func(s string) (string, error) {
 		ctx := make(map[string]interface{})
 		for k, v := range playVars {
@@ -215,6 +237,22 @@ func main() {
 	}
 
 	for _, host := range cfg.Hosts {
+		// Create a context for rendering host connection parameters
+		connectCtx := make(map[string]interface{})
+		for k, v := range playVars {
+			connectCtx[k] = v
+		}
+		for k, v := range extraVarsMap {
+			connectCtx[k] = v
+		}
+
+		// Render connection parameters
+		host.Host, _ = vars.RenderString(host.Host, connectCtx)
+		host.User, _ = vars.RenderString(host.User, connectCtx)
+		host.Password, _ = vars.RenderString(host.Password, connectCtx)
+		host.SSHKeyPath, _ = vars.RenderString(host.SSHKeyPath, connectCtx)
+		host.BecomePassword, _ = vars.RenderString(host.BecomePassword, connectCtx)
+
 		fmt.Printf("\n=== Host: %s (%s) ===\n", host.Name, host.Host)
 
 		client, err := ssh.Connect(ssh.Config{

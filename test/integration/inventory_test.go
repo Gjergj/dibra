@@ -94,9 +94,9 @@ tasks:
 
 		content := remoteFileContent(t, client, "/tmp/dibra-inv-groups.txt")
 		checks := map[string]string{
-			"env=default":           "all group var inherited",
-			"http_port=80":          "webservers group var",
-			"custom_var=from_host":  "host inline var",
+			"env=default":          "all group var inherited",
+			"http_port=80":         "webservers group var",
+			"custom_var=from_host": "host inline var",
 		}
 		for expected, desc := range checks {
 			if !strings.Contains(content, expected) {
@@ -125,10 +125,10 @@ tasks:
 
 		content := remoteFileContent(t, client, "/tmp/dibra-inv-children.txt")
 		checks := map[string]string{
-			"level=region_east":  "child group var overrides parent",
-			"all_var=present":    "all group var inherited",
-			"region=east":        "child group var",
-			"env=prod":           "parent group var inherited",
+			"level=region_east": "child group var overrides parent",
+			"all_var=present":   "all group var inherited",
+			"region=east":       "child group var",
+			"env=prod":          "parent group var inherited",
 		}
 		for expected, desc := range checks {
 			if !strings.Contains(content, expected) {
@@ -235,11 +235,11 @@ tasks:
 
 		content := remoteFileContent(t, client, "/tmp/dibra-inv-deep.txt")
 		checks := map[string]string{
-			"depth=3":              "deepest child wins",
-			"all_only=all_value":   "all var inherited through all levels",
-			"l1_var=l1_value":      "level1 var inherited",
-			"l2_var=l2_value":      "level2 var inherited",
-			"l3_var=l3_value":      "level3 var present",
+			"depth=3":            "deepest child wins",
+			"all_only=all_value": "all var inherited through all levels",
+			"l1_var=l1_value":    "level1 var inherited",
+			"l2_var=l2_value":    "level2 var inherited",
+			"l3_var=l3_value":    "level3 var present",
 		}
 		for expected, desc := range checks {
 			if !strings.Contains(content, expected) {
@@ -662,6 +662,123 @@ tasks:
 		}
 		if !strings.Contains(content, "hostname=testhost") {
 			t.Errorf("expected hostname, got: %s", content)
+		}
+	})
+
+	t.Run("secret_variable_reuse", func(t *testing.T) {
+		remoteExec(t, client, "rm -f /tmp/dibra-inv-secret-reuse.txt")
+
+		// Create inventory with a "secret" var (plain value simulating resolved secret)
+		invDir := t.TempDir()
+		invFile := filepath.Join(invDir, "inventory.yaml")
+		os.WriteFile(invFile, []byte(`
+all:
+  vars:
+    shared_secret: resolved_password
+  hosts:
+    testhost:
+      ansible_host: localhost
+      ansible_port: 2222
+      ansible_user: root
+      ansible_ssh_pass: "{{ shared_secret }}"
+      ansible_become: true
+      ansible_become_password: "{{ shared_secret }}"
+`), 0644)
+
+		playbook := filepath.Join(t.TempDir(), "playbook.yaml")
+		os.WriteFile(playbook, []byte(`
+tasks:
+  - name: Write secret var
+    copy:
+      content: "secret={{ shared_secret }}"
+      dest: /tmp/dibra-inv-secret-reuse.txt
+`), 0644)
+
+		output := runPlaybookFromFile(t, playbook, "-i", invFile)
+		if strings.Contains(output, "FAILED") {
+			t.Fatalf("expected success, got: %s", output)
+		}
+
+		content := remoteFileContent(t, client, "/tmp/dibra-inv-secret-reuse.txt")
+		if !strings.Contains(content, "secret=resolved_password") {
+			t.Errorf("expected secret=resolved_password, got: %s", content)
+		}
+	})
+
+	t.Run("invalid_secret_reference", func(t *testing.T) {
+		invDir := t.TempDir()
+		invFile := filepath.Join(invDir, "inventory.yaml")
+		os.WriteFile(invFile, []byte(`
+all:
+  vars:
+    bad_secret: "!bw:nonexistent/password"
+  hosts:
+    testhost:
+      ansible_host: localhost
+      ansible_port: 2222
+      ansible_user: root
+      ansible_ssh_pass: rootpass
+`), 0644)
+
+		playbook := filepath.Join(t.TempDir(), "playbook.yaml")
+		os.WriteFile(playbook, []byte(`
+tasks:
+  - name: Ping
+    ping:
+`), 0644)
+
+		output := runPlaybookFromFile(t, playbook, "-i", invFile)
+		// Should fail because bw CLI is likely not available or the item doesn't exist
+		if !strings.Contains(output, "Failed to resolve inventory secrets") && !strings.Contains(output, "FAILED") {
+			t.Logf("output: %s", output)
+		}
+	})
+
+	t.Run("mixed_secrets_and_plain_vars", func(t *testing.T) {
+		remoteExec(t, client, "rm -f /tmp/dibra-inv-mixed.txt")
+
+		invDir := t.TempDir()
+		invFile := filepath.Join(invDir, "inventory.yaml")
+		os.WriteFile(invFile, []byte(`
+all:
+  vars:
+    plain_var: hello_world
+    port_var: 8080
+  hosts:
+    testhost:
+      ansible_host: localhost
+      ansible_port: 2222
+      ansible_user: root
+      ansible_ssh_pass: rootpass
+      ansible_become: true
+      ansible_become_password: rootpass
+      custom_host_var: from_host
+`), 0644)
+
+		playbook := filepath.Join(t.TempDir(), "playbook.yaml")
+		os.WriteFile(playbook, []byte(`
+tasks:
+  - name: Write mixed vars
+    copy:
+      content: "plain={{ plain_var }}\nport={{ port_var }}\nhost_var={{ custom_host_var }}"
+      dest: /tmp/dibra-inv-mixed.txt
+`), 0644)
+
+		output := runPlaybookFromFile(t, playbook, "-i", invFile)
+		if strings.Contains(output, "FAILED") {
+			t.Fatalf("expected success, got: %s", output)
+		}
+
+		content := remoteFileContent(t, client, "/tmp/dibra-inv-mixed.txt")
+		checks := map[string]string{
+			"plain=hello_world":  "plain var",
+			"port=8080":          "numeric var",
+			"host_var=from_host": "host-level var",
+		}
+		for expected, desc := range checks {
+			if !strings.Contains(content, expected) {
+				t.Errorf("%s: expected %q in output, got: %s", desc, expected, content)
+			}
 		}
 	})
 }

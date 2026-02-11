@@ -235,6 +235,55 @@ dibra/
 └── AGENTS.md                 # This file
 ```
 
+## Secrets Management
+
+Dibra supports fetching secrets directly from **Bitwarden** and **1Password** to avoid hardcoding credentials in inventory files.
+
+### Concepts
+
+1. **Prefix-based resolution**: Secrets are identified by a special prefix in variable values:
+   - `!bw:` for Bitwarden
+   - `!op://` for 1Password
+2. **Early binding**: Secrets are resolved **before** the playbook starts, so they can be used in `ansible_ssh_pass`, `ansible_become_password`, or any other variable.
+3. **Variable Reuse**: You can define a secret once in a `vars` block and reuse it multiple times via `{{ variable }}`.
+
+### Providers
+
+#### Bitwarden (`!bw:`)
+
+Requires the Bitwarden CLI (`bw`) to be installed and unlocked (e.g., via `BW_SESSION` environment variable).
+
+**Syntax**: `!bw:<item-name>/<field>`
+- `item-name`: The name of the item in Bitwarden
+- `field`: `password`, `username`, `notes`, or a custom field name
+
+**Example**:
+```yaml
+all:
+  vars:
+    # Fetch 'password' field from item 'webserver-ssh'
+    server_pass: "!bw:webserver-ssh/password"
+  hosts:
+    web1:
+      ansible_ssh_pass: "{{ server_pass }}"
+```
+
+#### 1Password (`!op://`)
+
+Requires the 1Password CLI (`op`) to be installed and authenticated (e.g., via `op signin` or service account token).
+
+**Syntax**: `!op://<vault>/<item>/<field>` (Native 1Password reference syntax)
+
+**Example**:
+```yaml
+all:
+  vars:
+    db_pass: "!op://Infrastructure/database-prod/password"
+  hosts:
+    db1:
+      db_password: "{{ db_pass }}"
+```
+
 ## Modules
 
 ### ping

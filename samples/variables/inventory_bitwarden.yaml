@@ -1,0 +1,19 @@
+# Bitwarden Secrets Example
+# Requires: bw CLI installed, logged in, vault unlocked (BW_SESSION set)
+#
+# Usage:
+#   dibra -config playbook.yaml -i samples/variables/inventory_bitwarden.yaml
+#
+# The !bw: prefix fetches secrets from Bitwarden.
+# Format: !bw:<item-name>/<field>
+# Fields: password, username, notes, or custom field name
+all:
+  vars:
+    ssh_password: "!bw:webserver-ssh/password"
+    deploy_key: "!bw:deploy-key/notes"
+  hosts:
+    webserver:
+      ansible_host: 192.168.1.10
+      ansible_user: deploy
+      ansible_ssh_pass: "{{ ssh_password }}"
+      ansible_become_password: "{{ ssh_password }}"

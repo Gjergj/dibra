@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/config"
+	"github.com/gjergjiramku/dibra/internal/secrets"
 	"gopkg.in/yaml.v3"
 )
 
@@ -566,4 +567,32 @@ func appendUnique(slice []string, val string) []string {
 		}
 	}
 	return append(slice, val)
+}
+
+// ResolveSecrets walks all group vars and host vars in the inventory,
+// replacing secret references (!bw:, !op://) with their resolved values.
+// Must be called after Load() but before HostsAsConfig() or EffectiveVarsForHost().
+func (inv *Inventory) ResolveSecrets(resolver *secrets.Resolver) error {
+	if resolver == nil {
+		return nil
+	}
+	for name, g := range inv.Groups {
+		if len(g.Vars) > 0 {
+			resolved, err := resolver.ResolveMap(g.Vars)
+			if err != nil {
+				return fmt.Errorf("resolving secrets in group %q vars: %w", name, err)
+			}
+			g.Vars = resolved
+		}
+		for hostname, hv := range g.HostVars {
+			if len(hv) > 0 {
+				resolved, err := resolver.ResolveMap(hv)
+				if err != nil {
+					return fmt.Errorf("resolving secrets in host %q vars (group %q): %w", hostname, name, err)
+				}
+				g.HostVars[hostname] = resolved
+			}
+		}
+	}
+	return nil
 }
