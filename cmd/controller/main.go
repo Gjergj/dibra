@@ -17,6 +17,7 @@ import (
 
 	"github.com/gjergjiramku/dibra/internal/agent"
 	"github.com/gjergjiramku/dibra/internal/config"
+	"github.com/gjergjiramku/dibra/internal/inventory"
 	"github.com/gjergjiramku/dibra/internal/ssh"
 	"github.com/gjergjiramku/dibra/internal/vars"
 	"github.com/gjergjiramku/dibra/internal/version"
@@ -52,6 +53,8 @@ func main() {
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	agentPath := flag.String("agent-path", "", "Path to a pre-built agent binary")
 	agentBuild := flag.Bool("agent-build", false, "Build agent from source (requires Go)")
+	inventoryPath := flag.String("i", "", "Path to YAML inventory file")
+	inventoryPathLong := flag.String("inventory", "", "Path to YAML inventory file")
 	extraVars := flag.String("e", "", "Extra variables (key=value or @file.yaml)")
 	extraVarsLong := flag.String("extra-vars", "", "Extra variables (key=value or @file.yaml)")
 	flag.Parse()
@@ -79,6 +82,32 @@ func main() {
 		fatal("Failed to parse extra vars: %v", err)
 	}
 
+	invPath := *inventoryPath
+	if invPath == "" {
+		invPath = *inventoryPathLong
+	}
+	if invPath == "" && cfg.Inventory != "" {
+		invPath = cfg.Inventory
+		if !filepath.IsAbs(invPath) {
+			invPath = filepath.Join(filepath.Dir(*configPath), invPath)
+		}
+	}
+
+	var inv *inventory.Inventory
+	if invPath != "" {
+		if len(cfg.Hosts) > 0 {
+			fatal("Cannot use both inventory (-i) and playbook hosts; remove one")
+		}
+		inv, err = inventory.Load(invPath)
+		if err != nil {
+			fatal("Failed to load inventory: %v", err)
+		}
+		cfg.Hosts, err = inv.HostsAsConfig()
+		if err != nil {
+			fatal("Failed to convert inventory hosts: %v", err)
+		}
+	}
+
 	resolverMode := agent.ModeAuto
 	if *agentPath != "" {
 		resolverMode = agent.ModePath
@@ -99,13 +128,46 @@ func main() {
 	}
 
 	baseDir := filepath.Dir(*configPath)
+	inventoryBaseDir := baseDir
+	if inv != nil {
+		inventoryBaseDir = inv.BaseDir
+	}
 	varsResolver := vars.Resolver{
 		MergeStrategy: vars.MergeStrategy(cfg.VarsMerge),
-		InventoryDir:  baseDir,
+		InventoryDir:  inventoryBaseDir,
 	}
-	inventoryVars, err := varsResolver.LoadInventoryVars(hostInfos, nil)
+
+	var extraGroupNames []string
+	if inv != nil {
+		for gName := range inv.Groups {
+			extraGroupNames = append(extraGroupNames, gName)
+		}
+	}
+	inventoryVars, err := varsResolver.LoadInventoryVars(hostInfos, extraGroupNames)
 	if err != nil {
 		fatal("Failed to load inventory vars: %v", err)
+	}
+
+	if inv != nil {
+		for _, hostname := range inv.HostNames() {
+			invHostVars := inv.EffectiveVarsForHost(hostname)
+			cleanVars := map[string]interface{}{}
+			for k, v := range invHostVars {
+				if !strings.HasPrefix(k, "ansible_") {
+					cleanVars[k] = v
+				}
+			}
+			if len(cleanVars) > 0 {
+				if inventoryVars.Host[hostname] == nil {
+					inventoryVars.Host[hostname] = map[string]interface{}{}
+				}
+				for k, v := range cleanVars {
+					if _, exists := inventoryVars.Host[hostname][k]; !exists {
+						inventoryVars.Host[hostname][k] = v
+					}
+				}
+			}
+		}
 	}
 
 	playVars := cfg.Vars
@@ -132,13 +194,18 @@ func main() {
 		fatal("Failed to expand import_tasks: %v", err)
 	}
 
-	groupsMap := map[string][]string{}
-	for _, hostInfo := range hostInfos {
-		for _, group := range hostInfo.Groups {
-			if group == "" {
-				continue
+	var groupsMap map[string][]string
+	if inv != nil {
+		groupsMap = inv.GroupMembers()
+	} else {
+		groupsMap = map[string][]string{}
+		for _, hostInfo := range hostInfos {
+			for _, group := range hostInfo.Groups {
+				if group == "" {
+					continue
+				}
+				groupsMap[group] = append(groupsMap[group], hostInfo.Name)
 			}
-			groupsMap[group] = append(groupsMap[group], hostInfo.Name)
 		}
 	}
 

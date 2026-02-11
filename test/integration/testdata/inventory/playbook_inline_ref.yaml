@@ -1,0 +1,5 @@
+inventory: basic.yaml
+
+tasks:
+  - name: Write ping result
+    ping:

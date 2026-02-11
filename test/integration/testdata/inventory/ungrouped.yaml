@@ -1,0 +1,10 @@
+all:
+  hosts:
+    testhost:
+      ansible_host: localhost
+      ansible_port: 2222
+      ansible_user: root
+      ansible_ssh_pass: rootpass
+      ansible_become: true
+      ansible_become_password: rootpass
+      standalone_var: standalone_value

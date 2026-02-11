@@ -1,0 +1,23 @@
+all:
+  vars:
+    level: all
+    all_var: present
+  children:
+    region_east:
+      hosts:
+        testhost:
+          ansible_host: localhost
+          ansible_port: 2222
+          ansible_user: root
+          ansible_ssh_pass: rootpass
+          ansible_become: true
+          ansible_become_password: rootpass
+      vars:
+        level: region_east
+        region: east
+    production:
+      children:
+        region_east:
+      vars:
+        level: production
+        env: prod

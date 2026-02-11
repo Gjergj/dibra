@@ -1,0 +1,21 @@
+all:
+  children:
+    web:
+      hosts:
+        testhost:
+          ansible_host: localhost
+          ansible_port: 2222
+          ansible_user: root
+          ansible_ssh_pass: rootpass
+          ansible_become: true
+          ansible_become_password: rootpass
+    monitoring:
+      children:
+        web:
+      vars:
+        monitored: "true"
+    staging:
+      children:
+        web:
+      vars:
+        env: staging

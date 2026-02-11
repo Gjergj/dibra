@@ -1,0 +1,23 @@
+all:
+  vars:
+    env: default
+  children:
+    webservers:
+      hosts:
+        testhost:
+          ansible_host: localhost
+          ansible_port: 2222
+          ansible_user: root
+          ansible_ssh_pass: rootpass
+          ansible_become: true
+          ansible_become_password: rootpass
+          custom_var: from_host
+      vars:
+        http_port: 80
+        role: web
+    dbservers:
+      hosts:
+        testhost:
+          db_port: 5432
+      vars:
+        role: db

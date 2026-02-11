@@ -32,6 +32,12 @@ dibra -config playbook.yaml -v
 # Force re-upload agent (even if versions match)
 dibra -config playbook.yaml --force-agent-upload
 
+# Run playbook with external YAML inventory
+dibra -config playbook.yaml -i inventory.yaml
+
+# Long form
+dibra -config playbook.yaml --inventory inventory.yaml
+
 # Run integration tests
 make test-integration
 
@@ -2950,6 +2956,121 @@ tasks:
       <param>: "{{ app_name }}"
 ```
 
+## External Inventory
+
+Dibra supports Ansible-compatible YAML inventory files, allowing you to define hosts, groups, and variables separately from the playbook. Use the `-i` / `--inventory` flag or the `inventory:` key in the playbook.
+
+### Usage
+
+```bash
+# CLI flag
+dibra -config playbook.yaml -i inventory.yaml
+
+# Or reference in playbook
+# inventory: inventory.yaml
+```
+
+### YAML Inventory Format
+
+```yaml
+all:
+  vars:
+    env: production
+  hosts:
+    standalone_host:
+      ansible_host: 10.0.0.99
+  children:
+    webservers:
+      hosts:
+        web1:
+          ansible_host: 192.168.1.10
+          ansible_port: 22
+          ansible_user: deploy
+          ansible_ssh_pass: secret
+          ansible_become: true
+          ansible_become_password: sudo_pass
+        web2:
+          ansible_host: 192.168.1.20
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+      vars:
+        http_port: 80
+    dbservers:
+      hosts:
+        db1:
+          ansible_host: 192.168.2.10
+      vars:
+        db_port: 5432
+    production:
+      children:
+        webservers:
+        dbservers:
+      vars:
+        deploy_env: prod
+```
+
+### Top-level groups without `all:` wrapper
+
+Groups can be defined at the top level without wrapping in `all:`. An implicit `all` group is created automatically:
+
+```yaml
+webservers:
+  hosts:
+    web1:
+      ansible_host: 10.0.0.1
+  vars:
+    role: web
+dbservers:
+  hosts:
+    db1:
+      ansible_host: 10.0.1.1
+```
+
+### Connection Variable Mapping
+
+| Ansible Variable | Dibra Host Field |
+|-----------------|-----------------|
+| `ansible_host` | `host` (default: hostname) |
+| `ansible_port` | `port` (default: 22) |
+| `ansible_user` | `user` |
+| `ansible_ssh_pass` | `password` |
+| `ansible_ssh_private_key_file` | `ssh_key_path` |
+| `ansible_become` | `become` |
+| `ansible_become_password` | `become_password` |
+
+### Variable Precedence (Low → High)
+
+1. `all` group vars
+2. Parent group vars (alphabetical for same depth)
+3. Child group vars (alphabetical for same depth)
+4. Host inline vars
+
+### Implicit Groups
+
+- **`all`**: Contains every host (created automatically if not defined)
+- **`ungrouped`**: Contains hosts not in any named group
+
+### External var files
+
+`group_vars/` and `host_vars/` directories are resolved relative to the **inventory file** location (not the playbook).
+
+### Playbook with inventory reference
+
+```yaml
+inventory: inventory.yaml
+
+tasks:
+  - name: Deploy
+    copy:
+      content: "hello"
+      dest: /tmp/hello.txt
+```
+
+### Error behavior
+
+- If both `-i` flag and playbook `hosts:` are present, dibra errors with a clear message
+- If inventory file is not found, dibra errors
+- Circular group references are detected and reported
+
 ## import_tasks
 
 Imports a list of tasks from another YAML file, inserting them into the current playbook at parse time (static include). This is a controller-side directive, not a remote module.
@@ -3292,6 +3413,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_DockerVolumePrune` | Prune filter improvements (Phase 7.2) |
 | `TestPlaybook_Find` | Find module: recursive/non-recursive search, glob/regex patterns, excludes, file_type (file/directory/link/any), age/size filters, hidden files, symlinks, depth limit, mode filtering, checksum algorithms, contains content matching, multiple paths, limit, path/pattern/exclude aliases, template variables, idempotency |
 | `TestPlaybook_Register` | Register keyword: basic shell register, register on failure, overwrite, command module, ping module-specific fields, stdout_lines access, chained registers, file/copy/tempfile module fields, multiple modules, idempotency tracking, template expressions with registered vars, include_tasks/import_tasks boundary, invalid variable names (numeric, hyphen, space), underscore prefix, no side effects without register, rerun idempotency |
+| `TestPlaybook_Inventory` | External YAML inventory: basic inventory loading, idempotency, host output, groups with vars, children group hierarchy, implicit all group, ungrouped hosts, group_vars/host_vars files relative to inventory, deep hierarchy (4 levels), multi-parent groups, host vars override group vars, magic variables (inventory_hostname, group_names), playbook inventory reference, error on both hosts and inventory, play vars + inventory, extra vars + inventory, task vars + inventory, inventory not found error, register with inventory, import_tasks with inventory, SSH key path, port as string coercion, become as string coercion, groups in context |
 
 Each test:
 1. Runs a playbook via `go run ./cmd/controller`

@@ -1,0 +1,27 @@
+all:
+  vars:
+    depth: 0
+    all_only: all_value
+  children:
+    level1:
+      vars:
+        depth: 1
+        l1_var: l1_value
+      children:
+        level2:
+          vars:
+            depth: 2
+            l2_var: l2_value
+          children:
+            level3:
+              hosts:
+                testhost:
+                  ansible_host: localhost
+                  ansible_port: 2222
+                  ansible_user: root
+                  ansible_ssh_pass: rootpass
+                  ansible_become: true
+                  ansible_become_password: rootpass
+              vars:
+                depth: 3
+                l3_var: l3_value

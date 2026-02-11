@@ -1,0 +1,16 @@
+all:
+  vars:
+    shared_var: from_all
+  children:
+    webservers:
+      hosts:
+        testhost:
+          ansible_host: localhost
+          ansible_port: 2222
+          ansible_user: root
+          ansible_ssh_pass: rootpass
+          ansible_become: true
+          ansible_become_password: rootpass
+          shared_var: from_host
+      vars:
+        shared_var: from_group

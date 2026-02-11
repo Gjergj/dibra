@@ -16,6 +16,7 @@ type Config struct {
 	Vars      map[string]interface{} `yaml:"vars,omitempty"`
 	VarsFiles []string               `yaml:"vars_files,omitempty"`
 	VarsMerge string                 `yaml:"vars_merge,omitempty"`
+	Inventory string                 `yaml:"inventory,omitempty"`
 }
 
 type Host struct {

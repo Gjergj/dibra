@@ -1,4 +1,4 @@
-.PHONY: build build-dev test lint test-integration test-integration-up test-integration-down clean snapshot release-dry install
+.PHONY: build build-dev test test lint test-integration test-integration-up test-integration-down clean snapshot release-dry install
 
 # Version info for local builds
 VERSION ?= dev
@@ -24,7 +24,7 @@ install:
 	go install -ldflags "$(LDFLAGS)" ./cmd/agent
 
 test:
-	go test ./... -v
+	go test -v -race ./...
 
 # Run golangci-lint (same as CI)
 lint:
