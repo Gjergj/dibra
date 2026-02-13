@@ -1719,6 +1719,274 @@ Copies files to remote hosts.
 
 **Idempotency**: Compares SHA1 checksums; skips if destination matches.
 
+### template
+
+Renders a Jinja-like template on the controller and writes it to the remote host.
+
+```yaml
+# Render a template
+- name: Render config
+  template:
+    src: ./templates/app.conf.j2
+    dest: /etc/myapp/app.conf
+    mode: "0644"
+    owner: root
+    group: root
+
+# Custom delimiters
+- name: Custom delimiters
+  template:
+    src: ./templates/custom.j2
+    dest: /etc/myapp/custom.conf
+    variable_start_string: "[["
+    variable_end_string: "]]"
+
+# Newline sequence
+- name: Windows line endings
+  template:
+    src: ./templates/win.ini.j2
+    dest: /etc/myapp/win.ini
+    newline_sequence: "\r\n"
+
+# Validate before write
+- name: Validate with command
+  template:
+    src: ./templates/nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    validate: "/usr/sbin/nginx -t -c %s"
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `src` | required | Template path on controller. Relative paths resolve relative to playbook. |
+| `dest` | required | Destination path on remote host. Can be directory. |
+| `mode` | | File mode (e.g., `"0644"`). |
+| `owner` | | File owner. |
+| `group` | | File group. |
+| `backup` | `false` | Backup existing file before overwriting. |
+| `force` | `true` | Overwrite when content differs. |
+| `follow` | `false` | Follow symlinks when writing. |
+| `validate` | | Command to validate rendered content (`%s` replaced by temp file). |
+| `newline_sequence` | `"\n"` | Output newline sequence: `"\n"`, `"\r"`, `"\r\n"`. |
+| `variable_start_string` | `"{{"` | Variable start delimiter. |
+| `variable_end_string` | `"}}"` | Variable end delimiter. |
+| `block_start_string` | `"{%"` | Block start delimiter. |
+| `block_end_string` | `"%}"` | Block end delimiter. |
+| `comment_start_string` | `"{#"` | Comment start delimiter. |
+| `comment_end_string` | `"#}"` | Comment end delimiter. |
+| `trim_blocks` | `true` | Remove first newline after blocks. |
+| `lstrip_blocks` | `false` | Strip leading whitespace to blocks. |
+
+**Template Variables**:
+- `ansible_managed`, `template_host`, `template_uid`, `template_path`, `template_fullpath`, `template_destpath`, `template_dest`, `template_run_date`, `template` (map containing metadata)
+
+**Idempotency**: SHA1 checksum of rendered content; re-applies ownership/mode changes when content matches.
+
+#### Ansible-Compatible Filters
+
+In addition to the [built-in Jinja2 filters](https://jinja.palletsprojects.com/en/3.1.x/templates/#builtin-filters) provided by the gonja engine (`default`, `upper`, `lower`, `replace`, `join`, `length`, `first`, `last`, `int`, `float`, `trim`, `title`, `capitalize`, `reverse`, `sort`, `unique`, `tojson`, `round`, `abs`, `batch`, `dictsort`, `escape`, `filesizeformat`, `groupby`, `indent`, `list`, `map`, `max`, `min`, `pprint`, `random`, `reject`, `rejectattr`, `safe`, `select`, `selectattr`, `slice`, `string`, `striptags`, `sum`, `truncate`, `urlencode`, `urlize`, `wordcount`, `wordwrap`, `xmlattr`), dibra registers the following Ansible-compatible custom filters:
+
+##### String Filters
+
+| Filter | Usage | Description |
+|--------|-------|-------------|
+| `split(sep)` | `{{ "a,b,c" \| split(",") }}` | Split string into list. Default separator is space. |
+| `quote` | `{{ value \| quote }}` | Shell-safe quoting with single quotes (escapes embedded quotes). |
+| `comment(prefix='# ')` | `{{ text \| comment }}` | Prepend comment prefix to each line. |
+| `regex_replace(pattern, replacement, count=0)` | `{{ value \| regex_replace('^old', 'new') }}` | Replace regex matches. `count=0` replaces all. |
+| `regex_search(pattern)` | `{{ value \| regex_search('(\d+)') }}` | Return first regex match (empty string if no match). |
+| `regex_findall(pattern)` | `{{ value \| regex_findall('\d+') }}` | Return list of all regex matches. |
+| `regex_escape` | `{{ value \| regex_escape }}` | Escape regex special characters. |
+
+##### Path Filters
+
+| Filter | Usage | Description |
+|--------|-------|-------------|
+| `basename` | `{{ "/etc/nginx/nginx.conf" \| basename }}` → `nginx.conf` | Extract filename from path. |
+| `dirname` | `{{ "/etc/nginx/nginx.conf" \| dirname }}` → `/etc/nginx` | Extract directory from path. |
+| `splitext` | `{{ "file.tar.gz" \| splitext }}` → `["file.tar", ".gz"]` | Split filename and extension. |
+
+##### Serialization Filters
+
+| Filter | Usage | Description |
+|--------|-------|-------------|
+| `to_yaml` / `to_nice_yaml` | `{{ data \| to_yaml }}` | Serialize value to YAML string. |
+| `from_yaml` | `{{ yaml_str \| from_yaml }}` | Parse YAML string into data structure. |
+| `to_json` | `{{ data \| to_json }}` | Serialize value to compact JSON string. |
+| `to_nice_json(indent=4)` | `{{ data \| to_nice_json }}` | Serialize value to indented JSON string. |
+| `from_json` | `{{ json_str \| from_json }}` | Parse JSON string into data structure. |
+
+##### Encoding & Hashing Filters
+
+| Filter | Usage | Description |
+|--------|-------|-------------|
+| `b64encode` | `{{ "hello" \| b64encode }}` → `aGVsbG8=` | Base64 encode a string. |
+| `b64decode` | `{{ "aGVsbG8=" \| b64decode }}` → `hello` | Base64 decode a string. |
+| `hash(algo)` | `{{ "hello" \| hash("sha256") }}` | Hash string. Supported: `md5`, `sha1`, `sha256`, `sha512`. |
+
+##### Logic & Type Filters
+
+| Filter | Usage | Description |
+|--------|-------|-------------|
+| `ternary(true_val, false_val)` | `{{ enabled \| ternary("yes", "no") }}` | Return `true_val` if truthy, else `false_val`. |
+| `mandatory(msg='')` | `{{ var \| mandatory }}` | Fail with error if value is nil/undefined. Optional custom message. |
+| `type_debug` | `{{ var \| type_debug }}` | Return Go type name as string (debugging aid). |
+| `bool` | `{{ "yes" \| bool }}` | Convert string to boolean. Recognizes `true/yes/1/on` and `false/no/0/off`. |
+
+##### Collection Filters
+
+| Filter | Usage | Description |
+|--------|-------|-------------|
+| `combine(dict)` | `{{ dict1 \| combine(dict2) }}` | Merge dictionaries. Later dict values override earlier ones. |
+| `dict2items` | `{{ mydict \| dict2items }}` | Convert dict to list of `{key: k, value: v}` maps. |
+| `items2dict(key_name='key', value_name='value')` | `{{ items \| items2dict }}` | Convert list of `{key, value}` maps back to dict. |
+| `flatten(levels=1)` | `{{ nested \| flatten }}` | Flatten nested lists by specified depth. |
+| `zip_longest(list)` | `{{ list1 \| zip_longest(list2) }}` | Zip lists, padding shorter with `nil`. |
+| `product(list)` | `{{ list1 \| product(list2) }}` | Cartesian product of two lists. |
+| `unique` | `{{ list \| unique }}` | Remove duplicate items from list. |
+| `union(other)` | `{{ list1 \| union(list2) }}` | Set union of two lists. |
+| `intersect(other)` | `{{ list1 \| intersect(list2) }}` | Set intersection of two lists. |
+| `difference(other)` | `{{ list1 \| difference(list2) }}` | Items in first list not in second. |
+| `symmetric_difference(other)` | `{{ list1 \| symmetric_difference(list2) }}` | Items in either list but not both. |
+| `map_attribute(attr)` | `{{ list \| map_attribute("name") }}` | Extract attribute from each item in list. |
+
+##### Date/Time Filters
+
+| Filter | Usage | Description |
+|--------|-------|-------------|
+| `to_datetime(format='')` | `{{ date_str \| to_datetime }}` | Parse date string. Auto-detects RFC3339, `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DD`. Supports Python-style format codes. |
+| `strftime(format)` | `{{ date \| strftime('%Y-%m-%d') }}` | Format date using Python-style format codes (`%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, etc.). |
+
+##### Filter Examples
+
+```yaml
+# Regex replacement
+- name: Update config
+  template:
+    src: config.j2
+    dest: /etc/myapp/config.conf
+  # In config.j2: {{ listen_addr | regex_replace('^0\.0\.0\.0', '127.0.0.1') }}
+
+# Base64 encoding
+- name: Create auth file
+  template:
+    src: auth.j2
+    dest: /etc/myapp/auth
+  vars:
+    credentials: "user:password"
+  # In auth.j2: {{ credentials | b64encode }}
+
+# Combining dictionaries
+- name: Merge configs
+  template:
+    src: merged.j2
+    dest: /etc/myapp/merged.conf
+  vars:
+    defaults:
+      port: 8080
+      host: localhost
+    overrides:
+      port: 9090
+  # In merged.j2: {% set config = defaults | combine(overrides) %}
+  #               port={{ config.port }}  {# outputs 9090 #}
+
+# Shell-safe quoting
+- name: Generate script
+  template:
+    src: script.j2
+    dest: /usr/local/bin/run.sh
+  vars:
+    user_input: "hello 'world'"
+  # In script.j2: echo {{ user_input | quote }}
+
+# Hash verification
+- name: Checksum file
+  template:
+    src: checksum.j2
+    dest: /tmp/checksum.txt
+  vars:
+    content: "important data"
+  # In checksum.j2: sha256={{ content | hash('sha256') }}
+
+# Dict to items iteration
+- name: Generate env file
+  template:
+    src: env.j2
+    dest: /etc/myapp/.env
+  vars:
+    environment:
+      DB_HOST: localhost
+      DB_PORT: 5432
+  # In env.j2:
+  # {% for item in environment | dict2items %}
+  # {{ item.key }}={{ item.value }}
+  # {% endfor %}
+```
+
+#### Template Language Features
+
+The template engine supports the full Jinja2 template language via the [gonja](https://github.com/aisbergg/gonja) library:
+
+**Control Structures**:
+```jinja2
+{# Conditionals #}
+{% if enabled and mode == "production" %}prod{% elif mode == "staging" %}staging{% else %}disabled{% endif %}
+{% if "admin" in roles %}has_admin{% endif %}
+{% if extra is defined %}defined{% endif %}
+{% if missing is not defined %}undefined{% endif %}
+
+{# For loops with loop variables #}
+{% for item in items %}
+{{ loop.index }}. {{ item }} (first={{ loop.first }}, last={{ loop.last }})
+{% endfor %}
+
+{# For loop over dict #}
+{% for key, value in config %}
+{{ key }}={{ value }}
+{% endfor %}
+
+{# For loop with condition #}
+{% for n in numbers if n > 2 %}{{ n }}{% endfor %}
+
+{# Set statement #}
+{% set greeting = "Hello " ~ name %}
+```
+
+**Macros**:
+```jinja2
+{% macro render_item(name, value) %}{{ name }}={{ value }}{% endmacro %}
+{{ render_item("host", hostname) }}
+```
+
+**Template Inheritance**:
+```jinja2
+{# base.j2 #}
+header
+{% block content %}default{% endblock %}
+footer
+
+{# child.j2 #}
+{% extends "base.j2" %}
+{% block content %}overridden content{% endblock %}
+```
+
+**Raw Blocks** (prevent template processing):
+```jinja2
+{% raw %}{{ this_is_not_rendered }}{% endraw %}
+```
+
+**Whitespace Control**:
+```jinja2
+{%- for item in items %}  {# strip before #}
+  - {{ item }}
+{%- endfor %}              {# strip before #}
+```
+
+**Includes**:
+```jinja2
+{% include 'child.j2' %}
+```
+
 ### fetch
 
 Fetches files from remote hosts to the controller. Runs entirely on the controller side.
@@ -3462,6 +3730,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_DockerVolumePrune` | Prune filter improvements (Phase 7.2) |
 | `TestPlaybook_Find` | Find module: recursive/non-recursive search, glob/regex patterns, excludes, file_type (file/directory/link/any), age/size filters, hidden files, symlinks, depth limit, mode filtering, checksum algorithms, contains content matching, multiple paths, limit, path/pattern/exclude aliases, template variables, idempotency |
 | `TestPlaybook_Register` | Register keyword: basic shell register, register on failure, overwrite, command module, ping module-specific fields, stdout_lines access, chained registers, file/copy/tempfile module fields, multiple modules, idempotency tracking, template expressions with registered vars, include_tasks/import_tasks boundary, invalid variable names (numeric, hyphen, space), underscore prefix, no side effects without register, rerun idempotency |
+| `TestPlaybook_TemplateModule` | Template module: basic render, dest directory, custom delimiters, trim blocks, idempotency, force flag, validation, newline sequences, register, nested includes, builtin filters (default/upper/lower/replace/join/length/title/trim/tojson/int/float), custom Ansible filters (split, regex_replace/search/findall, basename/dirname, to_yaml/from_json/to_nice_json, quote, ternary, b64encode/b64decode, hash, comment, combine, dict2items/items2dict, flatten, type_debug, splitext), filter chaining, for-loops (loop variables, dict iteration, conditional filtering), complex conditionals (if/elif/else, and/or/not, in, is defined/is not defined), set statements, macros, raw blocks, whitespace control, magic variables (ansible_managed, template_host, template_destpath), complex nested data structures, template inheritance (extends/block) |
 | `TestPlaybook_Inventory` | External YAML inventory: basic inventory loading, idempotency, host output, groups with vars, children group hierarchy, implicit all group, ungrouped hosts, group_vars/host_vars files relative to inventory, deep hierarchy (4 levels), multi-parent groups, host vars override group vars, magic variables (inventory_hostname, group_names), playbook inventory reference, error on both hosts and inventory, play vars + inventory, extra vars + inventory, task vars + inventory, inventory not found error, register with inventory, import_tasks with inventory, SSH key path, port as string coercion, become as string coercion, groups in context |
 
 Each test:

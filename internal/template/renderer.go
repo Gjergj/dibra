@@ -95,6 +95,8 @@ func RenderFile(srcPath string, context map[string]interface{}, meta Metadata, o
 	}
 
 	env := gonja.NewEnvironment(envOptions...)
+	registerAnsibleFilters(env)
+
 	templateRel, err := filepath.Rel(filepath.Dir(srcPath), srcPath)
 	if err != nil {
 		templateRel = filepath.Base(srcPath)

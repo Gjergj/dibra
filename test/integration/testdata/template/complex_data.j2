@@ -1,0 +1,6 @@
+app_name={{ app.name }}
+app_port={{ app.port }}
+first_server={{ servers[0].host }}
+second_port={{ servers[1].port }}
+{% for server in servers %}server={{ server.host }}:{{ server.port }}
+{% endfor %}

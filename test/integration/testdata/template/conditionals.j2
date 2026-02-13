@@ -1,0 +1,5 @@
+{% if enabled and mode == "production" %}prod{% elif enabled and mode == "staging" %}staging{% else %}disabled{% endif %}
+{% if "admin" in roles %}has_admin{% endif %}
+{% if extra is defined %}extra_defined{% else %}extra_undefined{% endif %}
+{% if missing is not defined %}missing_undefined{% endif %}
+{% if count > 0 and not disabled %}active{% endif %}

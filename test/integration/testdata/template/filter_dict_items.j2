@@ -1,0 +1,2 @@
+{% set items = mydict | dict2items %}{% for item in items %}{{ item.key }}={{ item.value }}
+{% endfor %}{% set rebuilt = items | items2dict %}name={{ rebuilt.name }}
