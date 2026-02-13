@@ -1,10 +1,7 @@
 package template
 
 import (
-	"fmt"
-	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/aisbergg/gonja/pkg/gonja"
@@ -117,16 +114,4 @@ func RenderFile(srcPath string, context map[string]interface{}, meta Metadata, o
 
 type fileInfo struct {
 	uid int
-}
-
-func osStat(path string) (fileInfo, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return fileInfo{}, err
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fileInfo{}, fmt.Errorf("failed to read file metadata")
-	}
-	return fileInfo{uid: int(stat.Uid)}, nil
 }
