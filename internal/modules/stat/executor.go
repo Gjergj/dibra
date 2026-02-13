@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
+	"strconv"
 	"syscall"
 )
 
@@ -48,6 +50,8 @@ func Execute(req Request) Response {
 	if sysStat, ok := info.Sys().(*syscall.Stat_t); ok {
 		stat.UID = int(sysStat.Uid)
 		stat.GID = int(sysStat.Gid)
+		stat.User = lookupUserName(stat.UID)
+		stat.Group = lookupGroupName(stat.GID)
 	}
 
 	if stat.IsReg {
@@ -77,4 +81,20 @@ func sha1File(path string) (string, error) {
 	}
 
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func lookupUserName(uid int) string {
+	u, err := user.LookupId(strconv.Itoa(uid))
+	if err != nil {
+		return ""
+	}
+	return u.Username
+}
+
+func lookupGroupName(gid int) string {
+	g, err := user.LookupGroupId(strconv.Itoa(gid))
+	if err != nil {
+		return ""
+	}
+	return g.Name
 }

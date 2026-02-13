@@ -61,6 +61,7 @@ import (
 	"github.com/gjergjiramku/dibra/internal/modules/stat"
 	"github.com/gjergjiramku/dibra/internal/modules/systemd_service"
 	"github.com/gjergjiramku/dibra/internal/modules/tempfile"
+	"github.com/gjergjiramku/dibra/internal/modules/template"
 	"github.com/gjergjiramku/dibra/internal/modules/ufw"
 	"github.com/gjergjiramku/dibra/internal/modules/unarchive"
 	"github.com/gjergjiramku/dibra/internal/modules/uri"
@@ -138,6 +139,14 @@ func main() {
 			return
 		}
 		writeJSON(copy.Execute(req))
+
+	case "template":
+		var req template.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse template request: %v", err))
+			return
+		}
+		writeJSON(template.Execute(req))
 
 	case "stat":
 		var req stat.Request

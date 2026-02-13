@@ -74,6 +74,7 @@ type Task struct {
 	IncludeTasks            *IncludeTasksParams            `yaml:"include_tasks,omitempty"`
 	SourceDir               string                         `yaml:"-"`
 	Register                string                         `yaml:"register,omitempty"`
+	Template                *TemplateParams                `yaml:"template,omitempty"`
 	Apt                     *AptParams                     `yaml:"apt,omitempty"`
 	AptKey                  *AptKeyParams                  `yaml:"apt_key,omitempty"`
 	AptRepository           *AptRepositoryParams           `yaml:"apt_repository,omitempty"`
@@ -131,6 +132,27 @@ type Task struct {
 	DockerSwarmInfo         *DockerSwarmInfoParams         `yaml:"docker_swarm_info,omitempty"`
 	DockerSwarmServiceInfo  *DockerSwarmServiceInfoParams  `yaml:"docker_swarm_service_info,omitempty"`
 	DockerNodeInfo          *DockerNodeInfoParams          `yaml:"docker_node_info,omitempty"`
+}
+
+type TemplateParams struct {
+	Src                string `yaml:"src"`
+	Dest               string `yaml:"dest"`
+	Mode               string `yaml:"mode,omitempty"`
+	Owner              string `yaml:"owner,omitempty"`
+	Group              string `yaml:"group,omitempty"`
+	Backup             bool   `yaml:"backup"`
+	Force              *bool  `yaml:"force,omitempty"`
+	Follow             bool   `yaml:"follow"`
+	Validate           string `yaml:"validate,omitempty"`
+	NewlineSequence    string `yaml:"newline_sequence,omitempty"`
+	VariableStartString string `yaml:"variable_start_string,omitempty"`
+	VariableEndString   string `yaml:"variable_end_string,omitempty"`
+	BlockStartString    string `yaml:"block_start_string,omitempty"`
+	BlockEndString      string `yaml:"block_end_string,omitempty"`
+	CommentStartString  string `yaml:"comment_start_string,omitempty"`
+	CommentEndString    string `yaml:"comment_end_string,omitempty"`
+	TrimBlocks         *bool  `yaml:"trim_blocks,omitempty"`
+	LstripBlocks       *bool  `yaml:"lstrip_blocks,omitempty"`
 }
 
 type DockerSwarmServiceParams struct {

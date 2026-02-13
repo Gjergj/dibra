@@ -23,5 +23,7 @@ type Stat struct {
 	Size     int64  `json:"size"`
 	UID      int    `json:"uid"`
 	GID      int    `json:"gid"`
+	User     string `json:"user,omitempty"`
+	Group    string `json:"group,omitempty"`
 	Checksum string `json:"checksum,omitempty"`
 }

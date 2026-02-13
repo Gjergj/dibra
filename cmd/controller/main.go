@@ -22,6 +22,7 @@ import (
 	"github.com/gjergjiramku/dibra/internal/secrets/bitwarden"
 	"github.com/gjergjiramku/dibra/internal/secrets/onepassword"
 	"github.com/gjergjiramku/dibra/internal/ssh"
+	"github.com/gjergjiramku/dibra/internal/template"
 	"github.com/gjergjiramku/dibra/internal/vars"
 	"github.com/gjergjiramku/dibra/internal/version"
 	"gopkg.in/yaml.v3"
@@ -671,16 +672,16 @@ func main() {
 
 				modReq = ModuleRequest{Module: "group", Args: renderedArgs}
 
-			case task.Copy != nil:
-				copyArgs := map[string]interface{}{
-					"dest":       task.Copy.Dest,
-					"mode":       task.Copy.Mode,
-					"owner":      task.Copy.Owner,
-					"group":      task.Copy.Group,
-					"backup":     task.Copy.Backup,
-					"force":      task.Copy.Force,
-					"remote_src": task.Copy.RemoteSrc,
-				}
+				case task.Copy != nil:
+					copyArgs := map[string]interface{}{
+						"dest":       task.Copy.Dest,
+						"mode":       task.Copy.Mode,
+						"owner":      task.Copy.Owner,
+						"group":      task.Copy.Group,
+						"backup":     task.Copy.Backup,
+						"force":      task.Copy.Force,
+						"remote_src": task.Copy.RemoteSrc,
+					}
 
 				if task.Copy.Content != "" {
 					copyArgs["content"] = task.Copy.Content
@@ -713,9 +714,117 @@ func main() {
 
 				}
 
-				modReq = ModuleRequest{Module: "copy", Args: renderedArgs}
+					modReq = ModuleRequest{Module: "copy", Args: renderedArgs}
 
-			case task.SystemdService != nil || task.Systemd != nil:
+				case task.Template != nil:
+					templateDest := task.Template.Dest
+					if templateDest == "" {
+						fmt.Println("    ✗ template: dest is required")
+						continue
+					}
+
+					templateDest, err = vars.RenderString(templateDest, flattened)
+					if err != nil {
+						fmt.Printf("    ✗ Failed to render template dest: %v\n", err)
+						continue
+					}
+
+					force := true
+					if task.Template.Force != nil {
+						force = *task.Template.Force
+					}
+
+					srcPath := task.Template.Src
+					if srcPath == "" {
+						fmt.Println("    ✗ template: src is required")
+						continue
+					}
+
+					srcPath, err = vars.RenderString(srcPath, flattened)
+					if err != nil {
+						fmt.Printf("    ✗ Failed to render template src: %v\n", err)
+						continue
+					}
+
+					resolveDir := baseDir
+					if task.SourceDir != "" {
+						resolveDir = task.SourceDir
+					}
+
+					if !filepath.IsAbs(srcPath) {
+						srcPath = filepath.Join(resolveDir, srcPath)
+					}
+					srcPath = filepath.Clean(srcPath)
+
+					if _, err := os.Stat(srcPath); err != nil {
+						fmt.Printf("    ✗ template: failed to read src %q: %v\n", srcPath, err)
+						continue
+					}
+
+					templateContext := make(map[string]interface{})
+					for k, v := range flattened {
+						templateContext[k] = v
+					}
+
+					templateDestPath := templateDest
+					if strings.HasSuffix(templateDestPath, "/") {
+						trimmed := strings.TrimRight(templateDestPath, "/")
+						if trimmed == "" {
+							templateDestPath = "/" + filepath.Base(srcPath)
+						} else {
+							templateDestPath = filepath.Join(trimmed, filepath.Base(srcPath))
+						}
+					}
+
+					options := template.Options{
+						NewlineSequence:     task.Template.NewlineSequence,
+						VariableStartString: task.Template.VariableStartString,
+						VariableEndString:   task.Template.VariableEndString,
+						BlockStartString:    task.Template.BlockStartString,
+						BlockEndString:      task.Template.BlockEndString,
+						CommentStartString:  task.Template.CommentStartString,
+						CommentEndString:    task.Template.CommentEndString,
+						TrimBlocks:          task.Template.TrimBlocks,
+						LstripBlocks:        task.Template.LstripBlocks,
+					}
+
+					meta := template.Metadata{
+						HostName: host.Name,
+						DestPath: templateDestPath,
+					}
+
+					rendered, _, err := template.RenderFile(srcPath, templateContext, meta, options)
+					if err != nil {
+						fmt.Printf("    ✗ template: render failed: %v\n", err)
+						continue
+					}
+
+					if task.Template.NewlineSequence != "" {
+						rendered = normalizeNewlines(rendered, task.Template.NewlineSequence)
+					}
+
+					templateArgs := map[string]interface{}{
+						"src":      srcPath,
+						"dest":     templateDest,
+						"mode":     task.Template.Mode,
+						"owner":    task.Template.Owner,
+						"group":    task.Template.Group,
+						"backup":   task.Template.Backup,
+						"force":    force,
+						"follow":   task.Template.Follow,
+						"validate": task.Template.Validate,
+					}
+
+					renderedArgs, err := renderArgs(templateArgs, flattened)
+					if err != nil {
+						fmt.Printf("    ✗ Failed to render template args: %v\n", err)
+						continue
+					}
+					renderedArgs["content"] = rendered
+
+					modReq = ModuleRequest{Module: "template", Args: renderedArgs}
+
+				case task.SystemdService != nil || task.Systemd != nil:
 				params := task.SystemdService
 				if params == nil {
 					params = task.Systemd
@@ -2271,6 +2380,31 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max] + "..."
+}
+
+func normalizeNewlines(input string, sequence string) string {
+	if sequence == "" {
+		return input
+	}
+	cleaned := strings.Trim(sequence, "\"'")
+	if cleaned == "\\r\\n" {
+		cleaned = "\r\n"
+	} else if cleaned == "\\r" {
+		cleaned = "\r"
+	} else if cleaned == "\\n" {
+		cleaned = "\n"
+	}
+	cleaned = strings.ReplaceAll(cleaned, "\\r", "\r")
+	cleaned = strings.ReplaceAll(cleaned, "\\n", "\n")
+	if cleaned == "" {
+		cleaned = "\n"
+	}
+	base := strings.ReplaceAll(input, "\r\n", "\n")
+	base = strings.ReplaceAll(base, "\r", "\n")
+	if cleaned == "\n" {
+		return base
+	}
+	return strings.ReplaceAll(base, "\n", cleaned)
 }
 
 var validVarNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
