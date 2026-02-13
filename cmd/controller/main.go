@@ -114,6 +114,10 @@ func main() {
 			fatal("Failed to resolve inventory secrets: %v", err)
 		}
 
+		if err := inv.ResolveTemplates(); err != nil {
+			fatal("Failed to resolve inventory templates: %v", err)
+		}
+
 		cfg.Hosts, err = inv.HostsAsConfig()
 		if err != nil {
 			fatal("Failed to convert inventory hosts: %v", err)

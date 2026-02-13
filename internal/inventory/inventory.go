@@ -10,6 +10,7 @@ import (
 
 	"github.com/gjergjiramku/dibra/internal/config"
 	"github.com/gjergjiramku/dibra/internal/secrets"
+	"github.com/gjergjiramku/dibra/internal/vars"
 	"gopkg.in/yaml.v3"
 )
 
@@ -591,6 +592,41 @@ func (inv *Inventory) ResolveSecrets(resolver *secrets.Resolver) error {
 					return fmt.Errorf("resolving secrets in host %q vars (group %q): %w", hostname, name, err)
 				}
 				g.HostVars[hostname] = resolved
+			}
+		}
+	}
+	return nil
+}
+
+// ResolveTemplates resolves {{ }} template expressions in inventory vars.
+// For each host, the effective vars (merged group + host vars) are used as
+// context to resolve templates in that host's vars. This allows patterns like:
+//
+//	all:
+//	  vars:
+//	    ssh_port: "2222"
+//	  children:
+//	    mygroup:
+//	      hosts:
+//	        myhost:
+//	          ansible_port: "{{ ssh_port }}"
+//
+// Must be called after ResolveSecrets() but before HostsAsConfig().
+func (inv *Inventory) ResolveTemplates() error {
+	for _, hostname := range inv.HostNames() {
+		ctx := inv.EffectiveVarsForHost(hostname)
+
+		for gName, g := range inv.Groups {
+			hv, ok := g.HostVars[hostname]
+			if !ok || len(hv) == 0 {
+				continue
+			}
+			resolved, err := vars.RenderValue(hv, ctx)
+			if err != nil {
+				return fmt.Errorf("resolving templates for host %q in group %q: %w", hostname, gName, err)
+			}
+			if rm, ok := resolved.(map[string]interface{}); ok {
+				g.HostVars[hostname] = rm
 			}
 		}
 	}

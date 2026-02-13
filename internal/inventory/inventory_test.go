@@ -716,6 +716,93 @@ all:
 	}
 }
 
+func TestResolveTemplates_PortFromGroupVar(t *testing.T) {
+	dir := t.TempDir()
+	path := writeInventory(t, dir, `
+all:
+  vars:
+    ssh_port: "2222"
+    ssh_host: "10.0.0.1"
+    ssh_user: deploy
+    ssh_pass: secret
+  children:
+    mygroup:
+      hosts:
+        myhost:
+          ansible_host: "{{ ssh_host }}"
+          ansible_port: "{{ ssh_port }}"
+          ansible_user: "{{ ssh_user }}"
+          ansible_ssh_pass: "{{ ssh_pass }}"
+          ansible_become: true
+          ansible_become_password: "{{ ssh_pass }}"
+`)
+	inv, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if err := inv.ResolveTemplates(); err != nil {
+		t.Fatalf("ResolveTemplates failed: %v", err)
+	}
+
+	hosts, err := inv.HostsAsConfig()
+	if err != nil {
+		t.Fatalf("HostsAsConfig failed: %v", err)
+	}
+
+	if len(hosts) != 1 {
+		t.Fatalf("expected 1 host, got %d", len(hosts))
+	}
+	h := hosts[0]
+
+	if h.Host != "10.0.0.1" {
+		t.Errorf("expected Host=10.0.0.1, got %s", h.Host)
+	}
+	if h.Port != 2222 {
+		t.Errorf("expected Port=2222, got %d", h.Port)
+	}
+	if h.User != "deploy" {
+		t.Errorf("expected User=deploy, got %s", h.User)
+	}
+	if h.Password != "secret" {
+		t.Errorf("expected Password=secret, got %s", h.Password)
+	}
+	if h.BecomePassword != "secret" {
+		t.Errorf("expected BecomePassword=secret, got %s", h.BecomePassword)
+	}
+	if !h.Become {
+		t.Error("expected Become=true")
+	}
+}
+
+func TestResolveTemplates_NoTemplates(t *testing.T) {
+	dir := t.TempDir()
+	path := writeInventory(t, dir, `
+all:
+  hosts:
+    h1:
+      ansible_host: 10.0.0.1
+      ansible_port: 22
+`)
+	inv, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if err := inv.ResolveTemplates(); err != nil {
+		t.Fatalf("ResolveTemplates failed: %v", err)
+	}
+
+	hosts, err := inv.HostsAsConfig()
+	if err != nil {
+		t.Fatalf("HostsAsConfig failed: %v", err)
+	}
+
+	if hosts[0].Port != 22 {
+		t.Errorf("expected Port=22, got %d", hosts[0].Port)
+	}
+}
+
 func TestEffectiveVarsForHost_NonexistentHost(t *testing.T) {
 	dir := t.TempDir()
 	path := writeInventory(t, dir, `

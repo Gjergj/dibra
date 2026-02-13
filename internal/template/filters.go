@@ -24,44 +24,44 @@ import (
 // registerAnsibleFilters adds Ansible-compatible filters to the gonja environment.
 func registerAnsibleFilters(env *gonja.Environment) {
 	filters := map[string]exec.FilterFunction{
-		"regex_replace":  filterRegexReplace,
-		"regex_search":   filterRegexSearch,
-		"regex_findall":  filterRegexFindall,
-		"split":          filterSplit,
-		"basename":       filterBasename,
-		"dirname":        filterDirname,
-		"to_yaml":        filterToYAML,
-		"to_nice_yaml":   filterToYAML,
-		"from_yaml":      filterFromYAML,
-		"from_json":      filterFromJSON,
-		"to_nice_json":   filterToNiceJSON,
-		"mandatory":      filterMandatory,
-		"quote":          filterQuote,
-		"ternary":        filterTernary,
-		"combine":        filterCombine,
-		"comment":        filterComment,
-		"splitext":       filterSplitext,
-		"hash":           filterHash,
-		"b64encode":      filterB64Encode,
-		"b64decode":      filterB64Decode,
-		"to_datetime":    filterToDatetime,
-		"strftime":       filterStrftime,
-		"type_debug":     filterTypeDebug,
-		"dict2items":     filterDict2Items,
-		"items2dict":     filterItems2Dict,
-		"zip_longest":    filterZipLongest,
-		"flatten":        filterFlatten,
-		"product":        filterProduct,
-		"regex_escape":   filterRegexEscape,
-		"bool":           filterAnsibleBool,
-		"to_json":        filterToJSON,
-		"from_yaml_all":  filterFromYAML,
-		"map_attribute":  filterMapAttribute,
+		"regex_replace":        filterRegexReplace,
+		"regex_search":         filterRegexSearch,
+		"regex_findall":        filterRegexFindall,
+		"split":                filterSplit,
+		"basename":             filterBasename,
+		"dirname":              filterDirname,
+		"to_yaml":              filterToYAML,
+		"to_nice_yaml":         filterToYAML,
+		"from_yaml":            filterFromYAML,
+		"from_json":            filterFromJSON,
+		"to_nice_json":         filterToNiceJSON,
+		"mandatory":            filterMandatory,
+		"quote":                filterQuote,
+		"ternary":              filterTernary,
+		"combine":              filterCombine,
+		"comment":              filterComment,
+		"splitext":             filterSplitext,
+		"hash":                 filterHash,
+		"b64encode":            filterB64Encode,
+		"b64decode":            filterB64Decode,
+		"to_datetime":          filterToDatetime,
+		"strftime":             filterStrftime,
+		"type_debug":           filterTypeDebug,
+		"dict2items":           filterDict2Items,
+		"items2dict":           filterItems2Dict,
+		"zip_longest":          filterZipLongest,
+		"flatten":              filterFlatten,
+		"product":              filterProduct,
+		"regex_escape":         filterRegexEscape,
+		"bool":                 filterAnsibleBool,
+		"to_json":              filterToJSON,
+		"from_yaml_all":        filterFromYAML,
+		"map_attribute":        filterMapAttribute,
 		"symmetric_difference": filterSymmetricDifference,
-		"union":          filterUnion,
-		"intersect":      filterIntersect,
-		"difference":     filterDifference,
-		"unique":         filterAnsibleUnique,
+		"union":                filterUnion,
+		"intersect":            filterIntersect,
+		"difference":           filterDifference,
+		"unique":               filterAnsibleUnique,
 	}
 
 	for name, fn := range filters {
@@ -71,7 +71,7 @@ func registerAnsibleFilters(env *gonja.Environment) {
 
 // regex_replace(pattern, replacement, count=0)
 func filterRegexReplace(e *exec.Evaluator, in exec.Value, params *exec.VarArgs) exec.Value {
-	p := params.Expect(2, []*exec.Kwarg{{"count", 0}})
+	p := params.Expect(2, []*exec.Kwarg{{Name: "count", Default: 0}})
 	if p.IsError() {
 		errors.ThrowFilterArgumentError("regex_replace(pattern, replacement, count=0)", p.Error())
 	}
@@ -214,7 +214,7 @@ func filterFromJSON(e *exec.Evaluator, in exec.Value, params *exec.VarArgs) exec
 
 // to_nice_json(indent=4)
 func filterToNiceJSON(e *exec.Evaluator, in exec.Value, params *exec.VarArgs) exec.Value {
-	p := params.Expect(0, []*exec.Kwarg{{"indent", 4}})
+	p := params.Expect(0, []*exec.Kwarg{{Name: "indent", Default: 4}})
 	if p.IsError() {
 		errors.ThrowFilterArgumentError("to_nice_json(indent=4)", p.Error())
 	}
@@ -240,7 +240,7 @@ func filterToJSON(e *exec.Evaluator, in exec.Value, params *exec.VarArgs) exec.V
 
 // mandatory(msg)
 func filterMandatory(e *exec.Evaluator, in exec.Value, params *exec.VarArgs) exec.Value {
-	p := params.Expect(0, []*exec.Kwarg{{"msg", ""}})
+	p := params.Expect(0, []*exec.Kwarg{{Name: "msg", Default: ""}})
 	if p.IsError() {
 		errors.ThrowFilterArgumentError("mandatory(msg='')", p.Error())
 	}
@@ -305,7 +305,7 @@ func filterCombine(e *exec.Evaluator, in exec.Value, params *exec.VarArgs) exec.
 
 // comment(prefix='# ')
 func filterComment(e *exec.Evaluator, in exec.Value, params *exec.VarArgs) exec.Value {
-	p := params.Expect(0, []*exec.Kwarg{{"prefix", "# "}})
+	p := params.Expect(0, []*exec.Kwarg{{Name: "prefix", Default: "# "}})
 	if p.IsError() {
 		errors.ThrowFilterArgumentError("comment(prefix='# ')", p.Error())
 	}
@@ -379,7 +379,7 @@ func filterB64Decode(e *exec.Evaluator, in exec.Value, params *exec.VarArgs) exe
 
 // to_datetime(format)
 func filterToDatetime(e *exec.Evaluator, in exec.Value, params *exec.VarArgs) exec.Value {
-	p := params.Expect(0, []*exec.Kwarg{{"format", ""}})
+	p := params.Expect(0, []*exec.Kwarg{{Name: "format", Default: ""}})
 	if p.IsError() {
 		errors.ThrowFilterArgumentError("to_datetime(format='')", p.Error())
 	}
@@ -475,8 +475,8 @@ func filterDict2Items(e *exec.Evaluator, in exec.Value, params *exec.VarArgs) ex
 // items2dict - convert list of {key, value} maps to dict
 func filterItems2Dict(e *exec.Evaluator, in exec.Value, params *exec.VarArgs) exec.Value {
 	p := params.Expect(0, []*exec.Kwarg{
-		{"key_name", "key"},
-		{"value_name", "value"},
+		{Name: "key_name", Default: "key"},
+		{Name: "value_name", Default: "value"},
 	})
 	if p.IsError() {
 		errors.ThrowFilterArgumentError("items2dict(key_name='key', value_name='value')", p.Error())
@@ -508,9 +508,7 @@ func filterZipLongest(e *exec.Evaluator, in exec.Value, params *exec.VarArgs) ex
 	}
 
 	lists := []exec.Value{in}
-	for _, arg := range params.Args {
-		lists = append(lists, arg)
-	}
+	lists = append(lists, params.Args...)
 
 	maxLen := 0
 	for _, l := range lists {
@@ -536,7 +534,7 @@ func filterZipLongest(e *exec.Evaluator, in exec.Value, params *exec.VarArgs) ex
 
 // flatten(depth=1)
 func filterFlatten(e *exec.Evaluator, in exec.Value, params *exec.VarArgs) exec.Value {
-	p := params.Expect(0, []*exec.Kwarg{{"levels", 1}})
+	p := params.Expect(0, []*exec.Kwarg{{Name: "levels", Default: 1}})
 	if p.IsError() {
 		errors.ThrowFilterArgumentError("flatten(levels=1)", p.Error())
 	}
