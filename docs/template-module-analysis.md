@@ -47,7 +47,7 @@ Agent:
 
 ## Template Metadata Variables
 Populate these into the template context:
-- `ansible_managed`
+- `dibra_managed`
 - `template_host`
 - `template_uid`
 - `template_path`

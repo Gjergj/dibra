@@ -11,7 +11,7 @@ func TestPlaybook_DockerConfigLifecycle(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	configName := "test-config-ansible"
+	configName := "test-config-dibra"
 
 	// Ensure Swarm is active
 	info := remoteExec(t, client, "docker info --format '{{.Swarm.LocalNodeState}}'")

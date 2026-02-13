@@ -44,7 +44,7 @@ func RenderFile(srcPath string, context map[string]interface{}, meta Metadata, o
 	ctx["template_uid"] = info.uid
 	ctx["template_destpath"] = templateDestPath
 	ctx["template_run_date"] = time.Now().Format(time.RFC3339)
-	ctx["ansible_managed"] = "Managed by dibra (template=" + filepath.Base(srcPath) + ")"
+	ctx["dibra_managed"] = "Managed by dibra (template=" + filepath.Base(srcPath) + ")"
 	ctx["template_dest"] = templateDestPath
 	ctx["template"] = ctx
 

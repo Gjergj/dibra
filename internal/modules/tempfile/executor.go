@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-const defaultPrefix = "ansible."
+const defaultPrefix = "dibra."
 
 func Execute(req Request) Response {
 	prefix := defaultPrefix

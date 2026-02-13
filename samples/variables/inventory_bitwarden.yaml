@@ -13,7 +13,7 @@ all:
     deploy_key: "!bw:deploy-key/notes"
   hosts:
     webserver:
-      ansible_host: 192.168.1.10
-      ansible_user: deploy
-      ansible_ssh_pass: "{{ ssh_password }}"
-      ansible_become_password: "{{ ssh_password }}"
+      host: 192.168.1.10
+      user: deploy
+      ssh_pass: "{{ ssh_password }}"
+      become_password: "{{ ssh_password }}"

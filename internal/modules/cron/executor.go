@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const ansibleMarker = "#Ansible: "
+const dibraMarker = "#Dibra: "
 
 func Execute(req Request) Response {
 	if req.Name == "" {
@@ -347,7 +347,7 @@ func (ct *cronTab) getCronJob(req Request) string {
 }
 
 func (ct *cronTab) findJob(name string) string {
-	marker := ansibleMarker + name
+	marker := dibraMarker + name
 	for i, line := range ct.lines {
 		if line == marker && i+1 < len(ct.lines) {
 			return ct.lines[i+1]
@@ -357,11 +357,11 @@ func (ct *cronTab) findJob(name string) string {
 }
 
 func (ct *cronTab) addJob(name, job string) {
-	ct.lines = append(ct.lines, ansibleMarker+name, job)
+	ct.lines = append(ct.lines, dibraMarker+name, job)
 }
 
 func (ct *cronTab) updateJob(name, job string) {
-	marker := ansibleMarker + name
+	marker := dibraMarker + name
 	for i, line := range ct.lines {
 		if line == marker && i+1 < len(ct.lines) {
 			ct.lines[i+1] = job
@@ -371,7 +371,7 @@ func (ct *cronTab) updateJob(name, job string) {
 }
 
 func (ct *cronTab) removeJob(name string) {
-	marker := ansibleMarker + name
+	marker := dibraMarker + name
 	newLines := []string{}
 	skip := false
 	for _, line := range ct.lines {
@@ -452,8 +452,8 @@ func (ct *cronTab) getJobNames() []string {
 	scanner := bufio.NewScanner(strings.NewReader(strings.Join(ct.lines, "\n")))
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, ansibleMarker) {
-			names = append(names, strings.TrimPrefix(line, ansibleMarker))
+		if strings.HasPrefix(line, dibraMarker) {
+			names = append(names, strings.TrimPrefix(line, dibraMarker))
 		}
 	}
 	return names

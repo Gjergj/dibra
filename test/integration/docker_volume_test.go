@@ -11,7 +11,7 @@ func TestPlaybook_DockerVolumeLifecycle(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	volName := "test-ansible-vol"
+	volName := "test-dibra-vol"
 
 	// Ensure clean state
 	remoteExec(t, client, "docker volume rm "+volName+" || true")
@@ -26,7 +26,7 @@ func TestPlaybook_DockerVolumeLifecycle(t *testing.T) {
       state: present
       driver: local
       labels:
-        ansible_test: "true"
+        dibra_test: "true"
 `
 	output1 := runPlaybook(t, playbookCreate)
 	if strings.Contains(output1, "FAILED") {

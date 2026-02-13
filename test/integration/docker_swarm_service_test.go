@@ -12,7 +12,7 @@ func TestPlaybook_DockerSwarmServiceLifecycle(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	svcName := "test-ansible-svc"
+	svcName := "test-dibra-svc"
 
 	// Setup: Clean env && Init Swarm
 	remoteExec(t, client, "docker service rm "+svcName+" || true")

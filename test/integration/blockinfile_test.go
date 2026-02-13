@@ -31,10 +31,10 @@ func TestPlaybook_Blockinfile_BasicInsert(t *testing.T) {
 	}
 
 	content := remoteFileContent(t, client, testFile)
-	if !strings.Contains(content, "# BEGIN ANSIBLE MANAGED BLOCK") {
+	if !strings.Contains(content, "# BEGIN DIBRA MANAGED BLOCK") {
 		t.Error("Expected BEGIN marker in file")
 	}
-	if !strings.Contains(content, "# END ANSIBLE MANAGED BLOCK") {
+	if !strings.Contains(content, "# END DIBRA MANAGED BLOCK") {
 		t.Error("Expected END marker in file")
 	}
 	if !strings.Contains(content, "block line 1") {
@@ -133,7 +133,7 @@ func TestPlaybook_Blockinfile_RemoveBlock(t *testing.T) {
 	testFile := "/tmp/dibra-blockinfile-remove.txt"
 
 	client.Run("rm -f " + testFile)
-	client.Run("cat > " + testFile + " << 'EOF'\nline 1\n# BEGIN ANSIBLE MANAGED BLOCK\nblock content\n# END ANSIBLE MANAGED BLOCK\nline 2\nEOF")
+	client.Run("cat > " + testFile + " << 'EOF'\nline 1\n# BEGIN DIBRA MANAGED BLOCK\nblock content\n# END DIBRA MANAGED BLOCK\nline 2\nEOF")
 
 	playbook := playbookHeader + `
   - name: Remove block
@@ -151,7 +151,7 @@ func TestPlaybook_Blockinfile_RemoveBlock(t *testing.T) {
 	}
 
 	content := remoteFileContent(t, client, testFile)
-	if strings.Contains(content, "# BEGIN ANSIBLE MANAGED BLOCK") {
+	if strings.Contains(content, "# BEGIN DIBRA MANAGED BLOCK") {
 		t.Error("Expected BEGIN marker to be removed")
 	}
 	if strings.Contains(content, "block content") {
@@ -179,7 +179,7 @@ func TestPlaybook_Blockinfile_RemoveWithEmptyBlock(t *testing.T) {
 	testFile := "/tmp/dibra-blockinfile-empty.txt"
 
 	client.Run("rm -f " + testFile)
-	client.Run("cat > " + testFile + " << 'EOF'\nline 1\n# BEGIN ANSIBLE MANAGED BLOCK\nblock content\n# END ANSIBLE MANAGED BLOCK\nline 2\nEOF")
+	client.Run("cat > " + testFile + " << 'EOF'\nline 1\n# BEGIN DIBRA MANAGED BLOCK\nblock content\n# END DIBRA MANAGED BLOCK\nline 2\nEOF")
 
 	playbook := playbookHeader + `
   - name: Remove block using empty block content
@@ -194,7 +194,7 @@ func TestPlaybook_Blockinfile_RemoveWithEmptyBlock(t *testing.T) {
 	}
 
 	content := remoteFileContent(t, client, testFile)
-	if strings.Contains(content, "# BEGIN ANSIBLE MANAGED BLOCK") {
+	if strings.Contains(content, "# BEGIN DIBRA MANAGED BLOCK") {
 		t.Error("Expected BEGIN marker to be removed")
 	}
 
@@ -268,10 +268,10 @@ func TestPlaybook_Blockinfile_CustomMarkerBeginEnd(t *testing.T) {
 	}
 
 	content := remoteFileContent(t, client, testFile)
-	if !strings.Contains(content, "# START ANSIBLE MANAGED BLOCK") {
+	if !strings.Contains(content, "# START DIBRA MANAGED BLOCK") {
 		t.Error("Expected custom START marker in file")
 	}
-	if !strings.Contains(content, "# FINISH ANSIBLE MANAGED BLOCK") {
+	if !strings.Contains(content, "# FINISH DIBRA MANAGED BLOCK") {
 		t.Error("Expected custom FINISH marker in file")
 	}
 
@@ -409,7 +409,7 @@ func TestPlaybook_Blockinfile_InsertAfterEOF(t *testing.T) {
 	}
 
 	content := remoteFileContent(t, client, testFile)
-	if !strings.HasSuffix(strings.TrimSpace(content), "# END ANSIBLE MANAGED BLOCK") {
+	if !strings.HasSuffix(strings.TrimSpace(content), "# END DIBRA MANAGED BLOCK") {
 		t.Errorf("Expected block at end of file, got: %s", content)
 	}
 
@@ -423,7 +423,7 @@ func TestPlaybook_Blockinfile_UpdateExistingBlock(t *testing.T) {
 	testFile := "/tmp/dibra-blockinfile-update.txt"
 
 	client.Run("rm -f " + testFile)
-	client.Run("cat > " + testFile + " << 'EOF'\nline 1\n# BEGIN ANSIBLE MANAGED BLOCK\nold content\n# END ANSIBLE MANAGED BLOCK\nline 2\nEOF")
+	client.Run("cat > " + testFile + " << 'EOF'\nline 1\n# BEGIN DIBRA MANAGED BLOCK\nold content\n# END DIBRA MANAGED BLOCK\nline 2\nEOF")
 
 	playbook := playbookHeader + `
   - name: Update existing block
@@ -450,7 +450,7 @@ func TestPlaybook_Blockinfile_UpdateExistingBlock(t *testing.T) {
 		t.Error("More new content should be present")
 	}
 
-	markerCount := strings.Count(content, "# BEGIN ANSIBLE MANAGED BLOCK")
+	markerCount := strings.Count(content, "# BEGIN DIBRA MANAGED BLOCK")
 	if markerCount != 1 {
 		t.Errorf("Expected exactly 1 BEGIN marker, got %d", markerCount)
 	}
@@ -572,7 +572,7 @@ func TestPlaybook_Blockinfile_PrependNewline(t *testing.T) {
 
 	content := remoteFileContent(t, client, testFile)
 	line1Idx := strings.Index(content, "line1")
-	blockIdx := strings.Index(content, "# BEGIN ANSIBLE MANAGED BLOCK")
+	blockIdx := strings.Index(content, "# BEGIN DIBRA MANAGED BLOCK")
 
 	if blockIdx > line1Idx {
 		between := content[line1Idx+len("line1") : blockIdx]
@@ -614,7 +614,7 @@ func TestPlaybook_Blockinfile_AppendNewline(t *testing.T) {
 	}
 
 	content := remoteFileContent(t, client, testFile)
-	endMarkerIdx := strings.Index(content, "# END ANSIBLE MANAGED BLOCK")
+	endMarkerIdx := strings.Index(content, "# END DIBRA MANAGED BLOCK")
 	line2Idx := strings.Index(content, "line2")
 
 	if line2Idx > endMarkerIdx {
@@ -708,7 +708,7 @@ func TestPlaybook_Blockinfile_FileWithoutTrailingNewline(t *testing.T) {
 	if !strings.Contains(content, "block content") {
 		t.Error("Block content should be added")
 	}
-	if !strings.Contains(content, "# BEGIN ANSIBLE MANAGED BLOCK") {
+	if !strings.Contains(content, "# BEGIN DIBRA MANAGED BLOCK") {
 		t.Error("Marker should be present")
 	}
 
@@ -824,7 +824,7 @@ func TestPlaybook_Blockinfile_SSHConfig(t *testing.T) {
     blockinfile:
       path: ` + testFile + `
       block: |
-        Match User ansible-agent
+        Match User dibra-agent
             PasswordAuthentication no
       backup: true
 `
@@ -835,14 +835,14 @@ func TestPlaybook_Blockinfile_SSHConfig(t *testing.T) {
 	}
 
 	content := remoteFileContent(t, client, testFile)
-	if !strings.Contains(content, "Match User ansible-agent") {
+	if !strings.Contains(content, "Match User dibra-agent") {
 		t.Error("Expected Match User block in file")
 	}
 	if !strings.Contains(content, "PasswordAuthentication no") {
 		t.Error("Expected PasswordAuthentication setting in file")
 	}
 
-	matchCount := strings.Count(content, "Match User ansible-agent")
+	matchCount := strings.Count(content, "Match User dibra-agent")
 	if matchCount != 1 {
 		t.Errorf("Expected exactly 1 Match User block, got %d", matchCount)
 	}
@@ -1094,7 +1094,7 @@ func TestPlaybook_Blockinfile_InsertNoMatch(t *testing.T) {
 	}
 
 	content := remoteFileContent(t, client, testFile)
-	if !strings.HasSuffix(strings.TrimSpace(content), "# END ANSIBLE MANAGED BLOCK") {
+	if !strings.HasSuffix(strings.TrimSpace(content), "# END DIBRA MANAGED BLOCK") {
 		t.Error("Block should be at EOF when insertafter doesn't match")
 	}
 
@@ -1127,7 +1127,7 @@ func TestPlaybook_Blockinfile_EmptyFile(t *testing.T) {
 	if !strings.Contains(content, "content in empty file") {
 		t.Error("Expected block content in file")
 	}
-	if !strings.Contains(content, "# BEGIN ANSIBLE MANAGED BLOCK") {
+	if !strings.Contains(content, "# BEGIN DIBRA MANAGED BLOCK") {
 		t.Error("Expected BEGIN marker")
 	}
 

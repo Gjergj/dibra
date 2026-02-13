@@ -87,8 +87,8 @@ func TestPlaybook_TempfileDefaultFileResponse(t *testing.T) {
 	if resp.State != "file" {
 		t.Errorf("Expected state=file, got: %s", resp.State)
 	}
-	if !strings.Contains(resp.Path, "ansible.") {
-		t.Errorf("Expected path to contain default prefix 'ansible.', got: %s", resp.Path)
+	if !strings.Contains(resp.Path, "dibra.") {
+		t.Errorf("Expected path to contain default prefix 'dibra.', got: %s", resp.Path)
 	}
 
 	if !remoteIsFile(t, client, resp.Path) {
@@ -121,8 +121,8 @@ func TestPlaybook_TempfileDefaultDirectoryResponse(t *testing.T) {
 	if resp.State != "directory" {
 		t.Errorf("Expected state=directory, got: %s", resp.State)
 	}
-	if !strings.Contains(resp.Path, "ansible.") {
-		t.Errorf("Expected path to contain default prefix 'ansible.', got: %s", resp.Path)
+	if !strings.Contains(resp.Path, "dibra.") {
+		t.Errorf("Expected path to contain default prefix 'dibra.', got: %s", resp.Path)
 	}
 
 	if !remoteDirExists(t, client, resp.Path) {
@@ -434,7 +434,7 @@ func TestPlaybook_TempfileEmptyPrefix(t *testing.T) {
 	if resp.Failed {
 		t.Fatalf("Expected success, got failed: %s", resp.Msg)
 	}
-	if strings.Contains(resp.Path, "ansible.") {
+	if strings.Contains(resp.Path, "dibra.") {
 		t.Errorf("Expected path to NOT contain default prefix when empty prefix specified, got: %s", resp.Path)
 	}
 

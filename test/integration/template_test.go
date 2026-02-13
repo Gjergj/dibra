@@ -804,7 +804,7 @@ after
 	// --- Magic variables ---
 
 	t.Run("MagicVariables", func(t *testing.T) {
-		tpl := writeFile("magic_vars.j2", `managed={{ ansible_managed }}
+		tpl := writeFile("magic_vars.j2", `managed={{ dibra_managed }}
 host={{ template_host }}
 dest={{ template_destpath }}
 `)

@@ -11,7 +11,7 @@ func TestPlaybook_DockerSecretLifecycle(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	secretName := "test-secret-ansible"
+	secretName := "test-secret-dibra"
 
 	// Ensure Swarm is active (init if needed)
 	info := remoteExec(t, client, "docker info --format '{{.Swarm.LocalNodeState}}'")

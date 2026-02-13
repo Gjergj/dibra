@@ -6,12 +6,12 @@ all:
     region_east:
       hosts:
         testhost:
-          ansible_host: localhost
-          ansible_port: 2222
-          ansible_user: root
-          ansible_ssh_pass: rootpass
-          ansible_become: true
-          ansible_become_password: rootpass
+          host: localhost
+          port: 2222
+          user: root
+          ssh_pass: rootpass
+          become: true
+          become_password: rootpass
       vars:
         level: region_east
         region: east

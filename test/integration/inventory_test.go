@@ -559,12 +559,12 @@ tasks:
 all:
   hosts:
     testhost:
-      ansible_host: localhost
-      ansible_port: 2222
-      ansible_user: root
-      ansible_ssh_pass: rootpass
-      ansible_become: true
-      ansible_become_password: rootpass
+      host: localhost
+      port: 2222
+      user: root
+      ssh_pass: rootpass
+      become: true
+      become_password: rootpass
 `), 0644)
 
 		playbook := filepath.Join(t.TempDir(), "playbook.yaml")
@@ -587,10 +587,10 @@ tasks:
 all:
   hosts:
     testhost:
-      ansible_host: localhost
-      ansible_port: "2222"
-      ansible_user: root
-      ansible_ssh_pass: rootpass
+      host: localhost
+      port: "2222"
+      user: root
+      ssh_pass: rootpass
 `), 0644)
 
 		playbook := filepath.Join(t.TempDir(), "playbook.yaml")
@@ -613,12 +613,12 @@ tasks:
 all:
   hosts:
     testhost:
-      ansible_host: localhost
-      ansible_port: 2222
-      ansible_user: root
-      ansible_ssh_pass: rootpass
-      ansible_become: "yes"
-      ansible_become_password: rootpass
+      host: localhost
+      port: 2222
+      user: root
+      ssh_pass: rootpass
+      become: "yes"
+      become_password: rootpass
 `), 0644)
 
 		playbook := filepath.Join(t.TempDir(), "playbook.yaml")
@@ -669,20 +669,23 @@ tasks:
 		remoteExec(t, client, "rm -f /tmp/dibra-inv-secret-reuse.txt")
 
 		// Create inventory with a "secret" var (plain value simulating resolved secret)
+		// Uses rootpass as the shared secret since that's the test container's SSH password.
+		// This verifies that {{ }} template resolution works in ssh_pass and become_password.
 		invDir := t.TempDir()
 		invFile := filepath.Join(invDir, "inventory.yaml")
 		os.WriteFile(invFile, []byte(`
 all:
   vars:
-    shared_secret: resolved_password
+    shared_secret: rootpass
+    app_secret: resolved_password
   hosts:
     testhost:
-      ansible_host: localhost
-      ansible_port: 2222
-      ansible_user: root
-      ansible_ssh_pass: "{{ shared_secret }}"
-      ansible_become: true
-      ansible_become_password: "{{ shared_secret }}"
+      host: localhost
+      port: 2222
+      user: root
+      ssh_pass: "{{ shared_secret }}"
+      become: true
+      become_password: "{{ shared_secret }}"
 `), 0644)
 
 		playbook := filepath.Join(t.TempDir(), "playbook.yaml")
@@ -690,7 +693,7 @@ all:
 tasks:
   - name: Write secret var
     copy:
-      content: "secret={{ shared_secret }}"
+      content: "secret={{ app_secret }}"
       dest: /tmp/dibra-inv-secret-reuse.txt
 `), 0644)
 
@@ -714,10 +717,10 @@ all:
     bad_secret: "!bw:nonexistent/password"
   hosts:
     testhost:
-      ansible_host: localhost
-      ansible_port: 2222
-      ansible_user: root
-      ansible_ssh_pass: rootpass
+      host: localhost
+      port: 2222
+      user: root
+      ssh_pass: rootpass
 `), 0644)
 
 		playbook := filepath.Join(t.TempDir(), "playbook.yaml")
@@ -746,12 +749,12 @@ all:
     port_var: 8080
   hosts:
     testhost:
-      ansible_host: localhost
-      ansible_port: 2222
-      ansible_user: root
-      ansible_ssh_pass: rootpass
-      ansible_become: true
-      ansible_become_password: rootpass
+      host: localhost
+      port: 2222
+      user: root
+      ssh_pass: rootpass
+      become: true
+      become_password: rootpass
       custom_host_var: from_host
 `), 0644)
 

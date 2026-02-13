@@ -32,8 +32,8 @@ func TestPlaybook_CronAddJob(t *testing.T) {
 	}
 
 	crontab := remoteExec(t, client, "crontab -l")
-	if !strings.Contains(crontab, "#Ansible: test job") {
-		t.Error("Crontab should contain Ansible marker")
+	if !strings.Contains(crontab, "#Dibra: test job") {
+		t.Error("Crontab should contain Dibra marker")
 	}
 	if !strings.Contains(crontab, "0 5 * * * /usr/bin/echo hello") {
 		t.Errorf("Crontab should contain job, got: %s", crontab)
@@ -654,13 +654,13 @@ func TestPlaybook_CronMultipleJobs(t *testing.T) {
 
 	crontab := remoteExec(t, client, "crontab -l")
 
-	if !strings.Contains(crontab, "#Ansible: multi job 1") {
+	if !strings.Contains(crontab, "#Dibra: multi job 1") {
 		t.Error("Crontab should contain job 1 marker")
 	}
-	if !strings.Contains(crontab, "#Ansible: multi job 2") {
+	if !strings.Contains(crontab, "#Dibra: multi job 2") {
 		t.Error("Crontab should contain job 2 marker")
 	}
-	if !strings.Contains(crontab, "#Ansible: multi job 3") {
+	if !strings.Contains(crontab, "#Dibra: multi job 3") {
 		t.Error("Crontab should contain job 3 marker")
 	}
 	if !strings.Contains(crontab, "0 * * * * /usr/bin/echo job1") {
@@ -852,7 +852,7 @@ func TestPlaybook_CronUserSpecific(t *testing.T) {
 
 	// Verify in testuser's crontab
 	crontab := remoteExec(t, client, "crontab -u testuser -l")
-	if !strings.Contains(crontab, "#Ansible: testuser job") {
+	if !strings.Contains(crontab, "#Dibra: testuser job") {
 		t.Errorf("Testuser crontab should contain marker, got: %s", crontab)
 	}
 	if !strings.Contains(crontab, "45 3 * * * /usr/bin/echo testuser-task") {

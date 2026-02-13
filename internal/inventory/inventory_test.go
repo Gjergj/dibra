@@ -26,9 +26,9 @@ func TestLoad_BasicAllGroup(t *testing.T) {
 all:
   hosts:
     host1:
-      ansible_host: 192.168.1.1
+      host: 192.168.1.1
     host2:
-      ansible_host: 192.168.1.2
+      host: 192.168.1.2
 `)
 	inv, err := Load(path)
 	if err != nil {
@@ -53,15 +53,15 @@ all:
     webservers:
       hosts:
         web1:
-          ansible_host: 10.0.0.1
+          host: 10.0.0.1
         web2:
-          ansible_host: 10.0.0.2
+          host: 10.0.0.2
       vars:
         http_port: 80
     dbservers:
       hosts:
         db1:
-          ansible_host: 10.0.1.1
+          host: 10.0.1.1
       vars:
         db_port: 5432
 `)
@@ -79,8 +79,8 @@ all:
 	if webVars["http_port"] != 80 {
 		t.Errorf("expected http_port=80, got %v", webVars["http_port"])
 	}
-	if webVars["ansible_host"] != "10.0.0.1" {
-		t.Errorf("expected ansible_host=10.0.0.1, got %v", webVars["ansible_host"])
+	if webVars["host"] != "10.0.0.1" {
+		t.Errorf("expected host=10.0.0.1, got %v", webVars["host"])
 	}
 
 	dbVars := inv.EffectiveVarsForHost("db1")
@@ -95,11 +95,11 @@ func TestLoad_ImplicitAllGroup(t *testing.T) {
 webservers:
   hosts:
     web1:
-      ansible_host: 10.0.0.1
+      host: 10.0.0.1
 dbservers:
   hosts:
     db1:
-      ansible_host: 10.0.1.1
+      host: 10.0.1.1
 `)
 	inv, err := Load(path)
 	if err != nil {
@@ -130,12 +130,12 @@ func TestLoad_UngroupedHosts(t *testing.T) {
 all:
   hosts:
     standalone:
-      ansible_host: 10.0.0.99
+      host: 10.0.0.99
   children:
     webservers:
       hosts:
         web1:
-          ansible_host: 10.0.0.1
+          host: 10.0.0.1
 `)
 	inv, err := Load(path)
 	if err != nil {
@@ -161,13 +161,13 @@ all:
     east:
       hosts:
         east1:
-          ansible_host: 10.1.0.1
+          host: 10.1.0.1
       vars:
         region: east
     west:
       hosts:
         west1:
-          ansible_host: 10.2.0.1
+          host: 10.2.0.1
       vars:
         region: west
     production:
@@ -357,15 +357,15 @@ all:
     webservers:
       hosts:
         web1:
-          ansible_host: 192.168.1.10
-          ansible_port: 2222
-          ansible_user: admin
-          ansible_ssh_pass: secret
-          ansible_become: true
-          ansible_become_password: sudo_pass
+          host: 192.168.1.10
+          port: 2222
+          user: admin
+          ssh_pass: secret
+          become: true
+          become_password: sudo_pass
         web2:
-          ansible_host: 192.168.1.20
-          ansible_ssh_private_key_file: /home/user/.ssh/id_rsa
+          host: 192.168.1.20
+          ssh_private_key_file: /home/user/.ssh/id_rsa
 `)
 	inv, err := Load(path)
 	if err != nil {
@@ -605,13 +605,13 @@ func TestLoad_TopLevelGroupsWithoutAll(t *testing.T) {
 webservers:
   hosts:
     web1:
-      ansible_host: 10.0.0.1
+      host: 10.0.0.1
   vars:
     http_port: 80
 dbservers:
   hosts:
     db1:
-      ansible_host: 10.0.1.1
+      host: 10.0.1.1
   vars:
     db_port: 5432
 `)
@@ -676,13 +676,13 @@ func TestLoad_TypeCoercion(t *testing.T) {
 all:
   hosts:
     h1:
-      ansible_port: "2222"
-      ansible_become: "yes"
+      port: "2222"
+      become: "yes"
     h2:
-      ansible_port: 22
-      ansible_become: true
+      port: 22
+      become: true
     h3:
-      ansible_become: false
+      become: false
 `)
 	inv, err := Load(path)
 	if err != nil {
@@ -729,12 +729,12 @@ all:
     mygroup:
       hosts:
         myhost:
-          ansible_host: "{{ ssh_host }}"
-          ansible_port: "{{ ssh_port }}"
-          ansible_user: "{{ ssh_user }}"
-          ansible_ssh_pass: "{{ ssh_pass }}"
-          ansible_become: true
-          ansible_become_password: "{{ ssh_pass }}"
+          host: "{{ ssh_host }}"
+          port: "{{ ssh_port }}"
+          user: "{{ ssh_user }}"
+          ssh_pass: "{{ ssh_pass }}"
+          become: true
+          become_password: "{{ ssh_pass }}"
 `)
 	inv, err := Load(path)
 	if err != nil {
@@ -781,8 +781,8 @@ func TestResolveTemplates_NoTemplates(t *testing.T) {
 all:
   hosts:
     h1:
-      ansible_host: 10.0.0.1
-      ansible_port: 22
+      host: 10.0.0.1
+      port: 22
 `)
 	inv, err := Load(path)
 	if err != nil {

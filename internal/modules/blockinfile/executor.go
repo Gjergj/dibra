@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	defaultMarker      = "# {mark} ANSIBLE MANAGED BLOCK"
+	defaultMarker      = "# {mark} DIBRA MANAGED BLOCK"
 	defaultMarkerBegin = "BEGIN"
 	defaultMarkerEnd   = "END"
 )

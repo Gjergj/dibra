@@ -11,7 +11,7 @@ func TestPlaybook_DockerStackLifecycle(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	stackName := "test-stack-ansible"
+	stackName := "test-stack-dibra"
 	composeFile := "/tmp/stack-compose.yml"
 
 	// Ensure Swarm is active

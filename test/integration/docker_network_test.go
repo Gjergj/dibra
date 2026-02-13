@@ -11,7 +11,7 @@ func TestPlaybook_DockerNetworkLifecycle(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	netName := "test-ansible-net"
+	netName := "test-dibra-net"
 
 	// Ensure clean state
 	remoteExec(t, client, "docker network rm "+netName+" || true")
@@ -26,7 +26,7 @@ func TestPlaybook_DockerNetworkLifecycle(t *testing.T) {
       state: present
       driver: bridge
       labels:
-        ansible_test: "true"
+        dibra_test: "true"
 `
 	output1 := runPlaybook(t, playbookCreate)
 	if strings.Contains(output1, "FAILED") {

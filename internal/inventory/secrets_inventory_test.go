@@ -32,8 +32,8 @@ func TestResolveSecrets_HostVars(t *testing.T) {
 				Vars: map[string]interface{}{},
 				HostVars: map[string]map[string]interface{}{
 					"web1": {
-						"ansible_ssh_pass": "!bw:web1/password",
-						"ansible_host":     "192.168.1.10",
+						"ssh_pass": "!bw:web1/password",
+						"host":     "192.168.1.10",
 					},
 				},
 			},
@@ -52,14 +52,14 @@ func TestResolveSecrets_HostVars(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	got := inv.Groups["all"].HostVars["web1"]["ansible_ssh_pass"]
+	got := inv.Groups["all"].HostVars["web1"]["ssh_pass"]
 	if got != "resolved-pass" {
-		t.Errorf("ansible_ssh_pass = %v, want %q", got, "resolved-pass")
+		t.Errorf("ssh_pass = %v, want %q", got, "resolved-pass")
 	}
 	// Non-secret value unchanged
-	host := inv.Groups["all"].HostVars["web1"]["ansible_host"]
+	host := inv.Groups["all"].HostVars["web1"]["host"]
 	if host != "192.168.1.10" {
-		t.Errorf("ansible_host = %v, want %q", host, "192.168.1.10")
+		t.Errorf("host = %v, want %q", host, "192.168.1.10")
 	}
 }
 
@@ -109,8 +109,8 @@ func TestResolveSecrets_PlainUnchanged(t *testing.T) {
 				},
 				HostVars: map[string]map[string]interface{}{
 					"web1": {
-						"ansible_host": "10.0.0.1",
-						"ansible_port": 22,
+						"host": "10.0.0.1",
+						"port": 22,
 					},
 				},
 			},

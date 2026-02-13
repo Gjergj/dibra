@@ -214,10 +214,10 @@ func createUser(req Request) Response {
 	userInfo, _ := getUserInfo(req.Name)
 
 	resp := Response{
-		Changed:  changed,
-		Name:     req.Name,
-		State:    "present",
-		System:   req.System,
+		Changed:    changed,
+		Name:       req.Name,
+		State:      "present",
+		System:     req.System,
 		CreateHome: createHome,
 	}
 
@@ -536,7 +536,7 @@ func generateSSHKey(req Request) (Response, error) {
 	comment := req.SSHKeyComment
 	if comment == "" {
 		hostname, _ := os.Hostname()
-		comment = fmt.Sprintf("ansible-generated on %s", hostname)
+		comment = fmt.Sprintf("dibra-generated on %s", hostname)
 	}
 
 	args := []string{"-t", req.SSHKeyType, "-f", keyFile, "-C", comment}

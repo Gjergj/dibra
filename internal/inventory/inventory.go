@@ -478,13 +478,13 @@ func (inv *Inventory) HostsAsConfig() ([]config.Host, error) {
 		vars := inv.EffectiveVarsForHost(hostname)
 		h := config.Host{
 			Name:           hostname,
-			Host:           getString(vars, "ansible_host", hostname),
-			Port:           getInt(vars, "ansible_port", 22),
-			User:           getString(vars, "ansible_user", ""),
-			Password:       getString(vars, "ansible_ssh_pass", ""),
-			SSHKeyPath:     getString(vars, "ansible_ssh_private_key_file", ""),
-			Become:         getBool(vars, "ansible_become", false),
-			BecomePassword: getString(vars, "ansible_become_password", ""),
+			Host:           getString(vars, "host", hostname),
+			Port:           getInt(vars, "port", 22),
+			User:           getString(vars, "user", ""),
+			Password:       getString(vars, "ssh_pass", ""),
+			SSHKeyPath:     getString(vars, "ssh_private_key_file", ""),
+			Become:         getBool(vars, "become", false),
+			BecomePassword: getString(vars, "become_password", ""),
 		}
 
 		he := inv.Hosts[hostname]
@@ -609,7 +609,7 @@ func (inv *Inventory) ResolveSecrets(resolver *secrets.Resolver) error {
 //	    mygroup:
 //	      hosts:
 //	        myhost:
-//	          ansible_port: "{{ ssh_port }}"
+//	          port: "{{ ssh_port }}"
 //
 // Must be called after ResolveSecrets() but before HostsAsConfig().
 func (inv *Inventory) ResolveTemplates() error {

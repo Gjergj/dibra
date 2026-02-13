@@ -244,7 +244,7 @@ Dibra supports fetching secrets directly from **Bitwarden** and **1Password** to
 1. **Prefix-based resolution**: Secrets are identified by a special prefix in variable values:
    - `!bw:` for Bitwarden
    - `!op://` for 1Password
-2. **Early binding**: Secrets are resolved **before** the playbook starts, so they can be used in `ansible_ssh_pass`, `ansible_become_password`, or any other variable.
+2. **Early binding**: Secrets are resolved **before** the playbook starts, so they can be used in `ssh_pass`, `become_password`, or any other variable.
 3. **Variable Reuse**: You can define a secret once in a `vars` block and reuse it multiple times via `{{ variable }}`.
 
 ### Providers
@@ -265,7 +265,7 @@ all:
     server_pass: "!bw:webserver-ssh/password"
   hosts:
     web1:
-      ansible_ssh_pass: "{{ server_pass }}"
+      ssh_pass: "{{ server_pass }}"
 ```
 
 #### 1Password (`!op://`)
@@ -1349,7 +1349,7 @@ Inserts, updates, or removes a block of multi-line text surrounded by customizab
   blockinfile:
     path: /etc/ssh/sshd_config
     block: |
-      Match User ansible-agent
+      Match User dibra-agent
           PasswordAuthentication no
 
 # Custom markers
@@ -1778,7 +1778,7 @@ Renders a Jinja-like template on the controller and writes it to the remote host
 | `lstrip_blocks` | `false` | Strip leading whitespace to blocks. |
 
 **Template Variables**:
-- `ansible_managed`, `template_host`, `template_uid`, `template_path`, `template_fullpath`, `template_destpath`, `template_dest`, `template_run_date`, `template` (map containing metadata)
+- `dibra_managed`, `template_host`, `template_uid`, `template_path`, `template_fullpath`, `template_destpath`, `template_dest`, `template_run_date`, `template` (map containing metadata)
 
 **Idempotency**: SHA1 checksum of rendered content; re-applies ownership/mode changes when content matches.
 
@@ -3295,26 +3295,26 @@ all:
     env: production
   hosts:
     standalone_host:
-      ansible_host: 10.0.0.99
+      host: 10.0.0.99
   children:
     webservers:
       hosts:
         web1:
-          ansible_host: 192.168.1.10
-          ansible_port: 22
-          ansible_user: deploy
-          ansible_ssh_pass: secret
-          ansible_become: true
-          ansible_become_password: sudo_pass
+          host: 192.168.1.10
+          port: 22
+          user: deploy
+          ssh_pass: secret
+          become: true
+          become_password: sudo_pass
         web2:
-          ansible_host: 192.168.1.20
-          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+          host: 192.168.1.20
+          ssh_private_key_file: ~/.ssh/id_rsa
       vars:
         http_port: 80
     dbservers:
       hosts:
         db1:
-          ansible_host: 192.168.2.10
+          host: 192.168.2.10
       vars:
         db_port: 5432
     production:
@@ -3333,26 +3333,26 @@ Groups can be defined at the top level without wrapping in `all:`. An implicit `
 webservers:
   hosts:
     web1:
-      ansible_host: 10.0.0.1
+      host: 10.0.0.1
   vars:
     role: web
 dbservers:
   hosts:
     db1:
-      ansible_host: 10.0.1.1
+      host: 10.0.1.1
 ```
 
 ### Connection Variable Mapping
 
 | Ansible Variable | Dibra Host Field |
 |-----------------|-----------------|
-| `ansible_host` | `host` (default: hostname) |
-| `ansible_port` | `port` (default: 22) |
-| `ansible_user` | `user` |
-| `ansible_ssh_pass` | `password` |
-| `ansible_ssh_private_key_file` | `ssh_key_path` |
-| `ansible_become` | `become` |
-| `ansible_become_password` | `become_password` |
+| `host` | `host` (default: hostname) |
+| `port` | `port` (default: 22) |
+| `user` | `user` |
+| `ssh_pass` | `password` |
+| `ssh_private_key_file` | `ssh_key_path` |
+| `become` | `become` |
+| `become_password` | `become_password` |
 
 ### Variable Precedence (Low → High)
 
@@ -3730,7 +3730,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_DockerVolumePrune` | Prune filter improvements (Phase 7.2) |
 | `TestPlaybook_Find` | Find module: recursive/non-recursive search, glob/regex patterns, excludes, file_type (file/directory/link/any), age/size filters, hidden files, symlinks, depth limit, mode filtering, checksum algorithms, contains content matching, multiple paths, limit, path/pattern/exclude aliases, template variables, idempotency |
 | `TestPlaybook_Register` | Register keyword: basic shell register, register on failure, overwrite, command module, ping module-specific fields, stdout_lines access, chained registers, file/copy/tempfile module fields, multiple modules, idempotency tracking, template expressions with registered vars, include_tasks/import_tasks boundary, invalid variable names (numeric, hyphen, space), underscore prefix, no side effects without register, rerun idempotency |
-| `TestPlaybook_TemplateModule` | Template module: basic render, dest directory, custom delimiters, trim blocks, idempotency, force flag, validation, newline sequences, register, nested includes, builtin filters (default/upper/lower/replace/join/length/title/trim/tojson/int/float), custom Ansible filters (split, regex_replace/search/findall, basename/dirname, to_yaml/from_json/to_nice_json, quote, ternary, b64encode/b64decode, hash, comment, combine, dict2items/items2dict, flatten, type_debug, splitext), filter chaining, for-loops (loop variables, dict iteration, conditional filtering), complex conditionals (if/elif/else, and/or/not, in, is defined/is not defined), set statements, macros, raw blocks, whitespace control, magic variables (ansible_managed, template_host, template_destpath), complex nested data structures, template inheritance (extends/block) |
+| `TestPlaybook_TemplateModule` | Template module: basic render, dest directory, custom delimiters, trim blocks, idempotency, force flag, validation, newline sequences, register, nested includes, builtin filters (default/upper/lower/replace/join/length/title/trim/tojson/int/float), custom Ansible filters (split, regex_replace/search/findall, basename/dirname, to_yaml/from_json/to_nice_json, quote, ternary, b64encode/b64decode, hash, comment, combine, dict2items/items2dict, flatten, type_debug, splitext), filter chaining, for-loops (loop variables, dict iteration, conditional filtering), complex conditionals (if/elif/else, and/or/not, in, is defined/is not defined), set statements, macros, raw blocks, whitespace control, magic variables (dibra_managed, template_host, template_destpath), complex nested data structures, template inheritance (extends/block) |
 | `TestPlaybook_Inventory` | External YAML inventory: basic inventory loading, idempotency, host output, groups with vars, children group hierarchy, implicit all group, ungrouped hosts, group_vars/host_vars files relative to inventory, deep hierarchy (4 levels), multi-parent groups, host vars override group vars, magic variables (inventory_hostname, group_names), playbook inventory reference, error on both hosts and inventory, play vars + inventory, extra vars + inventory, task vars + inventory, inventory not found error, register with inventory, import_tasks with inventory, SSH key path, port as string coercion, become as string coercion, groups in context |
 
 Each test:

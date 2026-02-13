@@ -12,7 +12,7 @@ func TestPlaybook_DockerComposeV2Run(t *testing.T) {
 	defer client.Close()
 
 	// Setup: Create a temp dir with docker-compose.yml
-	projectDir := "/tmp/ansible-compose-v2-run-test"
+	projectDir := "/tmp/dibra-compose-v2-run-test"
 	remoteExec(t, client, "mkdir -p "+projectDir)
 
 	// Simple compose file
