@@ -313,6 +313,8 @@ func TestPlaybook_DockerVolumePrune(t *testing.T) {
 	}
 
 	// 2. Prune volumes with label filter
+	// Docker API v1.42+ (Docker 23.0+) only prunes anonymous volumes by default;
+	// named volumes require the "all" filter to be included.
 	t.Log("Step 2: Prune volumes with filter")
 	playbookPruneVolumes := playbookHeader + `
   - name: Prune labeled volumes
@@ -320,6 +322,7 @@ func TestPlaybook_DockerVolumePrune(t *testing.T) {
       volumes: true
       volumes_filters:
         label: "prune=yes"
+        all: "true"
 `
 	output2 := runPlaybook(t, playbookPruneVolumes)
 	if strings.Contains(output2, "FAILED") {

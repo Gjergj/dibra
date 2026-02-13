@@ -912,12 +912,17 @@ type DockerVolumeParams struct {
 }
 
 type DockerPruneParams struct {
-	Containers    bool              `yaml:"containers,omitempty"`
-	Images        bool              `yaml:"images,omitempty"`
-	Networks      bool              `yaml:"networks,omitempty"`
-	Volumes       bool              `yaml:"volumes,omitempty"`
-	Builder       bool              `yaml:"builder,omitempty"`
-	ImagesFilters map[string]string `yaml:"images_filters,omitempty"`
+	Containers          bool              `yaml:"containers,omitempty"`
+	ContainersFilters   map[string]string `yaml:"containers_filters,omitempty"`
+	Images              bool              `yaml:"images,omitempty"`
+	ImagesFilters       map[string]string `yaml:"images_filters,omitempty"`
+	Networks            bool              `yaml:"networks,omitempty"`
+	NetworksFilters     map[string]string `yaml:"networks_filters,omitempty"`
+	Volumes             bool              `yaml:"volumes,omitempty"`
+	VolumesFilters      map[string]string `yaml:"volumes_filters,omitempty"`
+	Builder             bool              `yaml:"builder,omitempty"`
+	BuilderCacheAll     bool              `yaml:"builder_cache_all,omitempty"`
+	BuilderCacheFilters map[string]string `yaml:"builder_cache_filters,omitempty"`
 
 	DockerHost string `yaml:"docker_host,omitempty"`
 	TLS        bool   `yaml:"tls,omitempty"`

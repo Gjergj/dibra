@@ -113,28 +113,31 @@ func TestWorkflow_PackageAndConfigDeployment(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	// Cleanup before test (don't remove cowsay - it's pre-installed and can't be reinstalled without network)
-	client.Run("rm -rf /etc/dibra-test-cowsay")
+	// Cleanup before test
+	client.Run("rm -rf /etc/dibra-test-curl")
 
+	// Use curl instead of cowsay — curl is pre-installed in the Docker image and
+	// is not removed by other tests (apt_test removes cowsay), so this test works
+	// even without network access.
 	playbook := playbookHeader + `
-  - name: Ensure cowsay package is present
+  - name: Ensure curl package is present
     apt:
-      name: cowsay
+      name: curl
       state: present
 
   - name: Create config directory
     file:
-      path: /etc/dibra-test-cowsay
+      path: /etc/dibra-test-curl
       state: directory
       mode: "0755"
 
-  - name: Deploy cowsay config
+  - name: Deploy curl config
     copy:
       content: |
-        # Cowsay configuration
-        default_cow=tux
-        wrap_text=true
-      dest: /etc/dibra-test-cowsay/config
+        # Curl configuration
+        connect_timeout=30
+        max_time=300
+      dest: /etc/dibra-test-curl/config
       mode: "0644"
 `
 	output := runPlaybook(t, playbook)
@@ -144,18 +147,18 @@ func TestWorkflow_PackageAndConfigDeployment(t *testing.T) {
 	}
 
 	// Verify package installed
-	if !remotePackageInstalled(t, client, "cowsay") {
-		t.Error("cowsay package should be installed")
+	if !remotePackageInstalled(t, client, "curl") {
+		t.Error("curl package should be installed")
 	}
 
 	// Verify config exists
-	if !remoteFileExists(t, client, "/etc/dibra-test-cowsay/config") {
+	if !remoteFileExists(t, client, "/etc/dibra-test-curl/config") {
 		t.Error("Config file should exist")
 	}
 
-	content := remoteFileContent(t, client, "/etc/dibra-test-cowsay/config")
-	if !strings.Contains(content, "default_cow=tux") {
-		t.Error("Config should contain default_cow setting")
+	content := remoteFileContent(t, client, "/etc/dibra-test-curl/config")
+	if !strings.Contains(content, "connect_timeout=30") {
+		t.Error("Config should contain connect_timeout setting")
 	}
 
 	// Idempotency check
@@ -164,8 +167,8 @@ func TestWorkflow_PackageAndConfigDeployment(t *testing.T) {
 		t.Errorf("Idempotent run failed: %s", output)
 	}
 
-	// Cleanup (keep cowsay installed for future test runs)
-	client.Run("rm -rf /etc/dibra-test-cowsay")
+	// Cleanup
+	client.Run("rm -rf /etc/dibra-test-curl")
 }
 
 func TestWorkflow_DownloadAndDeploy(t *testing.T) {

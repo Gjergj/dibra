@@ -1558,14 +1558,19 @@ func main() {
 
 			case task.DockerPrune != nil:
 				args := map[string]interface{}{
-					"containers":     task.DockerPrune.Containers,
-					"images":         task.DockerPrune.Images,
-					"networks":       task.DockerPrune.Networks,
-					"volumes":        task.DockerPrune.Volumes,
-					"builder":        task.DockerPrune.Builder,
-					"images_filters": task.DockerPrune.ImagesFilters,
-					"docker_host":    task.DockerPrune.DockerHost,
-					"tls":            task.DockerPrune.TLS,
+					"containers":           task.DockerPrune.Containers,
+					"containers_filters":   task.DockerPrune.ContainersFilters,
+					"images":               task.DockerPrune.Images,
+					"images_filters":       task.DockerPrune.ImagesFilters,
+					"networks":             task.DockerPrune.Networks,
+					"networks_filters":     task.DockerPrune.NetworksFilters,
+					"volumes":              task.DockerPrune.Volumes,
+					"volumes_filters":      task.DockerPrune.VolumesFilters,
+					"builder":              task.DockerPrune.Builder,
+					"builder_cache_all":    task.DockerPrune.BuilderCacheAll,
+					"builder_cache_filters": task.DockerPrune.BuilderCacheFilters,
+					"docker_host":          task.DockerPrune.DockerHost,
+					"tls":                  task.DockerPrune.TLS,
 				}
 				renderedArgs, err := renderArgs(args, flattened)
 
