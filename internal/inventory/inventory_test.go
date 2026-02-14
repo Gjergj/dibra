@@ -732,7 +732,7 @@ all:
           host: "{{ ssh_host }}"
           port: "{{ ssh_port }}"
           user: "{{ ssh_user }}"
-          ssh_pass: "{{ ssh_pass }}"
+          pass: "{{ ssh_pass }}"
           become: true
           become_password: "{{ ssh_pass }}"
 `)
