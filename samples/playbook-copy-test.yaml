@@ -1,6 +1,6 @@
 hosts:
   - name: webserver1
-    host: 89.233.108.20
+    host: mytesthost
     port: 22
     user: root
     password: "YOUR_PASSWORD"
