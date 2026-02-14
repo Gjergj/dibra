@@ -16,6 +16,7 @@ type Response struct {
 	Changed bool              `json:"changed"`
 	Failed  bool              `json:"failed"`
 	Msg     string            `json:"msg,omitempty"`
+	Stderr  string            `json:"stderr,omitempty"`
 	Name    string            `json:"name,omitempty"`
 	State   string            `json:"state,omitempty"`
 	Enabled bool              `json:"enabled,omitempty"`

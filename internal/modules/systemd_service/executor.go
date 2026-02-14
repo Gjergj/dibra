@@ -162,10 +162,7 @@ func Execute(req Request) Response {
 				args = append(args, unitName)
 				rc, _, stderr := runSystemctl(req.Scope, args...)
 				if rc != 0 {
-					return Response{
-						Failed: true,
-						Msg:    "failed to start service: " + stderr,
-					}
+					return failedResponse("failed to start service: "+stderr, unitName)
 				}
 				resp.Changed = true
 			}
@@ -180,10 +177,7 @@ func Execute(req Request) Response {
 				args = append(args, unitName)
 				rc, _, stderr := runSystemctl(req.Scope, args...)
 				if rc != 0 {
-					return Response{
-						Failed: true,
-						Msg:    "failed to stop service: " + stderr,
-					}
+					return failedResponse("failed to stop service: "+stderr, unitName)
 				}
 				resp.Changed = true
 			}
@@ -197,10 +191,7 @@ func Execute(req Request) Response {
 			args = append(args, unitName)
 			rc, _, stderr := runSystemctl(req.Scope, args...)
 			if rc != 0 {
-				return Response{
-					Failed: true,
-					Msg:    "failed to restart service: " + stderr,
-				}
+				return failedResponse("failed to restart service: "+stderr, unitName)
 			}
 			resp.Changed = true
 
@@ -214,10 +205,7 @@ func Execute(req Request) Response {
 				args = append(args, unitName)
 				rc, _, stderr := runSystemctl(req.Scope, args...)
 				if rc != 0 {
-					return Response{
-						Failed: true,
-						Msg:    "failed to start service before reload: " + stderr,
-					}
+					return failedResponse("failed to start service before reload: "+stderr, unitName)
 				}
 				resp.Changed = true
 			}
@@ -228,10 +216,7 @@ func Execute(req Request) Response {
 			args = append(args, unitName)
 			rc, _, stderr := runSystemctl(req.Scope, args...)
 			if rc != 0 {
-				return Response{
-					Failed: true,
-					Msg:    "failed to reload service: " + stderr,
-				}
+				return failedResponse("failed to reload service: "+stderr, unitName)
 			}
 			resp.Changed = true
 
@@ -362,4 +347,29 @@ func isUnitMasked(scope, unitName string) bool {
 	}
 	trimmed := strings.TrimSpace(stdout)
 	return trimmed == "masked" || trimmed == "masked-runtime"
+}
+
+// getJournalTail returns the last few lines of journal output for a unit.
+func getJournalTail(unitName string) string {
+	cmd := exec.Command("journalctl", "-u", unitName, "-n", "20", "--no-pager")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := cmd.Run(); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out.String())
+}
+
+// failedResponse builds a Response with journal context when a service operation fails.
+// Journal output is placed in Stderr so the controller can show it only in verbose mode.
+func failedResponse(msg, unitName string) Response {
+	resp := Response{
+		Failed: true,
+		Msg:    msg,
+	}
+	if journal := getJournalTail(unitName); journal != "" {
+		resp.Stderr = "journalctl -u " + unitName + ":\n" + journal
+	}
+	return resp
 }
