@@ -268,6 +268,7 @@ func main() {
 			SSHKeyPath:     host.SSHKeyPath,
 			Become:         host.Become,
 			BecomePassword: host.BecomePassword,
+			Verbose:        *verbose,
 		})
 		if err != nil {
 			fmt.Printf("  ✗ Failed to connect: %v\n", err)
@@ -3090,6 +3091,7 @@ func executeReboot(client *ssh.Client, agentPath string, host config.Host, param
 			SSHKeyPath:     host.SSHKeyPath,
 			Become:         host.Become,
 			BecomePassword: host.BecomePassword,
+			Verbose:        verbose,
 		})
 		if err != nil {
 			if verbose {

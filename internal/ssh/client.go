@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -28,16 +29,28 @@ type Config struct {
 	SSHKeyPath     string
 	Become         bool
 	BecomePassword string
+	Verbose        bool
 }
 
 func Connect(cfg Config) (*Client, error) {
+	// Trim whitespace from host and user to prevent DNS lookup failures
+	// (e.g., "  89.167.2.178" would be treated as a hostname instead of IP)
+	cfg.Host = strings.TrimSpace(cfg.Host)
+	cfg.User = strings.TrimSpace(cfg.User)
+
 	var authMethods []ssh.AuthMethod
 
 	if cfg.Password != "" {
 		authMethods = append(authMethods, ssh.Password(cfg.Password))
+		if cfg.Verbose {
+			fmt.Printf("  SSH: using password authentication\n")
+		}
 	}
 
 	if cfg.SSHKeyPath != "" {
+		if cfg.Verbose {
+			fmt.Printf("  SSH: loading key from %s\n", cfg.SSHKeyPath)
+		}
 		key, err := os.ReadFile(cfg.SSHKeyPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read SSH key: %w", err)
@@ -47,6 +60,9 @@ func Connect(cfg Config) (*Client, error) {
 			return nil, fmt.Errorf("failed to parse SSH key: %w", err)
 		}
 		authMethods = append(authMethods, ssh.PublicKeys(signer))
+		if cfg.Verbose {
+			fmt.Printf("  SSH: using public key authentication\n")
+		}
 	}
 
 	if len(authMethods) == 0 {
@@ -61,9 +77,16 @@ func Connect(cfg Config) (*Client, error) {
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	if cfg.Verbose {
+		fmt.Printf("  SSH: connecting to %s as %s\n", addr, cfg.User)
+	}
 	conn, err := ssh.Dial("tcp", addr, sshConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect: %w", err)
+		return nil, fmt.Errorf("failed to connect to %s: %w", addr, err)
+	}
+
+	if cfg.Verbose {
+		fmt.Printf("  SSH: connected successfully (remote: %s)\n", conn.RemoteAddr())
 	}
 
 	return &Client{
@@ -91,18 +114,30 @@ func (c *Client) UploadFile(localPath, remotePath string) error {
 	}
 	defer session.Close()
 
-	go func() {
-		w, _ := session.StdinPipe()
-		defer w.Close()
+	w, err := session.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stdin pipe: %w", err)
+	}
 
-		filename := filepath.Base(remotePath)
-		fmt.Fprintf(w, "C0755 %d %s\n", len(data), filename)
-		_, _ = w.Write(data)
-		fmt.Fprint(w, "\x00")
-	}()
+	var stderr bytes.Buffer
+	session.Stderr = &stderr
 
 	dir := filepath.Dir(remotePath)
-	if err := session.Run(fmt.Sprintf("/usr/bin/scp -t %s", dir)); err != nil {
+	if err := session.Start(fmt.Sprintf("scp -t %s", dir)); err != nil {
+		return fmt.Errorf("failed to start scp: %w", err)
+	}
+
+	filename := filepath.Base(remotePath)
+	fmt.Fprintf(w, "C0755 %d %s\n", len(data), filename)
+	_, _ = w.Write(data)
+	fmt.Fprint(w, "\x00")
+	w.Close()
+
+	if err := session.Wait(); err != nil {
+		errMsg := strings.TrimSpace(stderr.String())
+		if errMsg != "" {
+			return fmt.Errorf("scp failed: %w (stderr: %s)", err, errMsg)
+		}
 		return fmt.Errorf("scp failed: %w", err)
 	}
 
