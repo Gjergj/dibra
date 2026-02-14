@@ -76,7 +76,7 @@ func Connect(cfg Config) (*Client, error) {
 		Timeout:         30 * time.Second,
 	}
 
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	addr := net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", cfg.Port))
 	if cfg.Verbose {
 		fmt.Printf("  SSH: connecting to %s as %s\n", addr, cfg.User)
 	}
