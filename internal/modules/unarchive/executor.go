@@ -65,9 +65,13 @@ func Execute(req Request) Response {
 		}
 	}
 
-	archiveType := detectArchiveType(req.Src)
+	detectName := req.Src
+	if req.OriginalSrc != "" {
+		detectName = req.OriginalSrc
+	}
+	archiveType := detectArchiveType(detectName)
 	if archiveType == "" {
-		return Response{Failed: true, Msg: fmt.Sprintf("unsupported archive format: %s", req.Src)}
+		return Response{Failed: true, Msg: fmt.Sprintf("unsupported archive format: %s", detectName)}
 	}
 
 	var handler archiveHandler

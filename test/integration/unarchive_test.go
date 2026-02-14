@@ -3,6 +3,9 @@
 package integration
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -1415,4 +1418,139 @@ func TestPlaybook_UnarchiveSpecialCharFilenames(t *testing.T) {
 	}
 
 	client.Run("rm -rf " + destDir + " " + archiveFile)
+}
+
+// ====================
+// LOCAL UPLOAD TESTS (remote_src: false)
+// ====================
+
+// Tests that a local tar.gz archive can be uploaded and extracted on the remote.
+// This exercises the original_src fix: the controller uploads the archive as
+// /tmp/.dibra-unarchive-<hash> (no extension), so the agent must use the
+// original filename for archive format detection.
+func TestPlaybook_UnarchiveLocalTarGz(t *testing.T) {
+	client := getClient(t)
+	defer client.Close()
+
+	destDir := "/tmp/dibra-unarchive-local-tgz"
+
+	client.Run("rm -rf " + destDir)
+	client.Run("mkdir -p " + destDir)
+
+	// Create local archive on the controller machine
+	localDir := t.TempDir()
+	sourceDir := filepath.Join(localDir, "source")
+	if err := os.MkdirAll(filepath.Join(sourceDir, "subdir"), 0755); err != nil {
+		t.Fatalf("Failed to create source dir: %v", err)
+	}
+	os.WriteFile(filepath.Join(sourceDir, "hello.txt"), []byte("hello from local\n"), 0644)
+	os.WriteFile(filepath.Join(sourceDir, "world.txt"), []byte("world from local\n"), 0644)
+	os.WriteFile(filepath.Join(sourceDir, "subdir", "nested.txt"), []byte("nested from local\n"), 0644)
+
+	archivePath := filepath.Join(localDir, "test-local.tar.gz")
+	cmd := exec.Command("tar", "-czf", archivePath, "-C", sourceDir, ".")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to create local archive: %v\n%s", err, out)
+	}
+
+	playbook := playbookHeader + `
+  - name: Unarchive local tar.gz to remote
+    unarchive:
+      src: ` + archivePath + `
+      dest: ` + destDir + `
+`
+	output := runPlaybook(t, playbook)
+
+	if !strings.Contains(output, "CHANGED") {
+		t.Errorf("Expected CHANGED for local tar.gz extraction, got:\n%s", output)
+	}
+
+	// Verify files extracted
+	if !remoteFileExists(t, client, destDir+"/hello.txt") {
+		t.Error("hello.txt should exist")
+	}
+	if !remoteFileExists(t, client, destDir+"/world.txt") {
+		t.Error("world.txt should exist")
+	}
+	if !remoteFileExists(t, client, destDir+"/subdir/nested.txt") {
+		t.Error("subdir/nested.txt should exist")
+	}
+
+	// Verify content
+	content := remoteFileContent(t, client, destDir+"/hello.txt")
+	if !strings.Contains(content, "hello from local") {
+		t.Errorf("Expected 'hello from local', got '%s'", content)
+	}
+
+	// Run again - should be idempotent
+	output = runPlaybook(t, playbook)
+	if strings.Contains(output, "CHANGED") {
+		t.Error("Expected no changes on second run (idempotent)")
+	}
+
+	client.Run("rm -rf " + destDir)
+}
+
+// Tests that a local zip archive can be uploaded and extracted on the remote.
+func TestPlaybook_UnarchiveLocalZip(t *testing.T) {
+	client := getClient(t)
+	defer client.Close()
+
+	destDir := "/tmp/dibra-unarchive-local-zip"
+
+	client.Run("rm -rf " + destDir)
+	client.Run("mkdir -p " + destDir)
+
+	// Ensure unzip is installed on remote
+	client.Run("apt-get update && apt-get install -y unzip 2>/dev/null || true")
+
+	// Create local zip archive on the controller machine
+	localDir := t.TempDir()
+	sourceDir := filepath.Join(localDir, "source")
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("Failed to create source dir: %v", err)
+	}
+	os.WriteFile(filepath.Join(sourceDir, "alpha.txt"), []byte("alpha from local zip\n"), 0644)
+	os.WriteFile(filepath.Join(sourceDir, "beta.txt"), []byte("beta from local zip\n"), 0644)
+
+	archivePath := filepath.Join(localDir, "test-local.zip")
+	cmd := exec.Command("zip", "-r", archivePath, ".")
+	cmd.Dir = sourceDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to create local zip archive: %v\n%s", err, out)
+	}
+
+	playbook := playbookHeader + `
+  - name: Unarchive local zip to remote
+    unarchive:
+      src: ` + archivePath + `
+      dest: ` + destDir + `
+`
+	output := runPlaybook(t, playbook)
+
+	if !strings.Contains(output, "CHANGED") {
+		t.Errorf("Expected CHANGED for local zip extraction, got:\n%s", output)
+	}
+
+	// Verify files extracted
+	if !remoteFileExists(t, client, destDir+"/alpha.txt") {
+		t.Error("alpha.txt should exist")
+	}
+	if !remoteFileExists(t, client, destDir+"/beta.txt") {
+		t.Error("beta.txt should exist")
+	}
+
+	// Verify content
+	content := remoteFileContent(t, client, destDir+"/alpha.txt")
+	if !strings.Contains(content, "alpha from local zip") {
+		t.Errorf("Expected 'alpha from local zip', got '%s'", content)
+	}
+
+	// Run again - should be idempotent
+	output = runPlaybook(t, playbook)
+	if strings.Contains(output, "CHANGED") {
+		t.Error("Expected no changes on second run (idempotent)")
+	}
+
+	client.Run("rm -rf " + destDir)
 }

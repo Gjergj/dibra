@@ -13,7 +13,8 @@ type Request struct {
 	Mode      string   `json:"mode,omitempty"`
 	Owner     string   `json:"owner,omitempty"`
 	Group     string   `json:"group,omitempty"`
-	Checksum  string   `json:"checksum,omitempty"`
+	Checksum    string   `json:"checksum,omitempty"`
+	OriginalSrc string   `json:"original_src,omitempty"`
 }
 
 type Response struct {

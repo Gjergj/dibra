@@ -1030,6 +1030,7 @@ func main() {
 
 					unarchiveArgs["src"] = remoteTmpPath
 					unarchiveArgs["checksum"] = localChecksum
+					unarchiveArgs["original_src"] = task.Unarchive.Src
 				}
 
 				renderedArgs, err := renderArgs(unarchiveArgs, flattened)
