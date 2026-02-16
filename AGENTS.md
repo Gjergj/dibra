@@ -36,11 +36,13 @@ dibra -config playbook.yaml --force-agent-upload
 dibra -config ./deploy/
 dibra -config deploy.cue
 
-# Run playbook with external YAML inventory
+# Run playbook with external inventory (YAML or CUE)
 dibra -config playbook.yaml -i inventory.yaml
+dibra -config playbook.cue -i inventory.cue
 
 # Long form
 dibra -config playbook.yaml --inventory inventory.yaml
+dibra -config playbook.cue --inventory inventory.cue
 
 # Run CUE config unit tests
 go test ./internal/cueconfig/ -v

@@ -35,6 +35,20 @@ func Load(path string) (*config.Config, error) {
 	return Extract(v)
 }
 
+// LoadValue reads .cue files from the given path (file or directory) and returns
+// the evaluated CUE value without extracting into config.Config.
+func LoadValue(path string) (cue.Value, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return cue.Value{}, fmt.Errorf("failed to stat %s: %w", path, err)
+	}
+
+	if info.IsDir() {
+		return loadCUEDir(path)
+	}
+	return loadCUEFile(path)
+}
+
 // loadCUEDir loads and evaluates all CUE files from a directory.
 func loadCUEDir(dir string) (cue.Value, error) {
 	ctx := cuecontext.New()

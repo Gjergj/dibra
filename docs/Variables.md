@@ -58,6 +58,9 @@ group_vars/
   prod.yml      # loaded for hosts in "prod" group
 ```
 
+Inventory can be defined in YAML or CUE. For CUE inventory format examples,
+see [docs/CUEInventory.md](file:///Users/gjergjiramku/projekte/dibra/docs/CUEInventory.md).
+
 Supported extensions: `.yml`, `.yaml`, `.json`.
 
 When a host belongs to multiple groups, group vars are merged in alphabetical order by group name. For example, `prod.yml` is merged before `web.yml`.
