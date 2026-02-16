@@ -1,0 +1,47 @@
+package playbook
+
+hosts: [{
+	name:            "webserver1"
+	host:            "mytesthost"
+	port:            22
+	user:            "root"
+	password:        "YOUR_PASSWORD"
+	become:          true
+	become_password: "YOUR_PASSWORD"
+}]
+
+tasks: [
+	{
+		name: "Copy local file to remote"
+		copy: {
+			src:    "./README.md"
+			dest:   "/opt/myapp/README.md"
+			mode:   "0644"
+			backup: true
+		}
+	},
+	{
+		name: "Create config from content"
+		copy: {
+			content: """
+				server:
+				  host: 0.0.0.0
+				  port: 8080
+				database:
+				  host: localhost
+				  port: 5432
+
+				"""
+			dest: "/opt/myapp/config.yaml"
+			mode: "0644"
+		}
+	},
+	{
+		name: "Copy file on remote (remote_src)"
+		copy: {
+			src:        "/opt/myapp/config.yaml"
+			dest:       "/opt/myapp/config.yaml.bak"
+			remote_src: true
+		}
+	},
+]

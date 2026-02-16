@@ -1,0 +1,34 @@
+package playbook
+
+hosts: [{
+	name:            "webserver1"
+	host:            "mytesthost"
+	port:            22
+	user:            "root"
+	password:        "testpass"
+	become:          true
+	become_password: "testpass"
+}]
+
+tasks: [
+	{
+		name: "Create /opt/myapp directory"
+		file: {path: "/opt/myapp", state: "directory", mode: "0755", owner: "root", group: "root"}
+	},
+	{
+		name: "Create /opt/myapp/logs directory"
+		file: {path: "/opt/myapp/logs", state: "directory", mode: "0775"}
+	},
+	{
+		name: "Create config file placeholder"
+		file: {path: "/opt/myapp/config.yaml", state: "touch", mode: "0644"}
+	},
+	{
+		name: "Create symlink to config"
+		file: {path: "/etc/myapp-config", src: "/opt/myapp/config.yaml", state: "link"}
+	},
+	{
+		name: "Ensure correct permissions on logs (recursive)"
+		file: {path: "/opt/myapp/logs", state: "directory", mode: "0755", recurse: true}
+	},
+]
