@@ -54,6 +54,10 @@ dibra init ./deploy
 # Convert YAML playbook to CUE
 dibra convert playbook.yaml > playbook.cue
 
+# Using CUE schemas (vendor cue/schema into your project)
+# cue.mod/module.cue: module: "example.com/project"
+# import "example.com/project/cue/schema"
+
 # Run CUE config unit tests
 go test ./internal/cueconfig/ -v
 
