@@ -3,6 +3,7 @@ package cueconfig
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"cuelang.org/go/cue"
 
@@ -88,9 +89,11 @@ func setModule[T any](fieldPtr func(t *config.Task) **T) func(t *config.Task, da
 
 // knownTaskFields lists fields on Task that are not modules.
 var knownTaskFields = map[string]bool{
-	"name":     true,
-	"vars":     true,
-	"register": true,
+	"name":          true,
+	"vars":          true,
+	"register":      true,
+	"import_tasks":  true,
+	"include_tasks": true,
 }
 
 // Extract converts a fully-evaluated CUE value into a config.Config.
@@ -163,6 +166,9 @@ func Extract(v cue.Value) (*config.Config, error) {
 	if cfg.VarsMerge == "" {
 		cfg.VarsMerge = "replace"
 	}
+	if cfg.VarsMerge != "replace" && cfg.VarsMerge != "merge" {
+		return nil, fmt.Errorf("invalid vars_merge %q (expected replace or merge)", cfg.VarsMerge)
+	}
 	for i := range cfg.Hosts {
 		if cfg.Hosts[i].Port == 0 {
 			cfg.Hosts[i].Port = 22
@@ -215,6 +221,7 @@ func extractTasks(v cue.Value) ([]config.Task, error) {
 
 func extractTask(v cue.Value) (config.Task, error) {
 	var t config.Task
+	var moduleLabels []string
 
 	// Extract common fields
 	if nameVal := v.LookupPath(cue.ParsePath("name")); nameVal.Exists() {
@@ -243,6 +250,28 @@ func extractTask(v cue.Value) (config.Task, error) {
 		}
 	}
 
+	if importVal := v.LookupPath(cue.ParsePath("import_tasks")); importVal.Exists() {
+		p, err := decodeImportTasks(importVal)
+		if err != nil {
+			return t, fmt.Errorf("failed to extract import_tasks: %w", err)
+		}
+		t.ImportTasks = p
+		if p != nil {
+			moduleLabels = append(moduleLabels, "import_tasks")
+		}
+	}
+
+	if includeVal := v.LookupPath(cue.ParsePath("include_tasks")); includeVal.Exists() {
+		p, err := decodeIncludeTasks(includeVal)
+		if err != nil {
+			return t, fmt.Errorf("failed to extract include_tasks: %w", err)
+		}
+		t.IncludeTasks = p
+		if p != nil {
+			moduleLabels = append(moduleLabels, "include_tasks")
+		}
+	}
+
 	// Scan for module fields
 	iter, err := v.Fields(cue.Optional(true))
 	if err != nil {
@@ -266,6 +295,11 @@ func extractTask(v cue.Value) (config.Task, error) {
 		if err := setter(&t, data); err != nil {
 			return t, fmt.Errorf("failed to set module %q: %w", label, err)
 		}
+		moduleLabels = append(moduleLabels, label)
+	}
+
+	if len(moduleLabels) > 1 {
+		return t, fmt.Errorf("task has multiple modules: %s", strings.Join(moduleLabels, ", "))
 	}
 
 	return t, nil
@@ -282,4 +316,38 @@ func cueToInterface(v cue.Value) (interface{}, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+func decodeImportTasks(v cue.Value) (*config.ImportTasksParams, error) {
+	if v.Kind() == cue.StringKind {
+		path, err := v.String()
+		if err != nil {
+			return nil, err
+		}
+		return &config.ImportTasksParams{File: path}, nil
+	}
+
+	var params config.ImportTasksParams
+	if err := v.Decode(&params); err != nil {
+		return nil, err
+	}
+
+	return &params, nil
+}
+
+func decodeIncludeTasks(v cue.Value) (*config.IncludeTasksParams, error) {
+	if v.Kind() == cue.StringKind {
+		path, err := v.String()
+		if err != nil {
+			return nil, err
+		}
+		return &config.IncludeTasksParams{File: path}, nil
+	}
+
+	var params config.IncludeTasksParams
+	if err := v.Decode(&params); err != nil {
+		return nil, err
+	}
+
+	return &params, nil
 }

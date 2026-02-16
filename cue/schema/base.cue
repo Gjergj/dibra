@@ -22,6 +22,8 @@ package schema
 	name:      string
 	register?: string
 	vars?: {[string]: _}
+	import_tasks?: string | #ImportTasks
+	include_tasks?: string | #IncludeTasks
 
 	{ping:                     #Ping} |
 	{apt:                      #Apt} |
@@ -81,6 +83,14 @@ package schema
 	{docker_swarm_info:        #DockerSwarmInfo} |
 	{docker_swarm_service_info: #DockerSwarmServiceInfo} |
 	{docker_node_info:         #DockerNodeInfo}
+}
+
+#ImportTasks: {
+	file: string
+}
+
+#IncludeTasks: {
+	file: string
 }
 
 #Playbook: {
