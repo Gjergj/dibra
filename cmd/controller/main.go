@@ -15,6 +15,11 @@ import (
 	"strings"
 	"time"
 
+	"cuelang.org/go/cue"
+	"cuelang.org/go/cue/ast"
+	"cuelang.org/go/cue/cuecontext"
+	"cuelang.org/go/cue/format"
+
 	"github.com/gjergjiramku/dibra/internal/agent"
 	"github.com/gjergjiramku/dibra/internal/config"
 	"github.com/gjergjiramku/dibra/internal/cueconfig"
@@ -52,6 +57,13 @@ type GenericResponse struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "convert" {
+		if err := runConvert(os.Args[2:]); err != nil {
+			fatal("convert failed: %v", err)
+		}
+		return
+	}
+
 	if len(os.Args) > 1 && os.Args[1] == "init" {
 		if err := runInit(os.Args[2:]); err != nil {
 			fatal("init failed: %v", err)
@@ -2665,6 +2677,102 @@ func runInit(args []string) error {
 
 	fmt.Printf("Initialized dibra CUE project at %s\n", absRoot)
 	return nil
+}
+
+func runConvert(args []string) error {
+	fs := flag.NewFlagSet("convert", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	packageName := fs.String("package", "", "Package name for the generated CUE")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if fs.NArg() != 1 {
+		return fmt.Errorf("usage: dibra convert <playbook.yaml>")
+	}
+
+	path := fs.Arg(0)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", path, err)
+	}
+
+	var raw interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("failed to parse YAML: %w", err)
+	}
+
+	normalized, err := normalizeYAML(raw)
+	if err != nil {
+		return fmt.Errorf("failed to normalize YAML: %w", err)
+	}
+
+	ctx := cuecontext.New()
+	value := ctx.Encode(normalized)
+	if err := value.Err(); err != nil {
+		return fmt.Errorf("failed to encode CUE: %w", err)
+	}
+
+	pkg := *packageName
+	if pkg == "" {
+		pkg = inferCuePackage(normalized)
+	}
+
+	file := cueValueToFile(pkg, value)
+	formatted, err := format.Node(file)
+	if err != nil {
+		return fmt.Errorf("failed to format CUE: %w", err)
+	}
+
+	_, err = os.Stdout.Write(formatted)
+	return err
+}
+
+func normalizeYAML(value interface{}) (interface{}, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var out interface{}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func inferCuePackage(value interface{}) string {
+	root, ok := value.(map[string]interface{})
+	if ok {
+		if _, exists := root["hosts"]; exists {
+			return "deploy"
+		}
+		if _, exists := root["tasks"]; exists {
+			return "deploy"
+		}
+		if _, exists := root["vars"]; exists {
+			return "deploy"
+		}
+		if _, exists := root["all"]; exists {
+			return "inventory"
+		}
+	}
+	return "deploy"
+}
+
+func cueValueToFile(packageName string, value cue.Value) *ast.File {
+	var decls []ast.Decl
+	decls = append(decls, &ast.Package{Name: ast.NewIdent(packageName)})
+
+	syntax := value.Syntax()
+	if structLit, ok := syntax.(*ast.StructLit); ok {
+		decls = append(decls, structLit.Elts...)
+	} else {
+		if expr, ok := syntax.(ast.Expr); ok {
+			decls = append(decls, &ast.EmbedDecl{Expr: expr})
+		}
+	}
+
+	return &ast.File{Decls: decls}
 }
 
 func ensureInitDir(root string, force bool) error {

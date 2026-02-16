@@ -51,6 +51,9 @@ dibra --validate -config playbook.cue
 # Initialize a new CUE project
 dibra init ./deploy
 
+# Convert YAML playbook to CUE
+dibra convert playbook.yaml > playbook.cue
+
 # Run CUE config unit tests
 go test ./internal/cueconfig/ -v
 
