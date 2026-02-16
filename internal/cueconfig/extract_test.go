@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"cuelang.org/go/cue"
 )
 
 func TestExtract_BasicPlaybook(t *testing.T) {
@@ -514,6 +516,33 @@ tasks: [{
 	}
 	if !strings.Contains(err.Error(), "multiple modules") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadValue_SingleFile(t *testing.T) {
+	dir := t.TempDir()
+	writeCUE(t, dir, "inventory.cue", `
+package inventory
+
+all: {
+	vars: {env: "prod"}
+	children: {
+		web: {
+			hosts: {
+				web1: {host: "10.0.0.1"}
+			}
+		}
+	}
+}
+`)
+
+	v, err := LoadValue(filepath.Join(dir, "inventory.cue"))
+	if err != nil {
+		t.Fatalf("LoadValue failed: %v", err)
+	}
+
+	if !v.LookupPath(cue.ParsePath("all")).Exists() {
+		t.Fatal("expected all to exist")
 	}
 }
 
