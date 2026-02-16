@@ -12,19 +12,19 @@ vars: {
 }
 
 hosts: [{
-	name:            "webserver1"
-	host:            "{{ ssh_host }}"
-	port:            22
-	user:            "{{ ssh_user }}"
-	password:        "{{ ssh_password }}"
-	become:          true
-	become_password: "{{ ssh_password }}"
+        name:            "webserver1"
+        host:            "{{ ssh_host }}"
+        port:            22
+        user:            "{{ ssh_user }}"
+        password:        "{{ ssh_password }}"
+        become:          true
+        become_password: "{{ ssh_password }}"
 }]
 
 tasks: [
-	{name: "Update apt cache", apt: {update_cache: true, cache_valid_time: 3600}},
-	{name: "Install curl", apt: {name: ["curl"], state: "present"}},
-	{name: "Remove btop", apt: {name: "btop", state: "absent"}},
-	{name: "Ensure htop is at latest version", apt: {name: "htop", state: "latest"}},
-	{name: "Remove unused packages", apt: {autoremove: true}},
+        {name: "Update apt cache", apt: {update_cache: true, cache_valid_time: 3600}},
+        {name: "Install curl", apt: {name: ["curl"], state: "present"}},
+        {name: "Remove btop", apt: {name: "btop", state: "absent"}},
+        {name: "Ensure htop is at latest version", apt: {name: "htop", state: "latest"}},
+        {name: "Remove unused packages", apt: {autoremove: true}},
 ]

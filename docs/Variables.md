@@ -61,6 +61,9 @@ group_vars/
 Inventory can be defined in YAML or CUE. For CUE inventory format examples,
 see [docs/CUEInventory.md](file:///Users/gjergjiramku/projekte/dibra/docs/CUEInventory.md).
 
+For using the CUE schema definitions in your own project, see
+[docs/CUESchema.md](file:///Users/gjergjiramku/projekte/dibra/docs/CUESchema.md).
+
 Supported extensions: `.yml`, `.yaml`, `.json`.
 
 When a host belongs to multiple groups, group vars are merged in alphabetical order by group name. For example, `prod.yml` is merged before `web.yml`.

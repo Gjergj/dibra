@@ -15,6 +15,8 @@ dibra init ./deploy
 You can also point to a directory containing multiple `.cue` files that share
 the same `package` name.
 
+To validate inventory with schemas, see [docs/CUESchema.md](file:///Users/gjergjiramku/projekte/dibra/docs/CUESchema.md).
+
 ## Format
 
 Inventory uses the same structure as YAML inventory: `all`, `children`, `hosts`,
