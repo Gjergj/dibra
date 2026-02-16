@@ -431,6 +431,92 @@ tasks: [{
 	}
 }
 
+func TestExtract_ImportTasks(t *testing.T) {
+	dir := t.TempDir()
+	writeCUE(t, dir, "deploy.cue", `
+package deploy
+
+hosts: [{
+	name: "web1"
+	host: "10.0.0.1"
+	user: "root"
+}]
+
+tasks: [{
+	name: "Import setup"
+	import_tasks: "setup/tasks.yaml"
+}]
+`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	task := cfg.Tasks[0]
+	if task.ImportTasks == nil {
+		t.Fatal("import_tasks is nil")
+	}
+	if task.ImportTasks.File != "setup/tasks.yaml" {
+		t.Errorf("import_tasks.file = %q, want %q", task.ImportTasks.File, "setup/tasks.yaml")
+	}
+}
+
+func TestExtract_IncludeTasks(t *testing.T) {
+	dir := t.TempDir()
+	writeCUE(t, dir, "deploy.cue", `
+package deploy
+
+hosts: [{
+	name: "web1"
+	host: "10.0.0.1"
+	user: "root"
+}]
+
+tasks: [{
+	name: "Include setup"
+	include_tasks: {file: "setup/tasks.yaml"}
+}]
+`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	task := cfg.Tasks[0]
+	if task.IncludeTasks == nil {
+		t.Fatal("include_tasks is nil")
+	}
+	if task.IncludeTasks.File != "setup/tasks.yaml" {
+		t.Errorf("include_tasks.file = %q, want %q", task.IncludeTasks.File, "setup/tasks.yaml")
+	}
+}
+
+func TestExtract_TaskMultipleModules(t *testing.T) {
+	dir := t.TempDir()
+	writeCUE(t, dir, "deploy.cue", `
+package deploy
+
+hosts: [{
+	name: "web1"
+	host: "10.0.0.1"
+	user: "root"
+}]
+
+tasks: [{
+	name: "Invalid"
+	ping: {}
+	shell: {cmd: "echo hi"}
+}]
+`)
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected error for task with multiple modules")
+	}
+	if !strings.Contains(err.Error(), "multiple modules") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestExtract_HostWithSSHKey(t *testing.T) {
 	dir := t.TempDir()
 	writeCUE(t, dir, "deploy.cue", `
