@@ -52,6 +52,13 @@ type GenericResponse struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "init" {
+		if err := runInit(os.Args[2:]); err != nil {
+			fatal("init failed: %v", err)
+		}
+		return
+	}
+
 	validateCommand := false
 	if len(os.Args) > 1 && os.Args[1] == "validate" {
 		validateCommand = true
@@ -2611,6 +2618,121 @@ func printValidationSummary(configPath string, cfg *config.Config, inv *inventor
 	fmt.Printf("Hosts: %d\n", len(cfg.Hosts))
 	fmt.Printf("Tasks: %d\n", len(cfg.Tasks))
 }
+
+func runInit(args []string) error {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	force := fs.Bool("force", false, "Overwrite existing files")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if fs.NArg() < 1 {
+		return fmt.Errorf("usage: dibra init <directory>")
+	}
+	if fs.NArg() > 1 {
+		return fmt.Errorf("usage: dibra init <directory>")
+	}
+
+	root := fs.Arg(0)
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return fmt.Errorf("failed to resolve path: %w", err)
+	}
+
+	if err := ensureInitDir(absRoot, *force); err != nil {
+		return err
+	}
+
+	moduleName := fmt.Sprintf("dibra.local/%s", filepath.Base(absRoot))
+	modulePath := filepath.Join(absRoot, "cue.mod", "module.cue")
+	deployPath := filepath.Join(absRoot, "deploy.cue")
+	inventoryPath := filepath.Join(absRoot, "inventory.cue")
+
+	if err := os.MkdirAll(filepath.Dir(modulePath), 0755); err != nil {
+		return fmt.Errorf("failed to create cue.mod: %w", err)
+	}
+
+	if err := writeInitFile(modulePath, fmt.Sprintf("module: %q\n", moduleName), *force); err != nil {
+		return err
+	}
+	if err := writeInitFile(deployPath, initDeployCue, *force); err != nil {
+		return err
+	}
+	if err := writeInitFile(inventoryPath, initInventoryCue, *force); err != nil {
+		return err
+	}
+
+	fmt.Printf("Initialized dibra CUE project at %s\n", absRoot)
+	return nil
+}
+
+func ensureInitDir(root string, force bool) error {
+	info, err := os.Stat(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return os.MkdirAll(root, 0755)
+		}
+		return fmt.Errorf("failed to stat %s: %w", root, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("path %s exists and is not a directory", root)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", root, err)
+	}
+	if len(entries) > 0 && !force {
+		return fmt.Errorf("directory %s is not empty (use --force to overwrite)", root)
+	}
+	return nil
+}
+
+func writeInitFile(path, contents string, force bool) error {
+	flags := os.O_WRONLY | os.O_CREATE
+	if force {
+		flags |= os.O_TRUNC
+	} else {
+		flags |= os.O_EXCL
+	}
+
+	f, err := os.OpenFile(path, flags, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write %s: %w", path, err)
+	}
+	defer f.Close()
+
+	if _, err := f.WriteString(contents); err != nil {
+		return fmt.Errorf("failed to write %s: %w", path, err)
+	}
+	return nil
+}
+
+const initDeployCue = `package deploy
+
+hosts: [{
+    name: "web1"
+    host: "192.168.1.10"
+    user: "root"
+}]
+
+tasks: [{
+    name: "Ping"
+    ping: {}
+}]
+`
+
+const initInventoryCue = `package inventory
+
+all: {
+    hosts: {
+        web1: {
+            host: "192.168.1.10"
+            user: "root"
+        }
+    }
+}
+`
 
 func renderArgs(args map[string]interface{}, context map[string]interface{}) (map[string]interface{}, error) {
 	rendered, err := vars.RenderValue(args, context)
