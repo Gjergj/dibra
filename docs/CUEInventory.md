@@ -8,6 +8,7 @@ Run with:
 
 ```bash
 dibra -config playbook.cue -i inventory.cue
+dibra validate -config playbook.cue -i inventory.cue
 ```
 
 You can also point to a directory containing multiple `.cue` files that share

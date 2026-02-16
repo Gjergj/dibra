@@ -52,6 +52,12 @@ type GenericResponse struct {
 }
 
 func main() {
+	validateCommand := false
+	if len(os.Args) > 1 && os.Args[1] == "validate" {
+		validateCommand = true
+		os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
+	}
+
 	configPath := flag.String("config", "playbook.yaml", "Path to playbook config file (YAML or CUE)")
 	forceUpload := flag.Bool("force-agent-upload", false, "Force upload of agent binary")
 	verbose := flag.Bool("v", false, "Verbose output")
@@ -62,7 +68,9 @@ func main() {
 	inventoryPathLong := flag.String("inventory", "", "Path to YAML inventory file")
 	extraVars := flag.String("e", "", "Extra variables (key=value or @file.yaml)")
 	extraVarsLong := flag.String("extra-vars", "", "Extra variables (key=value or @file.yaml)")
+	validateFlag := flag.Bool("validate", false, "Validate config and exit (no execution)")
 	flag.Parse()
+	validate := validateCommand || *validateFlag
 
 	if *showVersion {
 		fmt.Printf("dibra %s (commit: %s, built: %s)\n", version.Version, version.Commit, version.Date)
@@ -71,6 +79,9 @@ func main() {
 
 	if *agentPath != "" && *agentBuild {
 		fatal("--agent-path and --agent-build are mutually exclusive")
+	}
+	if validateCommand && (*agentPath != "" || *agentBuild || *forceUpload) {
+		fatal("validate mode does not allow agent flags")
 	}
 
 	configFormat, fmtErr := cueconfig.DetectFormat(*configPath)
@@ -134,6 +145,11 @@ func main() {
 		if err != nil {
 			fatal("Failed to convert inventory hosts: %v", err)
 		}
+	}
+
+	if validate {
+		printValidationSummary(*configPath, cfg, inv)
+		return
 	}
 
 	resolverMode := agent.ModeAuto
@@ -2577,6 +2593,23 @@ func parseExtraVars(raw string) (map[string]interface{}, error) {
 	}
 
 	return varsMap, nil
+}
+
+func printValidationSummary(configPath string, cfg *config.Config, inv *inventory.Inventory) {
+	fmt.Printf("✓ Config is valid\n")
+	fmt.Printf("Config: %s\n", configPath)
+	if inv != nil {
+		hosts, err := inv.HostsAsConfig()
+		if err != nil {
+			fmt.Printf("Inventory: failed to resolve hosts (%v)\n", err)
+		} else {
+			fmt.Printf("Inventory: %d host(s), %d group(s)\n", len(hosts), len(inv.Groups))
+		}
+	} else {
+		fmt.Printf("Inventory: none\n")
+	}
+	fmt.Printf("Hosts: %d\n", len(cfg.Hosts))
+	fmt.Printf("Tasks: %d\n", len(cfg.Tasks))
 }
 
 func renderArgs(args map[string]interface{}, context map[string]interface{}) (map[string]interface{}, error) {
