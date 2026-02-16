@@ -1,0 +1,46 @@
+package playbook
+
+hosts: [{
+	name:            "webserver1"
+	host:            "mytesthost"
+	port:            22
+	user:            "root"
+	password:        "testpass"
+	become:          true
+	become_password: "testpass"
+}]
+
+tasks: [
+	{
+		name: "Install prerequisites"
+		apt: {
+			name: [
+				"debian-keyring",
+				"debian-archive-keyring",
+				"apt-transport-https",
+				"curl",
+			]
+			state: "present"
+		}
+	},
+	{
+		name: "Add Caddy GPG key"
+		apt_key: {
+			url:     "https://dl.cloudsmith.io/public/caddy/stable/gpg.key"
+			keyring: "/usr/share/keyrings/caddy-stable-archive-keyring.gpg"
+			state:   "present"
+		}
+	},
+	{
+		name: "Add Caddy repository"
+		apt_repository: {
+			repo:         "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main"
+			filename:     "caddy-stable"
+			update_cache: true
+		}
+	},
+	{
+		name: "Install Caddy"
+		apt: {name: "caddy", state: "present"}
+	},
+]

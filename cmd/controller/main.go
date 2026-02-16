@@ -17,6 +17,7 @@ import (
 
 	"github.com/gjergjiramku/dibra/internal/agent"
 	"github.com/gjergjiramku/dibra/internal/config"
+	"github.com/gjergjiramku/dibra/internal/cueconfig"
 	"github.com/gjergjiramku/dibra/internal/inventory"
 	"github.com/gjergjiramku/dibra/internal/secrets"
 	"github.com/gjergjiramku/dibra/internal/secrets/bitwarden"
@@ -51,7 +52,7 @@ type GenericResponse struct {
 }
 
 func main() {
-	configPath := flag.String("config", "playbook.yaml", "Path to playbook YAML file")
+	configPath := flag.String("config", "playbook.yaml", "Path to playbook config file (YAML or CUE)")
 	forceUpload := flag.Bool("force-agent-upload", false, "Force upload of agent binary")
 	verbose := flag.Bool("v", false, "Verbose output")
 	showVersion := flag.Bool("version", false, "Print version and exit")
@@ -72,7 +73,18 @@ func main() {
 		fatal("--agent-path and --agent-build are mutually exclusive")
 	}
 
-	cfg, err := config.Load(*configPath)
+	configFormat, fmtErr := cueconfig.DetectFormat(*configPath)
+	if fmtErr != nil {
+		fatal("%v", fmtErr)
+	}
+
+	var cfg *config.Config
+	var err error
+	if configFormat == cueconfig.FormatCUE {
+		cfg, err = cueconfig.Load(*configPath)
+	} else {
+		cfg, err = config.Load(*configPath)
+	}
 	if err != nil {
 		fatal("Failed to load config: %v", err)
 	}

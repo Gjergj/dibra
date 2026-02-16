@@ -1,0 +1,53 @@
+package playbook
+
+hosts: [{
+	name:            "webserver1"
+	host:            "mytesthost"
+	port:            22
+	user:            "root"
+	password:        "testpass"
+	become:          true
+	become_password: "testpass"
+}]
+
+tasks: [
+	{
+		name: "Copy alloy binary to remote"
+		copy: {
+			src:  "/Users/gjergjiramku/Downloads/alloy-darwin-arm64"
+			dest: "/root/alloy-darwin-arm64"
+			mode: "0755"
+		}
+	},
+	{
+		name: "Verify file exists and set permissions"
+		file: {
+			path:  "/root/alloy-darwin-arm64"
+			state: "file"
+			mode:  "0755"
+			owner: "root"
+			group: "root"
+		}
+	},
+	{
+		name: "Create backup copy"
+		copy: {
+			src:        "/root/alloy-darwin-arm64"
+			dest:       "/root/alloy-darwin-arm64.bak"
+			remote_src: true
+			mode:       "0755"
+		}
+	},
+	{
+		name: "Verify backup exists"
+		file: {path: "/root/alloy-darwin-arm64.bak", state: "file"}
+	},
+	{
+		name: "Delete original file"
+		file: {path: "/root/alloy-darwin-arm64", state: "absent"}
+	},
+	{
+		name: "Delete backup file"
+		file: {path: "/root/alloy-darwin-arm64.bak", state: "absent"}
+	},
+]
