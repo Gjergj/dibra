@@ -1,6 +1,6 @@
 package playbook
 
-import "example.com/project/cue/schema"
+import "dibra.dev/schema"
 
 vars: {
     ssh_password: "!bw:tmpemail.xyz_secrets/password"

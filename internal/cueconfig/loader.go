@@ -2,8 +2,10 @@ package cueconfig
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
@@ -52,7 +54,7 @@ func LoadValue(path string) (cue.Value, error) {
 // loadCUEDir loads and evaluates all CUE files from a directory.
 func loadCUEDir(dir string) (cue.Value, error) {
 	ctx := cuecontext.New()
-	cfg := &load.Config{Dir: dir}
+	cfg := &load.Config{Dir: dir, Overlay: schemaOverlay(dir)}
 	instances := load.Instances([]string{"."}, cfg)
 	if len(instances) == 0 {
 		return cue.Value{}, fmt.Errorf("no CUE instances found in %s", dir)
@@ -86,7 +88,7 @@ func loadCUEFile(file string) (cue.Value, error) {
 	name := filepath.Base(absPath)
 
 	ctx := cuecontext.New()
-	cfg := &load.Config{Dir: dir}
+	cfg := &load.Config{Dir: dir, Overlay: schemaOverlay(dir)}
 	instances := load.Instances([]string{name}, cfg)
 	if len(instances) == 0 {
 		return cue.Value{}, fmt.Errorf("no CUE instances found for %s", file)
@@ -156,4 +158,50 @@ func DetectFormat(path string) (ConfigFormat, error) {
 func IsCUEConfig(path string) bool {
 	f, err := DetectFormat(path)
 	return err == nil && f == FormatCUE
+}
+
+func schemaOverlay(baseDir string) map[string]load.Source {
+	overlay := map[string]load.Source{}
+
+	entries, err := fs.ReadDir(schemaFS, "schema")
+	if err != nil {
+		return overlay
+	}
+
+	moduleRoot := findModuleRoot(baseDir)
+	if moduleRoot == "" {
+		moduleRoot = baseDir
+	}
+	modulePath := "dibra.dev"
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".cue") {
+			continue
+		}
+		data, err := schemaFS.ReadFile(filepath.Join("schema", entry.Name()))
+		if err != nil {
+			continue
+		}
+		virtualPath := filepath.Join(moduleRoot, "cue.mod", "pkg", modulePath, "schema", entry.Name())
+		overlay[virtualPath] = load.FromBytes(data)
+	}
+
+	return overlay
+}
+
+func findModuleRoot(start string) string {
+	cur := start
+	for {
+		if cur == "" || cur == "/" {
+			return ""
+		}
+		if info, err := os.Stat(filepath.Join(cur, "cue.mod")); err == nil && info.IsDir() {
+			return cur
+		}
+		next := filepath.Dir(cur)
+		if next == cur {
+			return ""
+		}
+		cur = next
+	}
 }

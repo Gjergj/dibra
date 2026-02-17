@@ -1,6 +1,6 @@
 package inventory
 
-import "example.com/project/cue/schema"
+import "dibra.dev/schema"
 
 inventory: schema.#Inventory & {
     all: {
