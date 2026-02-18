@@ -51,11 +51,27 @@ dibra --validate -config playbook.cue
 # Initialize a new CUE project
 dibra init ./deploy
 
+# Install embedded CUE schema for editor autocomplete
+dibra schema install
+
+# Check schema installation status
+dibra schema status
+
+# Upgrade schema files to the current dibra version
+dibra schema upgrade
+
 # Convert YAML playbook to CUE
 dibra convert playbook.yaml > playbook.cue
 
 # Using CUE schemas shipped in the dibra binary
 # import "dibra.dev/schema"
+
+## CUE Schema Autocomplete
+
+- `dibra schema install` writes the embedded schema to `cue.mod/pkg/dibra.dev/schema` so the CUE language server can autocomplete `import "dibra.dev/schema"`.
+- `dibra schema upgrade` overwrites the schema files and updates the local schema version.
+- `dibra init` installs the schema by default; pass `-schema=false` to skip.
+- `dibra schema status` reports where the schema is installed and whether it matches the running dibra version.
 
 # Run CUE config unit tests
 go test ./internal/cueconfig/ -v
