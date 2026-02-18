@@ -71,6 +71,13 @@ func main() {
 		return
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "schema" {
+		if err := runSchema(os.Args[2:]); err != nil {
+			fatal("schema failed: %v", err)
+		}
+		return
+	}
+
 	validateCommand := false
 	if len(os.Args) > 1 && os.Args[1] == "validate" {
 		validateCommand = true
@@ -2635,6 +2642,7 @@ func runInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	force := fs.Bool("force", false, "Overwrite existing files")
+	installSchema := fs.Bool("schema", true, "Install dibra CUE schema into cue.mod/pkg")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -2667,6 +2675,11 @@ func runInit(args []string) error {
 
 	if err := writeInitFile(modulePath, fmt.Sprintf("module: %q\nlanguage: {\n  version: %q\n}\n", moduleName, cueLanguageVersion), *force); err != nil {
 		return err
+	}
+	if *installSchema {
+		if _, err := cueconfig.InstallSchema(absRoot, *force); err != nil {
+			return fmt.Errorf("failed to install CUE schema: %w", err)
+		}
 	}
 	if err := writeInitFile(deployPath, initDeployCue, *force); err != nil {
 		return err
@@ -2726,6 +2739,67 @@ func runConvert(args []string) error {
 
 	_, err = os.Stdout.Write(formatted)
 	return err
+}
+
+func runSchema(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: dibra schema <install|status> [--force] [path]")
+	}
+
+	switch args[0] {
+	case "install", "upgrade":
+		fs := flag.NewFlagSet("schema install", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		forceDefault := args[0] == "upgrade"
+		force := fs.Bool("force", forceDefault, "Overwrite existing schema files")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		root := "."
+		if fs.NArg() == 1 {
+			root = fs.Arg(0)
+		} else if fs.NArg() > 1 {
+			return fmt.Errorf("usage: dibra schema %s [--force] [path]", args[0])
+		}
+		result, err := cueconfig.InstallSchema(root, *force)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Installed dibra schema (%d file(s)) at %s (version %s)\n", result.Files, result.Path, result.Version)
+		return nil
+	case "status":
+		fs := flag.NewFlagSet("schema status", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		root := "."
+		if fs.NArg() == 1 {
+			root = fs.Arg(0)
+		} else if fs.NArg() > 1 {
+			return fmt.Errorf("usage: dibra schema status [path]")
+		}
+		status, err := cueconfig.GetSchemaStatus(root)
+		if err != nil {
+			return err
+		}
+		if status.Installed {
+			if status.UpToDate {
+				fmt.Printf("Schema installed at %s (%d file(s), version %s)\n", status.Path, status.Files, status.Version)
+				return nil
+			}
+			if status.Version == "" {
+				fmt.Printf("Schema installed at %s (%d file(s), version unknown; current %s)\n", status.Path, status.Files, status.Current)
+				return nil
+			}
+			fmt.Printf("Schema installed at %s (%d file(s), version %s; current %s)\n", status.Path, status.Files, status.Version, status.Current)
+			return nil
+		}
+		fmt.Printf("Schema not installed (expected at %s, current %s)\n", status.Path, status.Current)
+		return nil
+	default:
+		return fmt.Errorf("usage: dibra schema <install|upgrade|status> [--force] [path]")
+	}
 }
 
 func normalizeYAML(value interface{}) (interface{}, error) {
@@ -2818,32 +2892,44 @@ func writeInitFile(path, contents string, force bool) error {
 
 const initDeployCue = `package deploy
 
-hosts: [{
-    name: "web1"
-    host: "localhost"
-    port: 2222
-    user: "root"
-    password: "rootpass"
-}]
+import "dibra.dev/schema"
 
-tasks: [{
-    name: "Ping"
-    ping: {}
-}]
+hosts: [
+    schema.#Host & {
+        name: "web1"
+        host: "localhost"
+        port: 2222
+        user: "root"
+        password: "rootpass"
+    },
+]
+
+tasks: [
+    schema.#Task & {
+        name: "Ping"
+        ping: {}
+    },
+]
 `
 
 const initInventoryCue = `package inventory
 
-all: {
-    hosts: {
-        web1: {
-            host: "localhost"
-            port: 2222
-            user: "root"
-            password: "rootpass"
+import "dibra.dev/schema"
+
+inventory: schema.#Inventory & {
+    all: {
+        hosts: {
+            web1: {
+                host: "localhost"
+                port: 2222
+                user: "root"
+                password: "rootpass"
+            }
         }
     }
 }
+
+all: inventory.all
 `
 
 const cueLanguageVersion = "v0.11.0"
