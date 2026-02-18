@@ -2656,7 +2656,7 @@ func runInit(args []string) error {
 		return err
 	}
 
-	moduleName := fmt.Sprintf("dibra.local/%s", filepath.Base(absRoot))
+	moduleName := fmt.Sprintf("dibra.local/%s", sanitizeModuleName(filepath.Base(absRoot)))
 	modulePath := filepath.Join(absRoot, "cue.mod", "module.cue")
 	deployPath := filepath.Join(absRoot, "deploy.cue")
 	inventoryPath := filepath.Join(absRoot, "inventory.cue")
@@ -2665,7 +2665,7 @@ func runInit(args []string) error {
 		return fmt.Errorf("failed to create cue.mod: %w", err)
 	}
 
-	if err := writeInitFile(modulePath, fmt.Sprintf("module: %q\n", moduleName), *force); err != nil {
+	if err := writeInitFile(modulePath, fmt.Sprintf("module: %q\nlanguage: {\n  version: %q\n}\n", moduleName, cueLanguageVersion), *force); err != nil {
 		return err
 	}
 	if err := writeInitFile(deployPath, initDeployCue, *force); err != nil {
@@ -2820,8 +2820,10 @@ const initDeployCue = `package deploy
 
 hosts: [{
     name: "web1"
-    host: "192.168.1.10"
+    host: "localhost"
+    port: 2222
     user: "root"
+    password: "rootpass"
 }]
 
 tasks: [{
@@ -2835,12 +2837,28 @@ const initInventoryCue = `package inventory
 all: {
     hosts: {
         web1: {
-            host: "192.168.1.10"
+            host: "localhost"
+            port: 2222
             user: "root"
+            password: "rootpass"
         }
     }
 }
 `
+
+const cueLanguageVersion = "v0.11.0"
+
+var moduleNameSanitizer = regexp.MustCompile(`[^a-z0-9._-]`)
+
+func sanitizeModuleName(name string) string {
+	clean := strings.ToLower(name)
+	clean = moduleNameSanitizer.ReplaceAllString(clean, "-")
+	clean = strings.Trim(clean, "-.")
+	if clean == "" {
+		return "dibra"
+	}
+	return clean
+}
 
 func renderArgs(args map[string]interface{}, context map[string]interface{}) (map[string]interface{}, error) {
 	rendered, err := vars.RenderValue(args, context)
