@@ -78,6 +78,13 @@ func main() {
 		return
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "completion" {
+		if err := runCompletion(os.Args[2:]); err != nil {
+			fatal("completion failed: %v", err)
+		}
+		return
+	}
+
 	validateCommand := false
 	if len(os.Args) > 1 && os.Args[1] == "validate" {
 		validateCommand = true
@@ -2810,6 +2817,28 @@ func runSchema(args []string) error {
 	}
 }
 
+func runCompletion(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: dibra completion <bash|zsh|fish>")
+	}
+	if len(args) > 1 {
+		return fmt.Errorf("usage: dibra completion <bash|zsh|fish>")
+	}
+
+	switch args[0] {
+	case "bash":
+		fmt.Print(bashCompletion)
+	case "zsh":
+		fmt.Print(zshCompletion)
+	case "fish":
+		fmt.Print(fishCompletion)
+	default:
+		return fmt.Errorf("usage: dibra completion <bash|zsh|fish>")
+	}
+
+	return nil
+}
+
 func normalizeYAML(value interface{}) (interface{}, error) {
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -2971,6 +3000,120 @@ func sanitizeModuleName(name string) string {
 	}
 	return clean
 }
+
+const bashCompletion = `#!/usr/bin/env bash
+
+_dibra_subcommands="init convert schema validate completion"
+_dibra_completion_kinds="bash zsh fish"
+_dibra_schema_subcommands="install upgrade status"
+
+_dibra_complete() {
+  local cur prev
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  if [[ ${COMP_CWORD} -le 1 ]]; then
+    COMPREPLY=( $(compgen -W "${_dibra_subcommands}" -- "${cur}") )
+    return 0
+  fi
+
+  case "${COMP_WORDS[1]}" in
+    completion)
+      COMPREPLY=( $(compgen -W "${_dibra_completion_kinds}" -- "${cur}") )
+      return 0
+      ;;
+    schema)
+      if [[ ${COMP_CWORD} -eq 2 ]]; then
+        COMPREPLY=( $(compgen -W "${_dibra_schema_subcommands}" -- "${cur}") )
+        return 0
+      fi
+      ;;
+  esac
+
+  case "${cur}" in
+    -*)
+      COMPREPLY=( $(compgen -W "--config --force-agent-upload --v --version --agent-path --agent-build --i --inventory --e --extra-vars --validate" -- "${cur}") )
+      return 0
+      ;;
+  esac
+}
+
+complete -F _dibra_complete dibra
+`
+
+const zshCompletion = `#compdef dibra
+
+_dibra() {
+  local -a commands
+  commands=(
+    'init:initialize a new CUE project'
+    'convert:convert YAML to CUE'
+    'schema:install or check schema'
+    'validate:validate config and exit'
+    'completion:generate shell completions'
+  )
+
+  if (( CURRENT == 2 )); then
+    _describe 'command' commands
+    return
+  fi
+
+  case "${words[2]}" in
+    completion)
+      _values 'shell' bash zsh fish
+      return
+      ;;
+    schema)
+      if (( CURRENT == 3 )); then
+        _values 'schema command' install upgrade status
+        return
+      fi
+      ;;
+  esac
+
+  _arguments \
+    '--config[Path to playbook config file (YAML or CUE)]:file:_files' \
+    '--force-agent-upload[Force upload of agent binary]' \
+    '--v[Verbose output]' \
+    '--version[Print version and exit]' \
+    '--agent-path[Path to a pre-built agent binary]:file:_files' \
+    '--agent-build[Build agent from source (requires Go)]' \
+    '--i[Path to YAML inventory file]:file:_files' \
+    '--inventory[Path to YAML inventory file]:file:_files' \
+    '--e[Extra variables (key=value or @file.yaml)]' \
+    '--extra-vars[Extra variables (key=value or @file.yaml)]' \
+    '--validate[Validate config and exit (no execution)]'
+}
+
+_dibra "$@"
+`
+
+const fishCompletion = `function __dibra_needs_command
+  set -l cmd (commandline -opc)
+  test (count $cmd) -eq 1
+end
+
+complete -c dibra -n '__dibra_needs_command' -f -a 'init' -d 'Initialize a new CUE project'
+complete -c dibra -n '__dibra_needs_command' -f -a 'convert' -d 'Convert YAML to CUE'
+complete -c dibra -n '__dibra_needs_command' -f -a 'schema' -d 'Install or check schema'
+complete -c dibra -n '__dibra_needs_command' -f -a 'validate' -d 'Validate config and exit'
+complete -c dibra -n '__dibra_needs_command' -f -a 'completion' -d 'Generate shell completions'
+
+complete -c dibra -n '__fish_seen_subcommand_from completion' -f -a 'bash zsh fish'
+complete -c dibra -n '__fish_seen_subcommand_from schema' -f -a 'install upgrade status'
+
+complete -c dibra -l config -r -d 'Path to playbook config file (YAML or CUE)'
+complete -c dibra -l force-agent-upload -d 'Force upload of agent binary'
+complete -c dibra -l v -d 'Verbose output'
+complete -c dibra -l version -d 'Print version and exit'
+complete -c dibra -l agent-path -r -d 'Path to a pre-built agent binary'
+complete -c dibra -l agent-build -d 'Build agent from source (requires Go)'
+complete -c dibra -l i -r -d 'Path to YAML inventory file'
+complete -c dibra -l inventory -r -d 'Path to YAML inventory file'
+complete -c dibra -l e -r -d 'Extra variables (key=value or @file.yaml)'
+complete -c dibra -l extra-vars -r -d 'Extra variables (key=value or @file.yaml)'
+complete -c dibra -l validate -d 'Validate config and exit (no execution)'
+`
 
 func renderArgs(args map[string]interface{}, context map[string]interface{}) (map[string]interface{}, error) {
 	rendered, err := vars.RenderValue(args, context)

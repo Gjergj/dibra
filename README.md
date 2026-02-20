@@ -48,5 +48,15 @@ git config core.hooksPath .githooks
 chmod +x .githooks/pre-commit
 ```
 
+### Shell Completions
+
+Generate shell completions:
+
+```bash
+dibra completion bash > /usr/local/etc/bash_completion.d/dibra
+dibra completion zsh > /usr/local/share/zsh/site-functions/_dibra
+dibra completion fish > ~/.config/fish/completions/dibra.fish
+```
+
 ## Limitations
  * Currently supports only Debian/Ubuntu systems.
