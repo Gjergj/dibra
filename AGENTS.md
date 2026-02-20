@@ -366,7 +366,7 @@ all:
 
 ## Modules
 
-`WHEN ADDING OR EDITING NEW MODULE, ALWAYS ADD OR MODIFY ITS CUE SCHEMA`
+`WHEN ADDING OR EDITING A NEW MODULE, ALWAYS ADD OR MODIFY ITS CUE SCHEMA`
 
 ### ping
 
@@ -3448,6 +3448,16 @@ deploy/
 ```
 
 Run with: `dibra -config ./deploy/`
+
+### CUE Config + Inventory Notes
+
+- If your playbook lives in a CUE directory, do not place an `inventory.cue` with a different `package` in that same directory. CUE rejects mixed packages. Put it in a subdirectory (for example `inventory/inventory.cue`) and reference it via `inventory: "inventory/inventory.cue"` or pass `-i` with that path.
+- When `inventory:` is set inside a playbook and `-config` points at a directory, the inventory path is resolved relative to the config directory (not its parent).
+
+Example:
+```bash
+dibra  --config ./dir_with_cue_project
+```
 
 ### Composed Types (Higher-Level Abstractions)
 

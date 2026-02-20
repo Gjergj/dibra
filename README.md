@@ -37,5 +37,16 @@ It's still under heavy development and largely untested in real world.
 ## Documentation
 Unfortunately for the time being the best documentation is the code and AGENTS.md
 
+## Development
+
+### Git Hooks (Lint + Unit Tests)
+
+Enable the pre-commit hook to run linting and unit tests before each commit:
+
+```bash
+git config core.hooksPath .githooks
+chmod +x .githooks/pre-commit
+```
+
 ## Limitations
  * Currently supports only Debian/Ubuntu systems.
