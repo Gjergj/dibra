@@ -366,6 +366,8 @@ all:
 
 ## Modules
 
+`WHEN ADDING OR EDITING NEW MODULE, ALWAYS ADD OR MODIFY ITS CUE SCHEMA`
+
 ### ping
 
 A trivial test module to verify SSH connectivity. Returns "pong" on success.

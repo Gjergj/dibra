@@ -142,7 +142,11 @@ func main() {
 	if invPath == "" && cfg.Inventory != "" {
 		invPath = cfg.Inventory
 		if !filepath.IsAbs(invPath) {
-			invPath = filepath.Join(filepath.Dir(*configPath), invPath)
+			baseDir := filepath.Dir(*configPath)
+			if info, err := os.Stat(*configPath); err == nil && info.IsDir() {
+				baseDir = *configPath
+			}
+			invPath = filepath.Join(baseDir, invPath)
 		}
 	}
 

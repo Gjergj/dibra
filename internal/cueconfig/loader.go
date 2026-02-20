@@ -172,6 +172,9 @@ func schemaOverlay(baseDir string) map[string]load.Source {
 	if moduleRoot == "" {
 		moduleRoot = baseDir
 	}
+	if absRoot, err := filepath.Abs(moduleRoot); err == nil {
+		moduleRoot = absRoot
+	}
 	modulePath := "dibra.dev"
 
 	for _, entry := range entries {
