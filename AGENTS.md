@@ -15,7 +15,7 @@ make build-dev
 make install
 
 # Check version
-./bin/dibra --version
+dibra --version
 
 # Run playbook (released binary — auto-downloads agent from GitHub Releases)
 dibra -config playbook.yaml
@@ -304,7 +304,7 @@ dibra/
 │   │   ├── docker_swarm.cue  # #DockerSwarmService, #DockerNode, etc.
 │   │   └── docker_info.cue   # #DockerContainerInfo, #DockerImageInfo, etc.
 │   └── composed/             # Higher-level composed types
-│       └── deploy_service.cue # #DeployService, #InstallFromAptRepo, etc.
+│       └── deploy_service.cue # #InstallCaddy, etc.
 ├── test/
 │   ├── Dockerfile            # Ubuntu 22.04 + systemd + SSH
 │   ├── docker-compose.yaml   # Test container orchestration
@@ -367,7 +367,7 @@ all:
 ## Modules
 
 `WHEN ADDING OR EDITING A NEW MODULE, ALWAYS ADD OR MODIFY ITS CUE SCHEMA`
-
+`WHEN ADDING A NEW COMMAND OR FLAG YOU MUST ALSO ADD IT IN THE SHELL COMPLETIONS`
 ### ping
 
 A trivial test module to verify SSH connectivity. Returns "pong" on success.
@@ -3461,7 +3461,7 @@ dibra  --config ./dir_with_cue_project
 
 ### Composed Types (Higher-Level Abstractions)
 
-This is the key differentiator from YAML. Composed types encapsulate multiple low-level tasks behind a simplified interface. They use a `_tasks` field (hidden in CUE output) that decomposes into a flat task list.
+This is the key differentiator from YAML. Composed types encapsulate multiple low-level tasks behind a simplified interface. They use a `tasks` field (hidden in CUE output) that decomposes into a flat task list.
 
 #### Defining a Composed Type
 
@@ -3493,8 +3493,8 @@ import (
     ]), "\n")
 
     // Decomposition: flat task list
-    _tasks: [...]
-    _tasks: [
+    tasks: [...]
+    tasks: [
         {name: "Copy \(service_name) binary", copy: {src: binary_src, dest: binary_dest, mode: "0755"}},
         {name: "Deploy \(service_name) unit", copy: {content: _unit, dest: "/etc/systemd/system/\(service_name).service", mode: "0644"}},
         {let _enabled = enabled, name: "Start \(service_name)", systemd_service: {name: service_name, state: "started", enabled: _enabled, daemon_reload: true}},
@@ -3514,7 +3514,7 @@ api: #DeployService & {
 }
 
 hosts: [{name: "web1", host: "10.0.0.1", user: "root"}]
-tasks: api._tasks
+tasks: api.tasks
 ```
 
 This decomposes into 3 concrete tasks: copy binary, deploy unit file, start service.
@@ -3529,7 +3529,7 @@ import "list"
 api: #DeployService & {service_name: "my-api", binary_src: "./build/api"}
 db:  #DeployService & {service_name: "my-db",  binary_src: "./build/db"}
 
-tasks: list.Concat([api._tasks, db._tasks])
+tasks: list.Concat([api.tasks, db.tasks])
 ```
 
 #### Mixing Composed + One-Off Tasks
@@ -3541,7 +3541,7 @@ api: #DeployService & {service_name: "my-api", binary_src: "./build/api"}
 
 tasks: list.Concat([
     [{name: "Install deps", apt: {name: ["curl", "jq"], state: "present"}}],
-    api._tasks,
+    api.tasks,
     [{name: "Verify", shell: {cmd: "curl -sf http://localhost:8080/health"}}],
 ])
 ```
@@ -3578,11 +3578,10 @@ Located in `cue/composed/deploy_service.cue`:
 | Type | Composes | Description |
 |------|----------|-------------|
 | `#DeployService` | `#Copy` + `#SystemdService` | Deploy a binary as a systemd service |
-| `#InstallFromAptRepo` | `#AptKey` + `#AptRepository` + `#Apt` | Add GPG key, repo, install packages |
-| `#DeployDockerStack` | `#File` + `#Copy` + `#DockerCompose` | Copy compose file, deploy stack |
-| `#ConfigureNginxSite` | `#Copy` + `#File` + `#Service` | Deploy nginx config, enable site, reload |
+| `#InstallCaddy` | `#AptKey` + `#AptRepository` + `#Apt` | Install Caddy |
+| `#Copy` + `#File` + `#Service` | Deploy nginx config, enable site, reload |
 
-Users can create their own composed types following the same `_tasks` pattern.
+Users can create their own composed types following the same `tasks` pattern.
 
 ### CUE Schema Definitions
 

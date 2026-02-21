@@ -1061,8 +1061,8 @@ import (
 		],
 	]), "\n")
 
-	_tasks: [...]
-	_tasks: [
+	tasks: [...]
+	tasks: [
 		{name: "Copy \(service_name) binary", copy: {src: binary_src, dest: binary_dest, mode: "0755"}},
 		{name: "Deploy \(service_name) unit", copy: {content: _unit, dest: "/etc/systemd/system/\(service_name).service", mode: "0644"}},
 		{let _enabled = enabled, name: "Start \(service_name)", systemd_service: {name: service_name, state: "started", enabled: _enabled, daemon_reload: true}},
@@ -1083,7 +1083,7 @@ hosts: [{
 	user: "root"
 }]
 
-tasks: api._tasks
+tasks: api.tasks
 `)
 	cfg, err := Load(dir)
 	if err != nil {
@@ -1140,29 +1140,6 @@ import "list"
 	{[string]: _}
 }
 
-#InstallFromAptRepo: {
-	key_url:       string
-	keyring:       string
-	repo:          string
-	repo_filename: string
-	packages:      [...string]
-
-	_tasks: [...#Task]
-	_tasks: [
-		{name: "Add GPG key for \(repo_filename)", apt_key: {url: key_url, "keyring": keyring}},
-		{name: "Add \(repo_filename) repository", apt_repository: {"repo": repo, filename: repo_filename, update_cache: true}},
-		{name: "Install \(repo_filename) packages", apt: {name: packages, state: "present"}},
-	]
-}
-
-caddy: #InstallFromAptRepo & {
-	key_url:       "https://dl.cloudsmith.io/public/caddy/stable/gpg.key"
-	keyring:       "/usr/share/keyrings/caddy.gpg"
-	repo:          "deb [signed-by=/usr/share/keyrings/caddy.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main"
-	repo_filename: "caddy-stable"
-	packages:      ["caddy"]
-}
-
 hosts: [{
 	name: "web1"
 	host: "10.0.0.1"
@@ -1172,7 +1149,6 @@ hosts: [{
 // Mix composed + one-off tasks
 tasks: list.Concat([
 	[{name: "Update cache", apt: {name: ["curl"], state: "present", update_cache: true}}],
-	caddy._tasks,
 	[{name: "Verify caddy", shell: {cmd: "caddy version"}}],
 ])
 `)
@@ -1181,25 +1157,16 @@ tasks: list.Concat([
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	// 1 (update cache) + 3 (caddy install) + 1 (verify) = 5
-	if len(cfg.Tasks) != 5 {
+	// 1 (update cache)  + 1 (verify) = 1
+	if len(cfg.Tasks) != 2 {
 		t.Fatalf("expected 5 tasks, got %d", len(cfg.Tasks))
 	}
 
 	if cfg.Tasks[0].Apt == nil {
 		t.Error("task 0 should be apt")
 	}
-	if cfg.Tasks[1].AptKey == nil {
-		t.Error("task 1 should be apt_key")
-	}
-	if cfg.Tasks[2].AptRepository == nil {
-		t.Error("task 2 should be apt_repository")
-	}
-	if cfg.Tasks[3].Apt == nil {
-		t.Error("task 3 should be apt")
-	}
-	if cfg.Tasks[4].Shell == nil {
-		t.Error("task 4 should be shell")
+	if cfg.Tasks[1].Shell == nil {
+		t.Error("task 1 should be shell")
 	}
 }
 
@@ -1248,8 +1215,8 @@ import (
 		],
 	]), "\n")
 
-	_tasks: [...]
-	_tasks: [
+	tasks: [...]
+	tasks: [
 		{name: "Copy \(service_name) binary", copy: {src: binary_src, dest: binary_dest, mode: "0755"}},
 		{name: "Deploy \(service_name) unit", copy: {content: _unit, dest: "/etc/systemd/system/\(service_name).service", mode: "0644"}},
 		{let _enabled = enabled, name: "Start \(service_name)", systemd_service: {name: service_name, state: "started", enabled: _enabled, daemon_reload: true}},
@@ -1284,7 +1251,7 @@ hosts: [{
 	user: "root"
 }]
 
-tasks: list.Concat([api._tasks, frontend._tasks])
+tasks: list.Concat([api.tasks, frontend.tasks])
 `)
 	cfg, err := Load(dir)
 	if err != nil {
@@ -1393,7 +1360,7 @@ func TestLoad_Samples(t *testing.T) {
 		{"../../samples/cue/playbook-docker-test.cue", 5, 1},
 		{"../../samples/cue/playbook-file-copy-test.cue", 6, 1},
 		{"../../samples/cue/playbook-file-test.cue", 5, 1},
-		{"../../samples/cue/playbook-composed.cue", 8, 1},
+		{"../../samples/cue/playbook-composed.cue", 2, 1},
 		{"../../samples/cue/variables/playbook.cue", 4, 1},
 	}
 

@@ -1625,19 +1625,19 @@ func main() {
 
 			case task.DockerPrune != nil:
 				args := map[string]interface{}{
-					"containers":           task.DockerPrune.Containers,
-					"containers_filters":   task.DockerPrune.ContainersFilters,
-					"images":               task.DockerPrune.Images,
-					"images_filters":       task.DockerPrune.ImagesFilters,
-					"networks":             task.DockerPrune.Networks,
-					"networks_filters":     task.DockerPrune.NetworksFilters,
-					"volumes":              task.DockerPrune.Volumes,
-					"volumes_filters":      task.DockerPrune.VolumesFilters,
-					"builder":              task.DockerPrune.Builder,
-					"builder_cache_all":    task.DockerPrune.BuilderCacheAll,
+					"containers":            task.DockerPrune.Containers,
+					"containers_filters":    task.DockerPrune.ContainersFilters,
+					"images":                task.DockerPrune.Images,
+					"images_filters":        task.DockerPrune.ImagesFilters,
+					"networks":              task.DockerPrune.Networks,
+					"networks_filters":      task.DockerPrune.NetworksFilters,
+					"volumes":               task.DockerPrune.Volumes,
+					"volumes_filters":       task.DockerPrune.VolumesFilters,
+					"builder":               task.DockerPrune.Builder,
+					"builder_cache_all":     task.DockerPrune.BuilderCacheAll,
 					"builder_cache_filters": task.DockerPrune.BuilderCacheFilters,
-					"docker_host":          task.DockerPrune.DockerHost,
-					"tls":                  task.DockerPrune.TLS,
+					"docker_host":           task.DockerPrune.DockerHost,
+					"tls":                   task.DockerPrune.TLS,
 				}
 				renderedArgs, err := renderArgs(args, flattened)
 
@@ -2781,6 +2781,7 @@ func runSchema(args []string) error {
 			return err
 		}
 		fmt.Printf("Installed dibra schema (%d file(s)) at %s (version %s)\n", result.Files, result.Path, result.Version)
+		fmt.Printf("Installed dibra composed types (%d file(s)) at %s (version %s)\n", result.ComposedFiles, result.ComposedPath, result.Version)
 		return nil
 	case "status":
 		fs := flag.NewFlagSet("schema status", flag.ContinueOnError)
@@ -2801,16 +2802,20 @@ func runSchema(args []string) error {
 		if status.Installed {
 			if status.UpToDate {
 				fmt.Printf("Schema installed at %s (%d file(s), version %s)\n", status.Path, status.Files, status.Version)
+				fmt.Printf("Composed types installed at %s (%d file(s), version %s)\n", status.ComposedPath, status.ComposedFiles, status.Version)
 				return nil
 			}
 			if status.Version == "" {
 				fmt.Printf("Schema installed at %s (%d file(s), version unknown; current %s)\n", status.Path, status.Files, status.Current)
+				fmt.Printf("Composed types installed at %s (%d file(s), version unknown; current %s)\n", status.ComposedPath, status.ComposedFiles, status.Current)
 				return nil
 			}
 			fmt.Printf("Schema installed at %s (%d file(s), version %s; current %s)\n", status.Path, status.Files, status.Version, status.Current)
+			fmt.Printf("Composed types installed at %s (%d file(s), version %s; current %s)\n", status.ComposedPath, status.ComposedFiles, status.Version, status.Current)
 			return nil
 		}
 		fmt.Printf("Schema not installed (expected at %s, current %s)\n", status.Path, status.Current)
+		fmt.Printf("Composed types not installed (expected at %s, current %s)\n", status.ComposedPath, status.Current)
 		return nil
 	default:
 		return fmt.Errorf("usage: dibra schema <install|upgrade|status> [--force] [path]")
@@ -2976,9 +2981,17 @@ playbook and inventory wired to the local integration-test container.
 
 ## Quick Start
 
-1. Run the playbook:
+1. Start the test container:
+
+   make test-integration-up
+
+2. Run the playbook:
 
    dibra -config ./deploy.cue
+
+3. Tear down the container when done:
+
+   make test-integration-down
 
 ## Next Steps
 

@@ -37,6 +37,17 @@ It's still under heavy development and largely untested in real world.
 ## Documentation
 Unfortunately for the time being the best documentation is the code and AGENTS.md
 
+## CUE Composed Types
+
+Available CUE composed types live in `cue/composed/` and can be imported with:
+
+```cue
+import "dibra.dev/composed"
+```
+
+Included types:
+- `#InstallCaddy`
+
 ## Development
 
 ### Git Hooks (Lint + Unit Tests)

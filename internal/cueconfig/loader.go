@@ -163,11 +163,6 @@ func IsCUEConfig(path string) bool {
 func schemaOverlay(baseDir string) map[string]load.Source {
 	overlay := map[string]load.Source{}
 
-	entries, err := fs.ReadDir(schemaFS, "schema")
-	if err != nil {
-		return overlay
-	}
-
 	moduleRoot := findModuleRoot(baseDir)
 	if moduleRoot == "" {
 		moduleRoot = baseDir
@@ -177,19 +172,29 @@ func schemaOverlay(baseDir string) map[string]load.Source {
 	}
 	modulePath := "dibra.dev"
 
+	addOverlayFiles(overlay, schemaFS, "schema", filepath.Join(moduleRoot, "cue.mod", "pkg", modulePath, "schema"))
+	addOverlayFiles(overlay, composedFS, "composed", filepath.Join(moduleRoot, "cue.mod", "pkg", modulePath, "composed"))
+
+	return overlay
+}
+
+func addOverlayFiles(overlay map[string]load.Source, embedded fs.FS, folder string, destDir string) {
+	entries, err := fs.ReadDir(embedded, folder)
+	if err != nil {
+		return
+	}
+
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".cue") {
 			continue
 		}
-		data, err := schemaFS.ReadFile(filepath.Join("schema", entry.Name()))
+		data, err := fs.ReadFile(embedded, filepath.Join(folder, entry.Name()))
 		if err != nil {
 			continue
 		}
-		virtualPath := filepath.Join(moduleRoot, "cue.mod", "pkg", modulePath, "schema", entry.Name())
+		virtualPath := filepath.Join(destDir, entry.Name())
 		overlay[virtualPath] = load.FromBytes(data)
 	}
-
-	return overlay
 }
 
 func findModuleRoot(start string) string {
