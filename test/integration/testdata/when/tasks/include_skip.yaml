@@ -1,0 +1,5 @@
+- name: Included task skipped by include
+  copy:
+    content: "include-skip"
+    dest: /tmp/dibra-when-include-skip.txt
+    mode: "0644"

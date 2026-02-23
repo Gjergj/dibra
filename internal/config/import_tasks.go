@@ -77,6 +77,12 @@ func expandImportTasks(tasks []Task, baseDir string, renderPath func(string) (st
 			}
 		}
 
+		if len(task.When) > 0 {
+			for i := range importedTasks {
+				importedTasks[i].When = mergeWhen(task.When, importedTasks[i].When)
+			}
+		}
+
 		newStack := append(append([]string{}, stack...), absPath)
 		newBaseDir := filepath.Dir(absPath)
 		expanded, err := expandImportTasks(importedTasks, newBaseDir, renderPath, newStack, depth+1)
@@ -88,6 +94,19 @@ func expandImportTasks(tasks []Task, baseDir string, renderPath func(string) (st
 	}
 
 	return result, nil
+}
+
+func mergeWhen(parent When, child When) When {
+	if len(parent) == 0 {
+		return child
+	}
+	if len(child) == 0 {
+		return parent
+	}
+	merged := make(When, 0, len(parent)+len(child))
+	merged = append(merged, parent...)
+	merged = append(merged, child...)
+	return merged
 }
 
 func loadTasksFile(path string) ([]Task, error) {

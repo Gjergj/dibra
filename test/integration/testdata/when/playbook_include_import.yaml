@@ -1,0 +1,28 @@
+vars:
+  include_toggle: true
+  import_toggle: false
+  number: 5
+
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+
+tasks:
+  - name: Include tasks when true
+    include_tasks: tasks/include_when.yaml
+    when: include_toggle
+
+  - name: Include tasks when false
+    include_tasks: tasks/include_skip.yaml
+    when: import_toggle
+
+  - name: Import tasks when true
+    import_tasks: tasks/import_when.yaml
+    when: include_toggle
+
+  - name: Import tasks when false
+    import_tasks: tasks/import_skip.yaml
+    when: import_toggle

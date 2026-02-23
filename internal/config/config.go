@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -67,9 +68,70 @@ func (p *IncludeTasksParams) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
+type When []interface{}
+
+func (w *When) UnmarshalYAML(node *yaml.Node) error {
+	var raw interface{}
+	if err := node.Decode(&raw); err != nil {
+		return err
+	}
+	normalized, err := normalizeWhenValue(raw)
+	if err != nil {
+		return err
+	}
+	*w = normalized
+	return nil
+}
+
+func (w *When) UnmarshalJSON(data []byte) error {
+	var raw interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	normalized, err := normalizeWhenValue(raw)
+	if err != nil {
+		return err
+	}
+	*w = normalized
+	return nil
+}
+
+func normalizeWhenValue(raw interface{}) (When, error) {
+	if raw == nil {
+		return nil, nil
+	}
+
+	switch v := raw.(type) {
+	case When:
+		return v, nil
+	case string, bool, int, int32, int64, float32, float64, uint, uint32, uint64:
+		return When{v}, nil
+	case []string:
+		normalized := make(When, len(v))
+		for i, item := range v {
+			normalized[i] = item
+		}
+		return normalized, nil
+	case []interface{}:
+		normalized := make(When, len(v))
+		for i, item := range v {
+			switch item.(type) {
+			case string, bool, int, int32, int64, float32, float64, uint, uint32, uint64:
+				normalized[i] = item
+			default:
+				return nil, fmt.Errorf("when list entries must be strings, booleans, or numbers")
+			}
+		}
+		return normalized, nil
+	default:
+		return nil, fmt.Errorf("when must be a string, boolean, number, or list")
+	}
+}
+
 type Task struct {
 	Name                    string                         `json:"name" yaml:"name"`
 	Vars                    map[string]interface{}         `json:"vars,omitempty" yaml:"vars,omitempty"`
+	When                    When                           `json:"when,omitempty" yaml:"when,omitempty"`
 	ImportTasks             *ImportTasksParams             `json:"import_tasks,omitempty" yaml:"import_tasks,omitempty"`
 	IncludeTasks            *IncludeTasksParams            `json:"include_tasks,omitempty" yaml:"include_tasks,omitempty"`
 	SourceDir               string                         `yaml:"-"`
@@ -135,24 +197,24 @@ type Task struct {
 }
 
 type TemplateParams struct {
-	Src                string `json:"src" yaml:"src"`
-	Dest               string `json:"dest" yaml:"dest"`
-	Mode               string `json:"mode,omitempty" yaml:"mode,omitempty"`
-	Owner              string `json:"owner,omitempty" yaml:"owner,omitempty"`
-	Group              string `json:"group,omitempty" yaml:"group,omitempty"`
-	Backup             bool   `json:"backup" yaml:"backup"`
-	Force              *bool  `json:"force,omitempty" yaml:"force,omitempty"`
-	Follow             bool   `json:"follow" yaml:"follow"`
-	Validate           string `json:"validate,omitempty" yaml:"validate,omitempty"`
-	NewlineSequence    string `json:"newline_sequence,omitempty" yaml:"newline_sequence,omitempty"`
+	Src                 string `json:"src" yaml:"src"`
+	Dest                string `json:"dest" yaml:"dest"`
+	Mode                string `json:"mode,omitempty" yaml:"mode,omitempty"`
+	Owner               string `json:"owner,omitempty" yaml:"owner,omitempty"`
+	Group               string `json:"group,omitempty" yaml:"group,omitempty"`
+	Backup              bool   `json:"backup" yaml:"backup"`
+	Force               *bool  `json:"force,omitempty" yaml:"force,omitempty"`
+	Follow              bool   `json:"follow" yaml:"follow"`
+	Validate            string `json:"validate,omitempty" yaml:"validate,omitempty"`
+	NewlineSequence     string `json:"newline_sequence,omitempty" yaml:"newline_sequence,omitempty"`
 	VariableStartString string `json:"variable_start_string,omitempty" yaml:"variable_start_string,omitempty"`
 	VariableEndString   string `json:"variable_end_string,omitempty" yaml:"variable_end_string,omitempty"`
 	BlockStartString    string `json:"block_start_string,omitempty" yaml:"block_start_string,omitempty"`
 	BlockEndString      string `json:"block_end_string,omitempty" yaml:"block_end_string,omitempty"`
 	CommentStartString  string `json:"comment_start_string,omitempty" yaml:"comment_start_string,omitempty"`
 	CommentEndString    string `json:"comment_end_string,omitempty" yaml:"comment_end_string,omitempty"`
-	TrimBlocks         *bool  `json:"trim_blocks,omitempty" yaml:"trim_blocks,omitempty"`
-	LstripBlocks       *bool  `json:"lstrip_blocks,omitempty" yaml:"lstrip_blocks,omitempty"`
+	TrimBlocks          *bool  `json:"trim_blocks,omitempty" yaml:"trim_blocks,omitempty"`
+	LstripBlocks        *bool  `json:"lstrip_blocks,omitempty" yaml:"lstrip_blocks,omitempty"`
 }
 
 type DockerSwarmServiceParams struct {
@@ -820,9 +882,9 @@ type DockerImageParams struct {
 	Pull interface{} `json:"pull,omitempty" yaml:"pull,omitempty"` // string (missing/always/never) or bool for backward compat
 
 	// Force flags (separated for clarity)
-	ForcePull   bool `json:"force_pull,omitempty" yaml:"force_pull,omitempty"`   // Force pull even if image exists
+	ForcePull   bool `json:"force_pull,omitempty" yaml:"force_pull,omitempty"`     // Force pull even if image exists
 	ForceRemove bool `json:"force_remove,omitempty" yaml:"force_remove,omitempty"` // Force remove (removes containers using the image)
-	ForceTag    bool `json:"force_tag,omitempty" yaml:"force_tag,omitempty"`    // Force tag even if target exists
+	ForceTag    bool `json:"force_tag,omitempty" yaml:"force_tag,omitempty"`       // Force tag even if target exists
 	ForceSource bool `json:"force_source,omitempty" yaml:"force_source,omitempty"` // Deprecated: use force_pull or force_remove
 
 	// Registry authentication

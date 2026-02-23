@@ -3770,6 +3770,47 @@ tasks:
 - If inventory file is not found, dibra errors
 - Circular group references are detected and reported
 
+## when
+
+Conditionally executes a task. The condition is evaluated against the same variable context used for templates (`vars`, `hostvars`, `inventory_hostname`, `group_names`, registered results, etc.). If the condition resolves to false, the task is skipped. If the condition cannot be evaluated, the task fails.
+
+**Syntax**:
+- String expression using Jinja-style syntax (`==`, `!=`, `>`, `>=`, `<`, `<=`, `and`, `or`, `not`, `in`, `is defined`, filters like `default`, `length`)
+- Boolean literal (`true`/`false`)
+- Number (`0` is false, non-zero is true)
+- List of conditions (all must be true)
+
+```yaml
+- name: Run only on web hosts
+  copy:
+    content: "web"
+    dest: /tmp/web.txt
+  when: '"web" in group_names'
+
+- name: Multiple conditions (AND)
+  copy:
+    content: "ready"
+    dest: /tmp/ready.txt
+  when:
+    - app.enabled
+    - (app.port | int) > 1024
+
+- name: Use filters
+  copy:
+    content: "fallback"
+    dest: /tmp/fallback.txt
+  when: (missing_value | default("fallback")) == "fallback"
+
+- name: Boolean literal
+  ping:
+  when: true
+```
+
+**Behavior**:
+- Skipped tasks report `skipped: true`, `changed: false`, and `msg: "when condition false"` in register results.
+- `include_tasks`: if the `when` condition is false, no tasks are included.
+- `import_tasks`: parent `when` conditions are merged with imported task conditions (logical AND).
+
 ## import_tasks
 
 Imports a list of tasks from another YAML file, inserting them into the current playbook at parse time (static include). This is a controller-side directive, not a remote module.

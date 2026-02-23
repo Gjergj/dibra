@@ -1,0 +1,12 @@
+- name: Included task true
+  copy:
+    content: "include-true"
+    dest: /tmp/dibra-when-include-true.txt
+    mode: "0644"
+
+- name: Included task with inner skip
+  copy:
+    content: "include-inner-skip"
+    dest: /tmp/dibra-when-include-inner-skip.txt
+    mode: "0644"
+  when: number < 5

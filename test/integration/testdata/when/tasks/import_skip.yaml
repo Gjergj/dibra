@@ -1,0 +1,5 @@
+- name: Imported task skipped by outer when
+  copy:
+    content: "import-skip"
+    dest: /tmp/dibra-when-import-skip.txt
+    mode: "0644"

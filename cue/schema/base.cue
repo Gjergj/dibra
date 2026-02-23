@@ -19,11 +19,12 @@ package schema
 }
 
 #Task: {
-	name:      string
-	register?: string
-	vars?: {[string]: _}
-	import_tasks?: string | #ImportTasks
-	include_tasks?: string | #IncludeTasks
+        name:      string
+        register?: string
+        vars?: {[string]: _}
+        when?: string | bool | number | [...(string|bool|number)]
+        import_tasks?: string | #ImportTasks
+        include_tasks?: string | #IncludeTasks
 
 	{ping:                     #Ping} |
 	{apt:                      #Apt} |

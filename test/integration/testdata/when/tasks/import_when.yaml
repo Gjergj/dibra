@@ -1,0 +1,12 @@
+- name: Imported task true
+  copy:
+    content: "import-true"
+    dest: /tmp/dibra-when-import-true.txt
+    mode: "0644"
+
+- name: Imported task with inner skip
+  copy:
+    content: "import-inner-skip"
+    dest: /tmp/dibra-when-import-inner-skip.txt
+    mode: "0644"
+  when: number < 5

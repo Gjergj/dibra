@@ -1,0 +1,209 @@
+vars:
+  foo: "bar"
+  number: 5
+  items:
+    - "bar"
+    - "baz"
+  active: true
+  bool_false: false
+  substring: "barbaz"
+
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    groups:
+      - web
+
+tasks:
+  - name: Always create
+    copy:
+      content: "always"
+      dest: /tmp/dibra-when-always.txt
+      mode: "0644"
+
+  - name: Equals condition
+    copy:
+      content: "equals"
+      dest: /tmp/dibra-when-equals.txt
+      mode: "0644"
+    when: foo == "bar"
+
+  - name: Not equals skip
+    copy:
+      content: "not-equals"
+      dest: /tmp/dibra-when-not-equals.txt
+      mode: "0644"
+    when: foo != "bar"
+
+  - name: In list
+    copy:
+      content: "in-list"
+      dest: /tmp/dibra-when-in-list.txt
+      mode: "0644"
+    when: foo in items
+
+  - name: Not in list skip
+    copy:
+      content: "not-in-list"
+      dest: /tmp/dibra-when-not-in-list.txt
+      mode: "0644"
+    when: not (foo in items)
+
+  - name: Numeric compare true
+    copy:
+      content: "numeric-true"
+      dest: /tmp/dibra-when-numeric-true.txt
+      mode: "0644"
+    when: number >= 5
+
+  - name: Numeric compare false
+    copy:
+      content: "numeric-false"
+      dest: /tmp/dibra-when-numeric-false.txt
+      mode: "0644"
+    when: number < 5
+
+  - name: Bool true
+    copy:
+      content: "bool-true"
+      dest: /tmp/dibra-when-bool-true.txt
+      mode: "0644"
+    when: active
+
+  - name: Bool false skip
+    copy:
+      content: "bool-false"
+      dest: /tmp/dibra-when-bool-false.txt
+      mode: "0644"
+    when: bool_false
+
+  - name: List conditions
+    copy:
+      content: "list-true"
+      dest: /tmp/dibra-when-list-true.txt
+      mode: "0644"
+    when:
+      - foo == "bar"
+      - number == 5
+
+  - name: List condition skip
+    copy:
+      content: "list-false"
+      dest: /tmp/dibra-when-list-false.txt
+      mode: "0644"
+    when:
+      - foo == "bar"
+      - number > 10
+
+  - name: Defined check
+    copy:
+      content: "defined"
+      dest: /tmp/dibra-when-defined.txt
+      mode: "0644"
+    when: foo is defined
+
+  - name: Undefined skip
+    copy:
+      content: "undefined"
+      dest: /tmp/dibra-when-undefined.txt
+      mode: "0644"
+    when: missing_var is defined
+
+  - name: Default filter
+    copy:
+      content: "default-filter"
+      dest: /tmp/dibra-when-default.txt
+      mode: "0644"
+    when: (missing_var | default("fallback")) == "fallback"
+
+  - name: Length filter
+    copy:
+      content: "length-filter"
+      dest: /tmp/dibra-when-length.txt
+      mode: "0644"
+    when: (items | length) == 2
+
+  - name: Substring check
+    copy:
+      content: "substring"
+      dest: /tmp/dibra-when-substring.txt
+      mode: "0644"
+    when: '"bar" in substring'
+
+  - name: Complex logic
+    copy:
+      content: "complex"
+      dest: /tmp/dibra-when-complex.txt
+      mode: "0644"
+    when: (foo == "bar" and number == 5) or bool_false
+
+  - name: Inventory hostname condition
+    copy:
+      content: "inventory"
+      dest: /tmp/dibra-when-inventory.txt
+      mode: "0644"
+    when: inventory_hostname == "testhost"
+
+  - name: Group membership condition
+    copy:
+      content: "group"
+      dest: /tmp/dibra-when-group.txt
+      mode: "0644"
+    when: '"web" in group_names'
+
+  - name: Hostvars condition
+    copy:
+      content: "hostvars"
+      dest: /tmp/dibra-when-hostvars.txt
+      mode: "0644"
+    when: 'hostvars["testhost"].foo == "bar"'
+
+  - name: Register command
+    shell:
+      cmd: "echo register-value"
+    register: when_register
+
+  - name: Register condition true
+    copy:
+      content: "registered"
+      dest: /tmp/dibra-when-register.txt
+      mode: "0644"
+    when: when_register.stdout == "register-value"
+
+  - name: Register condition skip
+    copy:
+      content: "register-skip"
+      dest: /tmp/dibra-when-register-skip.txt
+      mode: "0644"
+    when: when_register.rc != 0
+
+  - name: Boolean literal true
+    copy:
+      content: "literal-true"
+      dest: /tmp/dibra-when-literal-true.txt
+      mode: "0644"
+    when: true
+
+  - name: Boolean literal false
+    copy:
+      content: "literal-false"
+      dest: /tmp/dibra-when-literal-false.txt
+      mode: "0644"
+    when: false
+
+  - name: Numeric literal nonzero
+    copy:
+      content: "literal-num"
+      dest: /tmp/dibra-when-literal-num.txt
+      mode: "0644"
+    when: 1
+
+  - name: Numeric literal zero
+    copy:
+      content: "literal-zero"
+      dest: /tmp/dibra-when-literal-zero.txt
+      mode: "0644"
+    when: 0

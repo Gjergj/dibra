@@ -47,6 +47,7 @@ type ModuleRequest struct {
 type GenericResponse struct {
 	Changed  bool     `json:"changed"`
 	Failed   bool     `json:"failed"`
+	Skipped  bool     `json:"skipped"`
 	Msg      string   `json:"msg,omitempty"`
 	RC       int      `json:"rc"`
 	Stdout   string   `json:"stdout,omitempty"`
@@ -460,6 +461,31 @@ func main() {
 			hostContext["group_names"] = groupNamesAny
 			hostContext["vars"] = resolved.Namespaces
 			flattened := hostContext
+
+			if len(task.When) > 0 {
+				shouldRun, err := template.EvaluateWhen([]interface{}(task.When), flattened)
+				if err != nil {
+					fmt.Printf("    ✗ FAILED: when condition error: %v\n", err)
+					if task.Register != "" {
+						registerResult(hostRuntimeVars, host.Name, task, map[string]interface{}{
+							"failed": true,
+							"msg":    fmt.Sprintf("when condition error: %v", err),
+						})
+					}
+					continue
+				}
+				if !shouldRun {
+					fmt.Printf("    ↷ SKIPPED (when condition false)\n")
+					if task.Register != "" {
+						registerResult(hostRuntimeVars, host.Name, task, map[string]interface{}{
+							"changed": false,
+							"skipped": true,
+							"msg":     "when condition false",
+						})
+					}
+					continue
+				}
+			}
 
 			var modReq ModuleRequest
 
@@ -2383,7 +2409,13 @@ func main() {
 				continue
 			}
 
-			if resp.Failed {
+			if resp.Skipped {
+				fmt.Printf("    ↷ SKIPPED")
+				if resp.Msg != "" {
+					fmt.Printf(" - %s", resp.Msg)
+				}
+				fmt.Println()
+			} else if resp.Failed {
 				fmt.Printf("    ✗ FAILED: %s\n", resp.Msg)
 				if *verbose && resp.Stderr != "" {
 					fmt.Printf("    Stderr: %s\n", resp.Stderr)
@@ -2496,6 +2528,7 @@ func genericResponseToMap(resp GenericResponse) map[string]interface{} {
 	result := map[string]interface{}{
 		"changed": resp.Changed,
 		"failed":  resp.Failed,
+		"skipped": resp.Skipped,
 		"rc":      resp.RC,
 		"msg":     resp.Msg,
 		"stdout":  resp.Stdout,
