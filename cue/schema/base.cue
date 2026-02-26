@@ -23,6 +23,12 @@ package schema
         register?: string
         vars?: {[string]: _}
         when?: string | bool | number | [...(string|bool|number)]
+        loop?: _
+        with_items?: _
+        with_list?: _
+        with_dict?: _
+        with_sequence?: _
+        loop_control?: #LoopControl
         import_tasks?: string | #ImportTasks
         include_tasks?: string | #IncludeTasks
 
@@ -91,7 +97,16 @@ package schema
 }
 
 #IncludeTasks: {
-	file: string
+        file: string
+}
+
+#LoopControl: {
+        loop_var?: string
+        index_var?: string
+        pause?: number
+        extended?: bool
+        extended_allitems?: bool
+        label?: string
 }
 
 #Playbook: {

@@ -132,6 +132,12 @@ type Task struct {
 	Name                    string                         `json:"name" yaml:"name"`
 	Vars                    map[string]interface{}         `json:"vars,omitempty" yaml:"vars,omitempty"`
 	When                    When                           `json:"when,omitempty" yaml:"when,omitempty"`
+	Loop                    interface{}                    `json:"loop,omitempty" yaml:"loop,omitempty"`
+	WithItems               interface{}                    `json:"with_items,omitempty" yaml:"with_items,omitempty"`
+	WithList                interface{}                    `json:"with_list,omitempty" yaml:"with_list,omitempty"`
+	WithDict                interface{}                    `json:"with_dict,omitempty" yaml:"with_dict,omitempty"`
+	WithSequence            interface{}                    `json:"with_sequence,omitempty" yaml:"with_sequence,omitempty"`
+	LoopControl             *LoopControlParams             `json:"loop_control,omitempty" yaml:"loop_control,omitempty"`
 	ImportTasks             *ImportTasksParams             `json:"import_tasks,omitempty" yaml:"import_tasks,omitempty"`
 	IncludeTasks            *IncludeTasksParams            `json:"include_tasks,omitempty" yaml:"include_tasks,omitempty"`
 	SourceDir               string                         `yaml:"-"`
@@ -194,6 +200,15 @@ type Task struct {
 	DockerSwarmInfo         *DockerSwarmInfoParams         `json:"docker_swarm_info,omitempty" yaml:"docker_swarm_info,omitempty"`
 	DockerSwarmServiceInfo  *DockerSwarmServiceInfoParams  `json:"docker_swarm_service_info,omitempty" yaml:"docker_swarm_service_info,omitempty"`
 	DockerNodeInfo          *DockerNodeInfoParams          `json:"docker_node_info,omitempty" yaml:"docker_node_info,omitempty"`
+}
+
+type LoopControlParams struct {
+	LoopVar          string  `json:"loop_var,omitempty" yaml:"loop_var,omitempty"`
+	IndexVar         string  `json:"index_var,omitempty" yaml:"index_var,omitempty"`
+	Pause            float64 `json:"pause,omitempty" yaml:"pause,omitempty"`
+	Extended         bool    `json:"extended,omitempty" yaml:"extended,omitempty"`
+	ExtendedAllitems *bool   `json:"extended_allitems,omitempty" yaml:"extended_allitems,omitempty"`
+	Label            string  `json:"label,omitempty" yaml:"label,omitempty"`
 }
 
 type TemplateParams struct {

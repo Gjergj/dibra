@@ -3919,6 +3919,162 @@ Includes a list of tasks from another YAML file at runtime (dynamic include). Un
 - File not found → `failed to read`
 - Parse error → `failed to parse`
 
+## Loops
+
+Dibra supports task loops using `loop`, `with_items`, `with_list`, `with_dict`, and `with_sequence`. Looping runs the task once per item and can be combined with `when`, `register`, and `include_tasks`.
+
+### Basic loop forms
+
+```yaml
+- name: Loop over a list
+  copy:
+    content: "{{ item }}"
+    dest: "/tmp/dibra-loop-{{ item }}.txt"
+  loop:
+    - alpha
+    - bravo
+
+- name: Loop over a list variable
+  command:
+    cmd: "echo {{ item }}"
+  loop: "{{ my_items }}"
+```
+
+### with_items
+
+`with_items` behaves like `loop`, but also flattens one level of nested lists.
+
+```yaml
+- name: Flatten one level
+  copy:
+    content: "{{ item }}"
+    dest: "/tmp/dibra-loop-{{ item }}.txt"
+  with_items: "{{ [["red", "green"], "blue"] }}"
+```
+
+### with_list
+
+`with_list` behaves like `loop` without flattening.
+
+```yaml
+- name: With list
+  copy:
+    content: "{{ item }}"
+    dest: "/tmp/dibra-loop-{{ item }}.txt"
+  with_list: "{{ list_items }}"
+```
+
+### with_dict
+
+`with_dict` expects a map and exposes `item.key` and `item.value`.
+
+```yaml
+- name: With dict
+  copy:
+    content: "{{ item.value }}"
+    dest: "/tmp/dibra-loop-{{ item.key }}.txt"
+  with_dict:
+    first: one
+    second: two
+```
+
+### with_sequence
+
+`with_sequence` builds an integer sequence. It accepts either a string of `key=value` pairs or a map.
+
+```yaml
+- name: With sequence string
+  command:
+    cmd: "echo {{ item }}"
+  with_sequence: "start=1 count=3 stride=1"
+
+- name: With sequence map and format
+  command:
+    cmd: "echo {{ item }}"
+  with_sequence:
+    start: 0
+    end: 4
+    stride: 2
+    format: "user%02d"
+```
+
+### Loop control metadata
+
+Loop metadata is configured under `loop_control`.
+
+| Field | Description |
+|-------|-------------|
+| `loop_var` | Custom item variable name (default `item`) |
+| `index_var` | Variable name for the loop index (0-based) |
+| `pause` | Seconds to sleep between iterations (float supported) |
+| `extended` | Adds `ansible_loop` metadata (index, first, last, etc.) |
+| `label` | Label string for logging (currently informational) |
+
+Extended metadata fields include `ansible_loop.index`, `ansible_loop.index0`, `ansible_loop.first`, `ansible_loop.last`, `ansible_loop.length`, `ansible_loop.previtem`, and `ansible_loop.nextitem`.
+
+```yaml
+- name: Custom loop vars
+  copy:
+    content: "{{ fruit }}-{{ fruit_idx }}"
+    dest: "/tmp/dibra-loop-{{ fruit_idx }}.txt"
+  loop: "{{ fruits }}"
+  loop_control:
+    loop_var: fruit
+    index_var: fruit_idx
+
+- name: Extended loop info
+  copy:
+    content: "index={{ ansible_loop.index }} first={{ ansible_loop.first }}"
+    dest: "/tmp/dibra-loop-extended-{{ item }}.txt"
+  loop: "{{ fruits }}"
+  loop_control:
+    extended: true
+```
+
+### Register results in loops
+
+When `register` is used with a loop, the registered variable contains `results`, an array of per-iteration result objects. Each item includes the module response plus `item`, `ansible_loop_var`, and any `index_var`.
+
+```yaml
+- name: Loop register
+  command:
+    cmd: "echo {{ item }}"
+  loop: "{{ fruits }}"
+  register: loop_cmd
+
+- name: Use loop register
+  copy:
+    content: "{{ loop_cmd.results[0].stdout }}|{{ loop_cmd.results[1].stdout }}"
+    dest: /tmp/dibra-loop-register.txt
+```
+
+### Loop-aware include_tasks
+
+`include_tasks` can be combined with loops to expand the include once per item. Each included task gets the loop variables merged into its `vars` and can use `loop_control.loop_var`.
+
+```yaml
+- name: Include tasks per item
+  include_tasks: include_tasks.yaml
+  loop: "{{ include_items }}"
+  loop_control:
+    loop_var: include_item
+```
+
+Included task file example:
+
+```yaml
+- name: Included loop copy
+  copy:
+    content: "{{ include_item.value }}"
+    dest: "/tmp/dibra-loop-{{ include_item.name }}.txt"
+```
+
+### Behavior notes
+
+- `loop`, `with_items`, `with_list`, `with_dict`, and `with_sequence` are mutually exclusive on a task.
+- Empty loop lists skip the task and produce a `skipped` register result with `results: []`.
+- Loop values can be templated expressions; when the template is the full value, Dibra resolves the underlying list before iterating.
+
 ## Variable System
 
 Dibra implements a variable system with five precedence layers, template interpolation, and magic variables. For full documentation see `docs/Variables.md`.

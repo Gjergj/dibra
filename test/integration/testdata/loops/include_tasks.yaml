@@ -1,0 +1,4 @@
+- name: Included loop copy
+  copy:
+    content: "{{ include_item.value }}"
+    dest: /tmp/dibra-loop-include-{{ include_item.name }}.txt

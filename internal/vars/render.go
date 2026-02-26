@@ -69,82 +69,103 @@ func RenderString(input string, context map[string]interface{}) (string, error) 
 	return result, nil
 }
 
+// RenderTemplateValue renders a templated string and returns the resolved value
+// when the input is a single template expression ("{{ var }}").
+// If the input contains additional text, it falls back to RenderString.
+func RenderTemplateValue(input string, context map[string]interface{}) (interface{}, error) {
+	trimmed := strings.TrimSpace(input)
+	matches := templatePattern.FindAllStringSubmatch(trimmed, -1)
+	if len(matches) == 1 && strings.TrimSpace(matches[0][0]) == trimmed {
+		expr := strings.TrimSpace(matches[0][1])
+		resolved, ok := resolveExpr(expr, context)
+		if !ok {
+			return nil, fmt.Errorf("unknown variable %q", expr)
+		}
+		return resolved, nil
+	}
+	return RenderString(input, context)
+}
+
 func resolveExpr(expr string, context map[string]interface{}) (interface{}, bool) {
-        tokens, err := tokenize(expr)
-        if err != nil {
-                return nil, false
-        }
-        if len(tokens) == 0 {
-                return nil, false
-        }
-        current := interface{}(context)
-        for _, token := range tokens {
-                switch typed := current.(type) {
-                case map[string]interface{}:
-                        next, ok := typed[token]
-                        if !ok {
-                                return nil, false
-                        }
-                        current = next
-                case []interface{}:
-                        index, err := strconv.Atoi(token)
-                        if err != nil || index < 0 || index >= len(typed) {
-                                return nil, false
-                        }
-                        current = typed[index]
-                case []string:
-                        index, err := strconv.Atoi(token)
-                        if err != nil || index < 0 || index >= len(typed) {
-                                return nil, false
-                        }
-                        current = typed[index]
-                default:
-                        return nil, false
-                }
-        }
-        return current, true
+	tokens, err := tokenize(expr)
+	if err != nil {
+		return nil, false
+	}
+	if len(tokens) == 0 {
+		return nil, false
+	}
+	current := interface{}(context)
+	for _, token := range tokens {
+		switch typed := current.(type) {
+		case map[string]interface{}:
+			next, ok := typed[token]
+			if !ok {
+				return nil, false
+			}
+			current = next
+		case []interface{}:
+			index, err := strconv.Atoi(token)
+			if err != nil || index < 0 || index >= len(typed) {
+				return nil, false
+			}
+			current = typed[index]
+		case []string:
+			index, err := strconv.Atoi(token)
+			if err != nil || index < 0 || index >= len(typed) {
+				return nil, false
+			}
+			current = typed[index]
+		default:
+			return nil, false
+		}
+	}
+	return current, true
 }
 
 func tokenize(expr string) ([]string, error) {
-        var tokens []string
-        var current strings.Builder
-        i := 0
-        for i < len(expr) {
-                ch := expr[i]
-                switch ch {
-                case '.':
-                        if current.Len() == 0 {
-                                return nil, fmt.Errorf("invalid expression %q", expr)
-                        }
-                        tokens = append(tokens, current.String())
-                        current.Reset()
-                        i++
-                case '[':
-                        if current.Len() > 0 {
-                                tokens = append(tokens, current.String())
-                                current.Reset()
-                        }
-                        end := strings.IndexByte(expr[i:], ']')
-                        if end == -1 {
-                                return nil, fmt.Errorf("invalid expression %q", expr)
-                        }
-                        content := strings.TrimSpace(expr[i+1 : i+end])
-                        content = strings.Trim(content, "\"")
-                        content = strings.Trim(content, "'")
-                        if content == "" {
-                                return nil, fmt.Errorf("invalid expression %q", expr)
-                        }
-                        tokens = append(tokens, content)
-                        i += end + 1
-                case ' ', '\t', '\n', '\r':
-                        i++
-                default:
-                        current.WriteByte(ch)
-                        i++
-                }
-        }
-        if current.Len() > 0 {
-                tokens = append(tokens, current.String())
-        }
-        return tokens, nil
+	var tokens []string
+	var current strings.Builder
+	i := 0
+	for i < len(expr) {
+		ch := expr[i]
+		switch ch {
+		case '.':
+			if current.Len() == 0 {
+				if len(tokens) == 0 {
+					return nil, fmt.Errorf("invalid expression %q", expr)
+				}
+				i++
+				continue
+			}
+			tokens = append(tokens, current.String())
+			current.Reset()
+			i++
+		case '[':
+			if current.Len() > 0 {
+				tokens = append(tokens, current.String())
+				current.Reset()
+			}
+			end := strings.IndexByte(expr[i:], ']')
+			if end == -1 {
+				return nil, fmt.Errorf("invalid expression %q", expr)
+			}
+			content := strings.TrimSpace(expr[i+1 : i+end])
+			content = strings.Trim(content, "\"")
+			content = strings.Trim(content, "'")
+			if content == "" {
+				return nil, fmt.Errorf("invalid expression %q", expr)
+			}
+			tokens = append(tokens, content)
+			i += end + 1
+		case ' ', '\t', '\n', '\r':
+			i++
+		default:
+			current.WriteByte(ch)
+			i++
+		}
+	}
+	if current.Len() > 0 {
+		tokens = append(tokens, current.String())
+	}
+	return tokens, nil
 }

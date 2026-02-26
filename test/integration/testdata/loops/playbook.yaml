@@ -1,0 +1,100 @@
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+    become: true
+
+vars:
+  loop_items:
+    - alpha
+    - bravo
+  list_items:
+    - uno
+    - dos
+  flat_items:
+    - [red, green]
+    - blue
+  dict_items:
+    first: one
+    second: two
+  include_items:
+    - name: first
+      value: 100
+    - name: second
+      value: 200
+
+tasks:
+  - name: Loop list
+    copy:
+      content: "{{ item }}"
+      dest: /tmp/dibra-loop-{{ item }}.txt
+    loop: "{{ loop_items }}"
+
+  - name: Loop when
+    copy:
+      content: "selected={{ item }}"
+      dest: /tmp/dibra-loop-selected-{{ item }}.txt
+    loop: "{{ loop_items }}"
+    when: 'item == "bravo"'
+
+  - name: With items flatten
+    copy:
+      content: "{{ item }}"
+      dest: /tmp/dibra-loop-flat-{{ item }}.txt
+    with_items: "{{ flat_items }}"
+
+  - name: With list
+    copy:
+      content: "{{ item }}"
+      dest: /tmp/dibra-loop-list-{{ idx }}.txt
+    with_list: "{{ list_items }}"
+    loop_control:
+      index_var: idx
+
+  - name: With dict
+    copy:
+      content: "{{ item.value }}"
+      dest: /tmp/dibra-loop-dict-{{ item.key }}.txt
+    with_dict: "{{ dict_items }}"
+
+  - name: Loop var and index
+    copy:
+      content: "{{ fruit }}-{{ fruit_idx }}"
+      dest: /tmp/dibra-loop-var-{{ fruit_idx }}.txt
+    loop: "{{ loop_items }}"
+    loop_control:
+      loop_var: fruit
+      index_var: fruit_idx
+
+  - name: Loop extended
+    copy:
+      content: "index={{ ansible_loop.index }} index0={{ ansible_loop.index0 }} first={{ ansible_loop.first }} last={{ ansible_loop.last }}"
+      dest: /tmp/dibra-loop-extended-{{ item }}.txt
+    loop: "{{ loop_items }}"
+    loop_control:
+      extended: true
+
+  - name: Loop register
+    command:
+      cmd: "echo {{ item }}"
+    loop: "{{ loop_items }}"
+    register: loop_cmd
+
+  - name: Loop register use
+    copy:
+      content: "{{ loop_cmd.results[0].stdout }}|{{ loop_cmd.results[1].stdout }}"
+      dest: /tmp/dibra-loop-register.txt
+
+  - name: Empty loop
+    copy:
+      content: empty
+      dest: /tmp/dibra-loop-empty.txt
+    loop: []
+
+  - name: Include tasks loop
+    include_tasks: include_tasks.yaml
+    loop: "{{ include_items }}"
+    loop_control:
+      loop_var: include_item
