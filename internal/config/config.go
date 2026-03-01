@@ -158,6 +158,7 @@ type Task struct {
 	Systemd                 *SystemdServiceParams          `json:"systemd,omitempty" yaml:"systemd,omitempty"`
 	Service                 *ServiceParams                 `json:"service,omitempty" yaml:"service,omitempty"`
 	ServiceFacts            *ServiceFactsParams            `json:"service_facts,omitempty" yaml:"service_facts,omitempty"`
+	GatherFacts             *GatherFactsParams             `json:"gather_facts,omitempty" yaml:"gather_facts,omitempty"`
 	Ping                    *PingParams                    `json:"ping,omitempty" yaml:"ping,omitempty"`
 	Slurp                   *SlurpParams                   `json:"slurp,omitempty" yaml:"slurp,omitempty"`
 	Command                 *CommandParams                 `json:"command,omitempty" yaml:"command,omitempty"`
@@ -354,6 +355,12 @@ type DockerNodeInfoParams struct {
 }
 
 type ServiceFactsParams struct {
+}
+
+type GatherFactsParams struct {
+	GatherSubset interface{} `json:"gather_subset,omitempty" yaml:"gather_subset,omitempty"`
+	Filter       interface{} `json:"filter,omitempty" yaml:"filter,omitempty"`
+	FactPath     string      `json:"fact_path,omitempty" yaml:"fact_path,omitempty"`
 }
 
 type TempfileParams struct {
@@ -1286,6 +1293,10 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 				case "service_facts":
 					if t.ServiceFacts == nil {
 						t.ServiceFacts = &ServiceFactsParams{}
+					}
+				case "gather_facts":
+					if t.GatherFacts == nil {
+						t.GatherFacts = &GatherFactsParams{}
 					}
 				case "tempfile":
 					if t.Tempfile == nil {

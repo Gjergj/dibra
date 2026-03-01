@@ -4,6 +4,12 @@ package schema
 	data?: string
 }
 
+#GatherFacts: {
+	gather_subset?: string | [...string]
+	filter?:        string | [...string]
+	fact_path?:     string
+}
+
 #Command: {
 	cmd?:              string
 	argv?:             [...string]

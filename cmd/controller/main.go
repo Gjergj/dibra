@@ -512,6 +512,9 @@ func main() {
 
 					result, hasResult := executeTaskOnce(iterationTask, iterationContext, host, client, remoteAgentPath, baseDir, &taskQueue, taskIdx, renderImportPath, *verbose)
 					if hasResult {
+						if iterationTask.GatherFacts != nil {
+							applyGatheredFacts(hostRuntimeVars, host.Name, result)
+						}
 						result = attachLoopResult(result, loopSpec, item, idx, loopInfo)
 						result = normalizeRegisteredResult(result)
 						loopResults = append(loopResults, result)
@@ -544,6 +547,9 @@ func main() {
 			}
 
 			result, hasResult := executeTaskOnce(task, flattened, host, client, remoteAgentPath, baseDir, &taskQueue, taskIdx, renderImportPath, *verbose)
+			if hasResult && task.GatherFacts != nil {
+				applyGatheredFacts(hostRuntimeVars, host.Name, result)
+			}
 			if hasResult && task.Register != "" {
 				registerResult(hostRuntimeVars, host.Name, task, result)
 			}
@@ -1193,6 +1199,31 @@ func registerResult(hostRuntimeVars map[string]map[string]interface{}, hostName 
 		return
 	}
 	hostRuntimeVars[hostName][task.Register] = normalizeRegisteredResult(result)
+}
+
+func applyGatheredFacts(hostRuntimeVars map[string]map[string]interface{}, hostName string, result map[string]interface{}) {
+	if result == nil {
+		return
+	}
+	factsRaw, ok := result["ansible_facts"]
+	if !ok {
+		return
+	}
+	facts, ok := factsRaw.(map[string]interface{})
+	if !ok {
+		return
+	}
+	if hostRuntimeVars[hostName] == nil {
+		hostRuntimeVars[hostName] = map[string]interface{}{}
+	}
+	hostRuntimeVars[hostName]["ansible_facts"] = facts
+	for key, value := range facts {
+		if strings.HasPrefix(key, "ansible_") {
+			hostRuntimeVars[hostName][key] = value
+			continue
+		}
+		hostRuntimeVars[hostName]["ansible_"+key] = value
+	}
 }
 
 func sha1File(path string) (string, error) {
@@ -2368,6 +2399,19 @@ func executeTaskOnce(task config.Task, flattened map[string]interface{}, host co
 			Module: "service_facts",
 			Args:   map[string]interface{}{},
 		}
+
+	case task.GatherFacts != nil:
+		args := map[string]interface{}{
+			"gather_subset": task.GatherFacts.GatherSubset,
+			"filter":        task.GatherFacts.Filter,
+			"fact_path":     task.GatherFacts.FactPath,
+		}
+		renderedArgs, err := renderArgs(args, flattened)
+		if err != nil {
+			fmt.Printf("    ✗ Failed to render args: %v\n", err)
+			return nil, false
+		}
+		modReq = ModuleRequest{Module: "gather_facts", Args: renderedArgs}
 
 	case task.Ping != nil:
 		args := map[string]interface{}{"data": task.Ping.Data}

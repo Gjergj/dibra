@@ -48,6 +48,7 @@ package schema
 	{systemd:                  #SystemdService} |
 	{service:                  #Service} |
 	{service_facts:            #ServiceFacts} |
+	{gather_facts:             #GatherFacts} |
 	{command:                  #Command} |
 	{shell:                    #Shell} |
 	{script:                   #Script} |

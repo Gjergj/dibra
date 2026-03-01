@@ -29,6 +29,7 @@ var moduleMapping = map[string]func(t *config.Task, data json.RawMessage) error{
 	"systemd":                    setModule(func(t *config.Task) **config.SystemdServiceParams { return &t.Systemd }),
 	"service":                    setModule(func(t *config.Task) **config.ServiceParams { return &t.Service }),
 	"service_facts":              setModule(func(t *config.Task) **config.ServiceFactsParams { return &t.ServiceFacts }),
+	"gather_facts":               setModule(func(t *config.Task) **config.GatherFactsParams { return &t.GatherFacts }),
 	"command":                    setModule(func(t *config.Task) **config.CommandParams { return &t.Command }),
 	"shell":                      setModule(func(t *config.Task) **config.ShellParams { return &t.Shell }),
 	"script":                     setModule(func(t *config.Task) **config.ScriptParams { return &t.Script }),

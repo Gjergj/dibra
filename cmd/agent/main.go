@@ -45,6 +45,7 @@ import (
 	"github.com/gjergjiramku/dibra/internal/modules/docker_volume_info"
 	"github.com/gjergjiramku/dibra/internal/modules/file"
 	"github.com/gjergjiramku/dibra/internal/modules/find"
+	"github.com/gjergjiramku/dibra/internal/modules/gather_facts"
 	"github.com/gjergjiramku/dibra/internal/modules/git"
 	"github.com/gjergjiramku/dibra/internal/modules/group"
 	"github.com/gjergjiramku/dibra/internal/modules/iptables"
@@ -219,6 +220,14 @@ func main() {
 			return
 		}
 		writeJSON(service_facts.Execute(req))
+
+	case "gather_facts":
+		var req gather_facts.Request
+		if err := json.Unmarshal(modReq.Args, &req); err != nil {
+			writeError(fmt.Sprintf("failed to parse gather_facts request: %v", err))
+			return
+		}
+		writeJSON(gather_facts.Execute(req))
 
 	case "ping":
 		var req ping.Request

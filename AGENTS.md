@@ -2843,6 +2843,70 @@ Gathers and returns service state information as facts. Takes no parameters.
 - Always returns `changed: false` (read-only operation)
 - Idempotent by design
 
+### gather_facts
+
+Collects system facts and exposes them as `ansible_facts` plus top-level `ansible_*` variables for use in later tasks.
+
+```yaml
+# Gather default facts (min + platform + env + date/time + network + hardware, etc.)
+- name: Gather facts
+  gather_facts:
+
+# Gather only network facts
+- name: Gather network facts only
+  gather_facts:
+    gather_subset:
+      - "!all"
+      - network
+
+# Limit to date/time facts
+- name: Gather date_time facts
+  gather_facts:
+    filter: ansible_date_time
+
+# Read local facts from a custom directory
+- name: Gather local facts
+  gather_facts:
+    gather_subset: ["!all", "local"]
+    fact_path: /tmp/custom_facts.d
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `gather_subset` | `all` | Subset list or comma-separated string. Supports `min`, `network`, `hardware`, `virtual`, `service_mgr`, `pkg_mgr`, `env`, `date_time`, `local`, plus negation (e.g. `!all`, `!hardware`). |
+| `filter` | | Shell-style glob or list of globs used to filter fact keys (`ansible_date_time`, `*env*`). |
+| `fact_path` | `/etc/ansible/facts.d` | Directory to read `.fact` files when `local` subset is enabled. |
+
+**Returns**:
+- `ansible_facts`: map containing gathered facts keyed without the `ansible_` prefix (for example `ansible_facts.date_time`).
+- Top-level `ansible_*` variables injected into runtime vars for use in templates (`ansible_user_id`, `ansible_hostname`, `ansible_date_time`, etc.).
+
+**Example Response**:
+```json
+{
+  "changed": false,
+  "ansible_facts": {
+    "user_id": "root",
+    "hostname": "testhost",
+    "date_time": {
+      "year": 2026,
+      "month": 3,
+      "day": 1,
+      "hour": 12,
+      "minute": 30,
+      "second": 10,
+      "epoch": 1762029010,
+      "iso8601": "2026-03-01T12:30:10Z",
+      "timezone": "+0000"
+    }
+  }
+}
+```
+
+**Notes**:
+- Returns `changed: false` (read-only).
+- Invalid subsets fail the task with a clear error.
+
 ### group
 
 Manages groups on the system.
