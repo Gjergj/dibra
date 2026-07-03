@@ -1,8 +1,6 @@
 module github.com/gjergjiramku/dibra
 
-go 1.24.0
-
-toolchain go1.24.3
+go 1.25.0
 
 require (
 	cuelang.org/go v0.15.4
@@ -11,7 +9,7 @@ require (
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.5.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
-	golang.org/x/crypto v0.45.0
+	golang.org/x/crypto v0.51.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -35,11 +33,11 @@ require (
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/net v0.47.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/oauth2 v0.32.0 // indirect
-	golang.org/x/sync v0.18.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
-	golang.org/x/text v0.31.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
