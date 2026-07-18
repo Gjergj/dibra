@@ -17,15 +17,18 @@ build:
 build-dev:
 	go build -ldflags "$(LDFLAGS)" -o bin/dibra ./cmd/controller
 	go build -ldflags "$(LDFLAGS)" -o bin/dibra-agent ./cmd/agent
+	go build -ldflags "$(LDFLAGS)" -o bin/dibra-deploy ./cmd/dibra-deploy
 
 build-dev-cross-agent-linux:
-	go build -ldflags "$(LDFLAGS)" -o bin/dibra ./cmd/controller
+	env GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/dibra ./cmd/controller
 	env GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/dibra-agent ./cmd/agent
+	env GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/dibra-deploy ./cmd/dibra-deploy
 
 # Install to $GOPATH/bin
 install:
 	go install -ldflags "$(LDFLAGS)" ./cmd/controller
 	go install -ldflags "$(LDFLAGS)" ./cmd/agent
+	go install -ldflags "$(LDFLAGS)" ./cmd/dibra-deploy
 
 test:
 	go test -v -race ./...
