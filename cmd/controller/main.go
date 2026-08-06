@@ -1896,7 +1896,7 @@ func buildHostvarsForTask(hostInfos []vars.HostInfo, resolver vars.Resolver, inv
 }
 func executeTaskOnce(task config.Task, flattened map[string]interface{}, host config.Host, client *ssh.Client, remoteAgentPath string, baseDir string, taskQueue *[]config.Task, taskIdx int, renderImportPath func(string) (string, error), verbose bool) (map[string]interface{}, bool) {
 	if len(task.When) > 0 {
-		shouldRun, err := template.EvaluateWhen([]interface{}(task.When), flattened)
+		shouldRun, err := template.EvaluateWhen(task.When, flattened)
 		if err != nil {
 			fmt.Printf("    ✗ FAILED: when condition error: %v\n", err)
 			return map[string]interface{}{
@@ -1918,7 +1918,7 @@ func executeTaskOnce(task config.Task, flattened map[string]interface{}, host co
 
 	switch {
 	case task.Apt != nil:
-		args := map[string]interface{}{
+		args := map[string]any{
 			"packages":         task.Apt.GetPackages(),
 			"state":            task.Apt.State,
 			"update_cache":     task.Apt.UpdateCache,
@@ -1940,7 +1940,7 @@ func executeTaskOnce(task config.Task, flattened map[string]interface{}, host co
 		modReq = ModuleRequest{Module: "apt", Args: renderedArgs}
 
 	case task.AptKey != nil:
-		args := map[string]interface{}{
+		args := map[string]any{
 			"url":     task.AptKey.URL,
 			"data":    task.AptKey.Data,
 			"file":    task.AptKey.File,
@@ -1961,7 +1961,7 @@ func executeTaskOnce(task config.Task, flattened map[string]interface{}, host co
 		modReq = ModuleRequest{Module: "apt_key", Args: renderedArgs}
 
 	case task.AptRepository != nil:
-		args := map[string]interface{}{
+		args := map[string]any{
 			"repo":         task.AptRepository.Repo,
 			"state":        task.AptRepository.State,
 			"filename":     task.AptRepository.Filename,

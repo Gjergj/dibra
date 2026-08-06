@@ -1,7 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"github.com/gjergjiramku/dibra/internal/dibra-deploy-cli"
+)
 
 func main() {
-	fmt.Println("Usage: dibra-deploy")
+	dibra_deploy_cli.Execute()
 }

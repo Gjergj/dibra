@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -196,7 +197,8 @@ func (c *Client) ExecuteAgent(agentPath string, input []byte) ([]byte, error) {
 	}()
 
 	if err := session.Wait(); err != nil {
-		if _, ok := err.(*ssh.ExitError); !ok {
+		var exitError *ssh.ExitError
+		if !errors.As(err, &exitError) {
 			return nil, fmt.Errorf("command failed: %w\nstderr: %s", err, stderr.String())
 		}
 	}
