@@ -1,7 +1,6 @@
 package inventory
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/config"
-	"github.com/gjergjiramku/dibra/internal/cueconfig"
 	"github.com/gjergjiramku/dibra/internal/secrets"
 	"github.com/gjergjiramku/dibra/internal/vars"
 	"gopkg.in/yaml.v3"
@@ -42,22 +40,9 @@ type rawGroup struct {
 }
 
 func Load(path string) (*Inventory, error) {
-	format, err := cueconfig.DetectFormat(path)
+	raw, err := loadYAMLInventory(path)
 	if err != nil {
 		return nil, err
-	}
-
-	var raw map[string]*rawGroup
-	if format == cueconfig.FormatCUE {
-		raw, err = loadCUEInventory(path)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		raw, err = loadYAMLInventory(path)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	if len(raw) == 0 {
@@ -172,25 +157,6 @@ func loadYAMLInventory(path string) (map[string]*rawGroup, error) {
 	var raw map[string]*rawGroup
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("failed to parse inventory YAML: %w", err)
-	}
-
-	return raw, nil
-}
-
-func loadCUEInventory(path string) (map[string]*rawGroup, error) {
-	v, err := cueconfig.LoadValue(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load inventory CUE: %w", err)
-	}
-
-	data, err := v.MarshalJSON()
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode inventory CUE: %w", err)
-	}
-
-	var raw map[string]*rawGroup
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("failed to decode inventory CUE: %w", err)
 	}
 
 	return raw, nil

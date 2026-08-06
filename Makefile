@@ -35,7 +35,7 @@ test:
 
 # Run golangci-lint (same as CI)
 lint:
-	golangci-lint run ./...
+	go tool golangci-lint run ./...
 
 # Start test container
 test-integration-up:

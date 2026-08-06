@@ -32,49 +32,15 @@ dibra -config playbook.yaml -v
 # Force re-upload agent (even if versions match)
 dibra -config playbook.yaml --force-agent-upload
 
-# Run playbook with CUE config (directory or file)
-dibra -config ./deploy/
-dibra -config deploy.cue
 
-# Run playbook with external inventory (YAML or CUE)
+# Run playbook with external inventory (YAML)
 dibra -config playbook.yaml -i inventory.yaml
-dibra -config playbook.cue -i inventory.cue
 
 # Long form
 dibra -config playbook.yaml --inventory inventory.yaml
-dibra -config playbook.cue --inventory inventory.cue
 
 # Validate config without execution
 dibra validate -config playbook.yaml
-dibra --validate -config playbook.cue
-
-# Initialize a new CUE project
-dibra init ./deploy
-
-# Install embedded CUE schema for editor autocomplete
-dibra schema install
-
-# Check schema installation status
-dibra schema status
-
-# Upgrade schema files to the current dibra version
-dibra schema upgrade
-
-# Convert YAML playbook to CUE
-dibra convert playbook.yaml > playbook.cue
-
-# Using CUE schemas shipped in the dibra binary
-# import "dibra.dev/schema"
-
-## CUE Schema Autocomplete
-
-- `dibra schema install` writes the embedded schema to `cue.mod/pkg/dibra.dev/schema` so the CUE language server can autocomplete `import "dibra.dev/schema"`.
-- `dibra schema upgrade` overwrites the schema files and updates the local schema version.
-- `dibra init` installs the schema by default; pass `-schema=false` to skip.
-- `dibra schema status` reports where the schema is installed and whether it matches the running dibra version.
-
-# Run CUE config unit tests
-go test ./internal/cueconfig/ -v
 
 # Run integration tests
 make test-integration
@@ -159,7 +125,7 @@ We chose an **agent-based execution model** (Option 3 from initial design):
 ┌─────────────────────┐         SSH          ┌─────────────────────┐
 │   Controller (CLI)  │ ───────────────────► │   Agent Binary      │
 │                     │  1. Resolve agent    │                     │
-│  - Parse YAML/CUE   │  2. Upload agent     │  - Receive JSON     │
+│  - Parse YAML       │  2. Upload agent     │  - Receive JSON     │
 │  - SSH connection   │  3. Execute with     │  - Execute modules  │
 │  - Orchestrate      │     JSON stdin       │  - Return JSON      │
 │  - File transfer    │  4. Parse response   │  - Syscalls only    │
@@ -173,21 +139,16 @@ The controller supports two configuration formats:
 | Format | Detection | Loader |
 |--------|-----------|--------|
 | **YAML** | `.yaml`/`.yml` extension | `config.Load()` — traditional playbook format |
-| **CUE** | `.cue` extension or directory containing `.cue` files | `cueconfig.Load()` — typed config with composition |
 
 Both produce the same `config.Config` struct. Everything downstream (SSH, agent, modules) is identical.
 
 ```
-.cue files ──► cueconfig.Load() ──► config.Config ──► Controller
 .yaml files ──► config.Load()   ──► config.Config ──► Controller
 ```
 
-**Format detection** (`cueconfig.DetectFormat()`):
-- File with `.cue` extension → CUE
+**Format detection** :
 - File with `.yaml`/`.yml` extension → YAML
-- Directory with only `.cue` files → CUE
 - Directory with only `.yaml`/`.yml` files → YAML
-- Directory with both `.cue` and `.yaml`/`.yml` files → **error** (ambiguous; use `-config` to point at a specific file)
 - Empty directory or unknown extension → YAML (default)
 
 ### Agent Resolution
@@ -259,12 +220,8 @@ dibra/
 │   │   ├── remote.go         # Remote OS/arch detection, version check
 │   │   ├── download.go       # GitHub Releases download
 │   │   └── extract.go        # tar.gz archive extraction
-│   ├── config/config.go      # YAML playbook parsing (structs shared by YAML and CUE)
+│   ├── config/config.go      # YAML playbook parsing (structs shared by YAML)
 │   │   └── import_tasks.go   # import_tasks static expansion
-│   ├── cueconfig/            # CUE configuration loading
-│   │   ├── loader.go         # Load + evaluate .cue files via CUE SDK
-│   │   ├── extract.go        # CUE value tree → config.Config extraction
-│   │   └── extract_test.go   # 24 unit tests (modules, composition, cross-refs)
 │   ├── ssh/client.go         # SSH connection, SCP upload, agent execution
 │   └── modules/
 │       ├── apt/              # Package management
@@ -290,21 +247,6 @@ dibra/
 │       ├── slurp/            # Read file contents from remote hosts (base64)
 │       ├── find/             # Find files/directories matching criteria
        └── docker_container/ # Docker container management
-├── cue/
-│   ├── schema/               # CUE type definitions for all modules
-│   │   ├── base.cue          # #Host, #Task, #Playbook, #FilePerms
-│   │   ├── core.cue          # #Ping, #Command, #Shell, #Copy, #File, #Template, etc.
-│   │   ├── apt.cue           # #Apt, #AptKey, #AptRepository
-│   │   ├── service.cue       # #SystemdService, #Service, #ServiceFacts
-│   │   ├── lineinfile.cue    # #Lineinfile, #Blockinfile, #Replace
-│   │   ├── system.cue        # #Cron, #User, #Group, #URI, #Git, #Find, #UFW, etc.
-│   │   ├── iptables.cue      # #Iptables, #IptablesState
-│   │   ├── docker_common.cue # Shared Docker types
-│   │   ├── docker.cue        # #DockerContainer, #DockerImage, #DockerNetwork, etc.
-│   │   ├── docker_swarm.cue  # #DockerSwarmService, #DockerNode, etc.
-│   │   └── docker_info.cue   # #DockerContainerInfo, #DockerImageInfo, etc.
-│   └── composed/             # Higher-level composed types
-│       └── deploy_service.cue # #InstallCaddy, etc.
 ├── test/
 │   ├── Dockerfile            # Ubuntu 22.04 + systemd + SSH
 │   ├── docker-compose.yaml   # Test container orchestration
@@ -365,8 +307,6 @@ all:
 ```
 
 ## Modules
-
-`WHEN ADDING OR EDITING A NEW MODULE, ALWAYS ADD OR MODIFY ITS CUE SCHEMA`
 `WHEN ADDING A NEW COMMAND OR FLAG YOU MUST ALSO ADD IT IN THE SHELL COMPLETIONS`
 ### ping
 
@@ -3418,306 +3358,6 @@ tasks:
     <module>:
       <param>: "{{ app_name }}"
 ```
-
-## CUE Configuration
-
-Dibra supports [CUE](https://cuelang.org/) as an alternative configuration language to YAML. CUE provides type safety, constraints, defaults, and — most importantly — **composable typed constructs** that let users build higher-level abstractions from lower-level modules.
-
-### Why CUE
-
-- **Type safety**: Every module has a CUE definition with typed fields, enums, and defaults
-- **Composition**: Define reusable types that encapsulate multiple modules
-- **Cross-references**: Objects can reference each other's fields; CUE resolves all references at evaluation time
-- **Pure Go SDK**: No external binary required (`cuelang.org/go`)
-- **Coexists with YAML**: Both formats produce the same `config.Config` struct; detection is file-extension-based
-
-### Basic CUE Playbook
-
-A CUE playbook has the same structure as YAML — `hosts`, `tasks`, and optional `vars`:
-
-```cue
-package deploy
-
-hosts: [{
-    name: "web1"
-    host: "192.168.1.10"
-    port: 22
-    user: "deploy"
-    become: true
-}]
-
-tasks: [
-    {
-        name: "Install nginx"
-        apt: {
-            name: ["nginx", "curl"]
-            state: "present"
-            update_cache: true
-        }
-    },
-    {
-        name: "Deploy config"
-        copy: {
-            content: "hello world"
-            dest:    "/tmp/hello.txt"
-            mode:    "0644"
-        }
-    },
-]
-```
-
-Run with: `dibra -config ./deploy/` or `dibra -config deploy.cue`
-
-### CUE-Native Variables (Static)
-
-CUE's `let` bindings and interpolation resolve at config-load time:
-
-```cue
-package deploy
-
-let app_port = 8080
-let app_name = "my-api"
-
-hosts: [{name: "web1", host: "10.0.0.1", user: "root"}]
-
-tasks: [{
-    name: "Configure \(app_name)"
-    copy: {
-        content: "port=\(app_port)"
-        dest:    "/etc/\(app_name)/config"
-    }
-}]
-```
-
-### Runtime Variables (Template Passthrough)
-
-Variables that are only known at runtime (`inventory_hostname`, `hostvars`, registered results) use the existing `{{ }}` template syntax. CUE passes these strings through untouched; the existing template engine resolves them during execution:
-
-```cue
-tasks: [{
-    name: "Show hostname"
-    shell: {cmd: "echo {{ inventory_hostname }}"}
-}]
-```
-
-### Multi-File CUE Configs
-
-CUE natively merges all `.cue` files in a directory that share the same package name:
-
-```
-deploy/
-├── hosts.cue    # package deploy — hosts: [...]
-├── tasks.cue    # package deploy — tasks: [...]
-└── vars.cue     # package deploy — vars: {...}
-```
-
-Run with: `dibra -config ./deploy/`
-
-### CUE Config + Inventory Notes
-
-- If your playbook lives in a CUE directory, do not place an `inventory.cue` with a different `package` in that same directory. CUE rejects mixed packages. Put it in a subdirectory (for example `inventory/inventory.cue`) and reference it via `inventory: "inventory/inventory.cue"` or pass `-i` with that path.
-- When `inventory:` is set inside a playbook and `-config` points at a directory, the inventory path is resolved relative to the config directory (not its parent).
-
-Example:
-```bash
-dibra  --config ./dir_with_cue_project
-```
-
-### Composed Types (Higher-Level Abstractions)
-
-This is the key differentiator from YAML. Composed types encapsulate multiple low-level tasks behind a simplified interface. They use a `tasks` field (hidden in CUE output) that decomposes into a flat task list.
-
-#### Defining a Composed Type
-
-```cue
-package deploy
-
-import (
-    "strings"
-    "list"
-)
-
-#DeployService: {
-    // User-facing fields (simplified interface)
-    service_name: string
-    binary_src:   string
-    binary_dest:  string | *"/usr/local/bin/\(service_name)"
-    description:  string | *"Managed by dibra"
-    user:         string | *"root"
-    env:          {[string]: string} | *{}
-    enabled:      bool | *true
-
-    // Computed: systemd unit content
-    let _env_lines = [ for k, v in env {"Environment=\(k)=\(v)"}]
-    let _unit = strings.Join(list.Concat([
-        ["[Unit]", "Description=\(description)", "After=network.target", ""],
-        ["[Service]", "Type=simple", "User=\(user)", "ExecStart=\(binary_dest)", "Restart=on-failure"],
-        _env_lines,
-        ["", "[Install]", "WantedBy=multi-user.target"],
-    ]), "\n")
-
-    // Decomposition: flat task list
-    tasks: [...]
-    tasks: [
-        {name: "Copy \(service_name) binary", copy: {src: binary_src, dest: binary_dest, mode: "0755"}},
-        {name: "Deploy \(service_name) unit", copy: {content: _unit, dest: "/etc/systemd/system/\(service_name).service", mode: "0644"}},
-        {let _enabled = enabled, name: "Start \(service_name)", systemd_service: {name: service_name, state: "started", enabled: _enabled, daemon_reload: true}},
-    ]
-}
-```
-
-#### Using Composed Types
-
-```cue
-package deploy
-
-api: #DeployService & {
-    service_name: "my-api"
-    binary_src:   "./build/api"
-    env: {PORT: "8080"}
-}
-
-hosts: [{name: "web1", host: "10.0.0.1", user: "root"}]
-tasks: api.tasks
-```
-
-This decomposes into 3 concrete tasks: copy binary, deploy unit file, start service.
-
-#### Concatenating Multiple Composed Types
-
-Use `list.Concat` to combine task lists from multiple composed types:
-
-```cue
-import "list"
-
-api: #DeployService & {service_name: "my-api", binary_src: "./build/api"}
-db:  #DeployService & {service_name: "my-db",  binary_src: "./build/db"}
-
-tasks: list.Concat([api.tasks, db.tasks])
-```
-
-#### Mixing Composed + One-Off Tasks
-
-```cue
-import "list"
-
-api: #DeployService & {service_name: "my-api", binary_src: "./build/api"}
-
-tasks: list.Concat([
-    [{name: "Install deps", apt: {name: ["curl", "jq"], state: "present"}}],
-    api.tasks,
-    [{name: "Verify", shell: {cmd: "curl -sf http://localhost:8080/health"}}],
-])
-```
-
-#### Cross-References Between Composed Types
-
-CUE resolves all cross-references at evaluation time:
-
-```cue
-db_config: {host: "db.internal", port: 5432}
-
-api: #DeployService & {
-    service_name: "my-api"
-    binary_src:   "./build/api"
-    env: {
-        PORT:   "8080"
-        DB_URL: "postgres://\(db_config.host):\(db_config.port)/mydb"
-    }
-}
-
-frontend: #DeployService & {
-    service_name: "my-frontend"
-    binary_src:   "./build/frontend"
-    env: {
-        API_URL: "http://localhost:\(api.env.PORT)"  // cross-ref to api
-    }
-}
-```
-
-### Shipped Composed Types
-
-Located in `cue/composed/deploy_service.cue`:
-
-| Type | Composes | Description |
-|------|----------|-------------|
-| `#DeployService` | `#Copy` + `#SystemdService` | Deploy a binary as a systemd service |
-| `#InstallCaddy` | `#AptKey` + `#AptRepository` + `#Apt` | Install Caddy |
-| `#Copy` + `#File` + `#Service` | Deploy nginx config, enable site, reload |
-
-Users can create their own composed types following the same `tasks` pattern.
-
-### CUE Schema Definitions
-
-All module schemas are in `cue/schema/`. Each definition mirrors the corresponding Go `*Params` struct in `internal/config/config.go`.
-
-| Schema File | Definitions |
-|-------------|-------------|
-| `base.cue` | `#Host`, `#Task`, `#Playbook`, `#FilePerms` |
-| `core.cue` | `#Ping`, `#Command`, `#Shell`, `#Copy`, `#File`, `#Template`, `#Fetch`, `#Slurp`, `#Tempfile`, `#Reboot` |
-| `apt.cue` | `#Apt`, `#AptKey`, `#AptRepository` |
-| `service.cue` | `#SystemdService`, `#Service`, `#ServiceFacts` |
-| `lineinfile.cue` | `#Lineinfile`, `#Blockinfile`, `#Replace` |
-| `system.cue` | `#Cron`, `#User`, `#Group`, `#URI`, `#Unarchive`, `#Git`, `#Find`, `#UFW` |
-| `iptables.cue` | `#Iptables`, `#IptablesState`, `#TcpFlags` |
-| `docker_common.cue` | `#DockerCommon`, `#DockerHealthcheck`, `#DockerUlimit`, `#IPAMConfig`, etc. |
-| `docker.cue` | `#DockerContainer`, `#DockerImage`, `#DockerNetwork`, `#DockerVolume`, `#DockerPrune`, `#DockerLogin`, `#DockerSwarm`, `#DockerCompose`, `#DockerComposeV2Run`, `#DockerSecret`, `#DockerConfig`, `#DockerStack`, `#DockerContainerExec`, `#DockerContainerCopyInto`, `#DockerImageBuild`, `#DockerImageLoad`, `#DockerImageExport` |
-| `docker_swarm.cue` | `#DockerSwarmService`, `#DockerNode`, `#PortPublish`, `#ServiceMount`, etc. |
-| `docker_info.cue` | `#DockerContainerInfo`, `#DockerImageInfo`, `#DockerNetworkInfo`, `#DockerVolumeInfo`, `#DockerHostInfo`, `#DockerSwarmInfo`, `#DockerSwarmServiceInfo`, `#DockerNodeInfo` |
-
-### CUE Implementation Details
-
-#### How CUE Loading Works
-
-1. Controller detects CUE via `cueconfig.IsCUEConfig()` (checks `.cue` extension or directory with `.cue` files)
-2. `cueconfig.Load()` calls `load.Instances()` and `ctx.BuildInstance()` from the CUE SDK
-3. `cue.Value.Validate(cue.Concrete(true))` ensures all values are fully resolved
-4. `cueconfig.Extract()` walks the CUE value tree:
-   - `hosts` field → `[]config.Host` via JSON roundtrip
-   - `tasks` field → `[]config.Task`, scanning each task for known module fields
-   - Module params decoded via generic `setModule[T]()` (JSON marshal → unmarshal into Go `*Params` struct)
-5. Returns the same `config.Config` that YAML loading produces
-
-#### JSON Roundtrip
-
-CUE values are converted to Go structs via JSON roundtrip: `cue.Value.MarshalJSON()` → `json.Unmarshal()`. This works because all config structs have both `json:` and `yaml:` tags with matching field names.
-
-#### CUE v0.11+ Compatibility Notes
-
-- List concatenation uses `list.Concat()` (the `+` operator for lists was removed in CUE v0.11)
-- When referencing parent scope variables inside nested struct literals, use `let` bindings to avoid scope conflicts: `{let _enabled = enabled, systemd_service: {enabled: _enabled}}`
-- Struct literals are closed by default in CUE; use `...` for open structs when needed
-
-### CUE Tests
-
-Unit tests in `internal/cueconfig/extract_test.go` cover:
-
-| Test | What it verifies |
-|------|-----------------|
-| `TestExtract_BasicPlaybook` | Host + ping task extraction |
-| `TestExtract_CopyModule` | Copy module with content/dest/mode |
-| `TestExtract_ShellModule` | Shell command extraction |
-| `TestExtract_SystemdServiceModule` | Systemd with enabled/daemon_reload (pointer fields) |
-| `TestExtract_MultipleTasks` | Multiple tasks with different modules |
-| `TestExtract_HostDefaults` | Default port=22, become=false |
-| `TestExtract_Vars` | Play-level vars extraction |
-| `TestExtract_VarsMerge` | vars_merge field |
-| `TestExtract_DefaultVarsMerge` | Default vars_merge="replace" |
-| `TestExtract_Register` | Register keyword on tasks |
-| `TestExtract_TaskVars` | Task-level vars |
-| `TestExtract_HostWithSSHKey` | ssh_key_path, become_password, groups |
-| `TestExtract_MultipleHosts` | Multiple hosts with different ports |
-| `TestExtract_RuntimeTemplateVars` | `{{ }}` passthrough for runtime templates |
-| `TestExtract_LineinfileModule` | Lineinfile module extraction |
-| `TestExtract_DockerContainerModule` | Docker container with ports, env |
-| `TestExtract_MultiFileCUE` | Multi-file CUE merging (hosts.cue + tasks.cue) |
-| `TestExtract_AptDefaultState` | Apt default state="present" |
-| `TestIsCUEConfig` | File/directory detection |
-| `TestExtract_Inventory` | Inventory field extraction |
-| `TestExtract_CUECrossReferences` | CUE-native `let` and `\()` interpolation |
-| `TestExtract_ComposedDeployService` | #DeployService → 3 tasks decomposition |
-| `TestExtract_ComposedMixedTasks` | Composed + one-off task concatenation |
-| `TestExtract_CrossReferenceBetweenComposed` | Cross-references between two #DeployService instances |
 
 ## External Inventory
 

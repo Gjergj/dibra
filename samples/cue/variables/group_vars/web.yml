@@ -1,5 +1,0 @@
-# Group vars for the "web" group
-# Auto-loaded for any host in the "web" group
-app:
-  port: 8080
-max_connections: 200

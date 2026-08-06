@@ -1,3 +1,0 @@
-# Group vars for the "prod" group
-app:
-  log_level: "warn"

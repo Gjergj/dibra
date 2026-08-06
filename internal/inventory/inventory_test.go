@@ -124,42 +124,6 @@ dbservers:
 	}
 }
 
-func TestLoad_CUEInventory(t *testing.T) {
-	dir := t.TempDir()
-	path := writeInventory(t, dir, `
-package inventory
-
-all: {
-	vars: {env: "prod"}
-	children: {
-		webservers: {
-			hosts: {
-				web1: {host: "10.0.0.1", user: "deploy"}
-			}
-			vars: {http_port: 80}
-		}
-	}
-}
-`)
-	path = strings.ReplaceAll(path, ".yaml", ".cue")
-	if err := os.Rename(filepath.Join(dir, "inventory.yaml"), path); err != nil {
-		t.Fatalf("failed to rename inventory: %v", err)
-	}
-
-	inv, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load failed: %v", err)
-	}
-
-	vars := inv.EffectiveVarsForHost("web1")
-	if vars["env"] != "prod" {
-		t.Errorf("expected env=prod, got %v", vars["env"])
-	}
-	if vars["http_port"] != float64(80) {
-		t.Errorf("expected http_port=80, got %v", vars["http_port"])
-	}
-}
-
 func TestLoad_UngroupedHosts(t *testing.T) {
 	dir := t.TempDir()
 	path := writeInventory(t, dir, `

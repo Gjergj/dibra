@@ -1,5 +1,0 @@
-# Extra vars file - pass with: dibra -config playbook.yaml -e @extra.yml
-# Extra vars have highest precedence and override everything
-env: production
-app:
-  log_level: "error"

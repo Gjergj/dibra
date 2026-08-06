@@ -58,11 +58,7 @@ group_vars/
   prod.yml      # loaded for hosts in "prod" group
 ```
 
-Inventory can be defined in YAML or CUE. For CUE inventory format examples,
-see [docs/CUEInventory.md](file:///Users/gjergjiramku/projekte/dibra/docs/CUEInventory.md).
-
-For using the CUE schema definitions in your own project, see
-[docs/CUESchema.md](file:///Users/gjergjiramku/projekte/dibra/docs/CUESchema.md).
+Inventory can be defined in YAML.
 
 Supported extensions: `.yml`, `.yaml`, `.json`.
 

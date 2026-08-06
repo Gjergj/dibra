@@ -1,9 +1,11 @@
 package main
 
 import (
-	"github.com/gjergjiramku/dibra/internal/dibra-deploy-cli"
+	dibra_deploy_cli "github.com/gjergjiramku/dibra/internal/dibra-deploy-cli"
 )
 
 func main() {
-	dibra_deploy_cli.Execute()
+	if err := dibra_deploy_cli.Execute(); err != nil{
+		panic(err)
+	}
 }

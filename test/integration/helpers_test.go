@@ -81,22 +81,6 @@ func runPlaybook(t *testing.T, playbook string) string {
 	return string(output)
 }
 
-func runPlaybookCUE(t *testing.T, playbook string) string {
-	tmpFile := filepath.Join(t.TempDir(), "playbook.cue")
-	if err := os.WriteFile(tmpFile, []byte(playbook), 0644); err != nil {
-		t.Fatalf("Failed to write playbook: %v", err)
-	}
-
-	projectRoot := getProjectRoot()
-	cmd := exec.Command("go", "run", "./cmd/controller", "-config", tmpFile, "-v", "-force-agent-upload", "-agent-build")
-	cmd.Dir = projectRoot
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Logf("Playbook output:\n%s", string(output))
-	}
-	return string(output)
-}
-
 func remoteExec(t *testing.T, client *ssh.Client, cmd string) string {
 	stdout, stderr, err := client.Run(cmd)
 	if err != nil {

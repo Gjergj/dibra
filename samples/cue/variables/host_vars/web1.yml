@@ -1,5 +1,0 @@
-# Host vars for "web1"
-# Auto-loaded for the host named "web1"
-# Overrides group vars (host > group precedence)
-app:
-  port: 9090
