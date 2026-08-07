@@ -37,8 +37,8 @@ It's still under heavy development and largely untested in real world.
 ## Documentation
 Unfortunately for the time being the best documentation is the code and AGENTS.md
 
-Included types:
-- `#InstallCaddy`
+The [Ansible parity and upstream tracking program](docs/ansible-parity-program.md)
+defines how we track Ansible and collection changes and port them to Dibra.
 
 ## Development
 

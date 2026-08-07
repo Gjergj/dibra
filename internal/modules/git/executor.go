@@ -257,7 +257,7 @@ func switchVersion(req Request, gitExec, remote, version string) error {
 	}
 
 	if version == "HEAD" {
-		return resetToRemoteHEAD(req.Dest, remote, gitExec)
+		return resetToRemoteHEAD(req.Dest, remote, gitExec, req.Force)
 	}
 
 	if isSHA(version) {
@@ -278,7 +278,7 @@ func switchVersion(req Request, gitExec, remote, version string) error {
 			if err := checkoutVersion(req.Dest, version, gitExec); err != nil {
 				return err
 			}
-			return resetToRemoteBranch(req.Dest, remote, version, gitExec)
+			return resetToRemoteBranch(req.Dest, remote, version, gitExec, req.Force)
 		}
 
 		return checkoutTrackingBranch(req.Dest, remote, version, gitExec)
@@ -291,16 +291,20 @@ func switchVersion(req Request, gitExec, remote, version string) error {
 	return checkoutVersion(req.Dest, version, gitExec)
 }
 
-func resetToRemoteHEAD(dest, remote, gitExec string) error {
+func resetToRemoteHEAD(dest, remote, gitExec string, force bool) error {
 	branch := getCurrentBranch(dest, gitExec)
 	if branch == "" {
 		return nil
 	}
-	return resetToRemoteBranch(dest, remote, branch, gitExec)
+	return resetToRemoteBranch(dest, remote, branch, gitExec, force)
 }
 
-func resetToRemoteBranch(dest, remote, branch, gitExec string) error {
+func resetToRemoteBranch(dest, remote, branch, gitExec string, force bool) error {
 	remoteBranch := remote + "/" + branch
+	if !force && !isAncestor(dest, "HEAD", remoteBranch, gitExec) {
+		return &gitError{msg: "local commits would be discarded when resetting to " + remoteBranch + "; use force=true to discard them"}
+	}
+
 	cmd := exec.Command(gitExec, "reset", "--hard", remoteBranch)
 	cmd.Dir = dest
 	cmd.Env = os.Environ()
@@ -312,6 +316,12 @@ func resetToRemoteBranch(dest, remote, branch, gitExec string) error {
 		return wrapError(err, stderr.String())
 	}
 	return nil
+}
+
+func isAncestor(dest, ancestor, descendant, gitExec string) bool {
+	cmd := exec.Command(gitExec, "merge-base", "--is-ancestor", ancestor, descendant)
+	cmd.Dir = dest
+	return cmd.Run() == nil
 }
 
 func getCurrentBranch(dest, gitExec string) string {
