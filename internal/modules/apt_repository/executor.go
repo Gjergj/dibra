@@ -15,6 +15,11 @@ const (
 	aptGetCmd      = "/usr/bin/apt-get"
 )
 
+var validSourceTypes = map[string]struct{}{
+	"deb":     {},
+	"deb-src": {},
+}
+
 var envVars = []string{
 	"DEBIAN_FRONTEND=noninteractive",
 	"LANG=C.UTF-8",
@@ -30,6 +35,10 @@ func Execute(req Request) Response {
 		return Response{Failed: true, Msg: "repo is required"}
 	}
 
+	if err := validateSource(req.Repo); err != nil {
+		return Response{Failed: true, Msg: fmt.Sprintf("invalid repository string: %v", err)}
+	}
+
 	switch req.State {
 	case "present":
 		return addRepo(req)
@@ -38,6 +47,57 @@ func Execute(req Request) Response {
 	default:
 		return Response{Failed: true, Msg: fmt.Sprintf("unknown state: %s", req.State)}
 	}
+}
+
+// validateSource validates the one-line sources.list format documented by
+// sources.list(5). It intentionally does not validate whether the URI is
+// reachable or whether the suite/component exists on the remote server; apt
+// remains responsible for those checks during cache updates.
+func validateSource(source string) error {
+	parts := strings.Fields(source)
+	if len(parts) == 0 {
+		return fmt.Errorf("source is empty")
+	}
+
+	if _, ok := validSourceTypes[parts[0]]; !ok {
+		return fmt.Errorf("source type %q is not supported; expected deb or deb-src", parts[0])
+	}
+
+	remainingParts := parts[1:]
+	if len(remainingParts) > 0 && strings.HasPrefix(remainingParts[0], "[") {
+		if strings.HasSuffix(remainingParts[0], "]") {
+			remainingParts = remainingParts[1:]
+		} else {
+			endBracketIndex := -1
+			for i, part := range remainingParts[1:] {
+				if strings.HasSuffix(part, "]") {
+					endBracketIndex = i + 1
+					break
+				}
+			}
+			if endBracketIndex == -1 {
+				return fmt.Errorf("repository options must be enclosed in brackets")
+			}
+			remainingParts = remainingParts[endBracketIndex+1:]
+		}
+	}
+
+	if len(remainingParts) < 2 {
+		return fmt.Errorf("source must include a URI and suite")
+	}
+
+	// A path-style suite ending in '/' is complete without a component. A
+	// normal distribution suite requires at least one component.
+	suite := remainingParts[1]
+	if strings.HasSuffix(suite, "/") {
+		if len(remainingParts) > 2 {
+			return fmt.Errorf("path-style suites ending in / cannot include components")
+		}
+	} else if len(remainingParts) < 3 {
+		return fmt.Errorf("source must include at least one component")
+	}
+
+	return nil
 }
 
 func addRepo(req Request) Response {
