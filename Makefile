@@ -1,4 +1,4 @@
-.PHONY: build build-dev test test lint test-integration test-integration-up test-integration-down clean snapshot release-dry install
+.PHONY: build build-dev test test lint test-integration test-integration-up test-integration-down clean snapshot release-dry release-minor release-patch install
 
 # Version info for local builds
 VERSION ?= dev
@@ -71,6 +71,28 @@ snapshot:
 # GoReleaser: dry run release (no publish)
 release-dry:
 	goreleaser release --snapshot --skip=publish --clean
+
+# Create and push the next minor version tag (for example, v0.0.28 -> v0.1.0)
+release-minor:
+	@latest=$$(git tag --list 'v*' --sort=-v:refname | head -n 1); \
+	if [ -z "$$latest" ]; then latest=v0.0.0; fi; \
+	version=$${latest#v}; \
+	IFS=.; set -- $$version; \
+	next="v$$1.$$(( $$2 + 1 )).0"; \
+	echo "Creating and pushing $$next"; \
+	git tag "$$next"; \
+	git push origin "$$next"
+
+# Create and push the next patch version tag (for example, v0.0.28 -> v0.0.29)
+release-patch:
+	@latest=$$(git tag --list 'v*' --sort=-v:refname | head -n 1); \
+	if [ -z "$$latest" ]; then latest=v0.0.0; fi; \
+	version=$${latest#v}; \
+	IFS=.; set -- $$version; \
+	next="v$$1.$$2.$$(( $$3 + 1 ))"; \
+	echo "Creating and pushing $$next"; \
+	git tag "$$next"; \
+	git push origin "$$next"
 
 # Check GoReleaser config
 release-check:
