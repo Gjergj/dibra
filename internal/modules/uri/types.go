@@ -3,7 +3,7 @@ package uri
 type Request struct {
 	URL             string            `json:"url"`
 	Method          string            `json:"method,omitempty"`
-	Body            string            `json:"body,omitempty"`
+	Body            interface{}       `json:"body,omitempty"`
 	BodyFormat      string            `json:"body_format,omitempty"`
 	Headers         map[string]string `json:"headers,omitempty"`
 	StatusCode      []int             `json:"status_code,omitempty"`

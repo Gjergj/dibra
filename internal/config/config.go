@@ -486,7 +486,7 @@ type FetchParams struct {
 type URIParams struct {
 	URL             string            `json:"url" yaml:"url"`
 	Method          string            `json:"method,omitempty" yaml:"method,omitempty"`
-	Body            string            `json:"body,omitempty" yaml:"body,omitempty"`
+	Body            interface{}       `json:"body,omitempty" yaml:"body,omitempty"`
 	BodyFormat      string            `json:"body_format,omitempty" yaml:"body_format,omitempty"`
 	Headers         map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
 	StatusCode      []int             `json:"status_code,omitempty" yaml:"status_code,omitempty"`

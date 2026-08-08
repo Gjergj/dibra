@@ -2473,7 +2473,7 @@ Makes HTTP/HTTPS requests. Supports GET, POST, PUT, DELETE, etc.
 | `url` | required | HTTP or HTTPS URL |
 | `method` | `GET` | HTTP method (GET, POST, PUT, DELETE, PATCH, etc.) |
 | `body` | | Request body content |
-| `body_format` | `raw` | Body format: `raw`, `json`, `form-urlencoded` |
+| `body_format` | `raw` | Body format: `raw`, `json`, `form-urlencoded`, `form-multipart` |
 | `headers` | `{}` | Custom HTTP headers as key-value pairs |
 | `status_code` | `[200]` | List of acceptable status codes |
 | `timeout` | `30` | Request timeout in seconds |
@@ -2483,7 +2483,7 @@ Makes HTTP/HTTPS requests. Supports GET, POST, PUT, DELETE, etc.
 | `url_username` | | Username for HTTP authentication |
 | `url_password` | | Password for HTTP authentication |
 | `force_basic_auth` | `false` | Send auth header immediately |
-| `follow_redirects` | `safe` | `all`, `none`, `safe` (GET/HEAD only) |
+| `follow_redirects` | `safe` | `all`, `none`, `safe`, `urllib2`; `yes`/`no` are rejected |
 | `validate_certs` | `true` | Verify SSL certificates |
 
 **Changed Detection**:

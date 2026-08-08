@@ -96,21 +96,30 @@ func resolveExpr(expr string, context map[string]interface{}) (interface{}, bool
 	}
 	current := interface{}(context)
 	for _, token := range tokens {
+		key := token.value
+		if token.dynamic {
+			resolved, ok := resolveExpr(token.value, context)
+			if !ok {
+				return nil, false
+			}
+			key = fmt.Sprint(resolved)
+		}
+
 		switch typed := current.(type) {
 		case map[string]interface{}:
-			next, ok := typed[token]
+			next, ok := typed[key]
 			if !ok {
 				return nil, false
 			}
 			current = next
 		case []interface{}:
-			index, err := strconv.Atoi(token)
+			index, err := strconv.Atoi(key)
 			if err != nil || index < 0 || index >= len(typed) {
 				return nil, false
 			}
 			current = typed[index]
 		case []string:
-			index, err := strconv.Atoi(token)
+			index, err := strconv.Atoi(key)
 			if err != nil || index < 0 || index >= len(typed) {
 				return nil, false
 			}
@@ -122,8 +131,13 @@ func resolveExpr(expr string, context map[string]interface{}) (interface{}, bool
 	return current, true
 }
 
-func tokenize(expr string) ([]string, error) {
-	var tokens []string
+type expressionToken struct {
+	value   string
+	dynamic bool
+}
+
+func tokenize(expr string) ([]expressionToken, error) {
+	var tokens []expressionToken
 	var current strings.Builder
 	i := 0
 	for i < len(expr) {
@@ -137,12 +151,12 @@ func tokenize(expr string) ([]string, error) {
 				i++
 				continue
 			}
-			tokens = append(tokens, current.String())
+			tokens = append(tokens, expressionToken{value: current.String()})
 			current.Reset()
 			i++
 		case '[':
 			if current.Len() > 0 {
-				tokens = append(tokens, current.String())
+				tokens = append(tokens, expressionToken{value: current.String()})
 				current.Reset()
 			}
 			end := strings.IndexByte(expr[i:], ']')
@@ -150,12 +164,22 @@ func tokenize(expr string) ([]string, error) {
 				return nil, fmt.Errorf("invalid expression %q", expr)
 			}
 			content := strings.TrimSpace(expr[i+1 : i+end])
-			content = strings.Trim(content, "\"")
-			content = strings.Trim(content, "'")
 			if content == "" {
 				return nil, fmt.Errorf("invalid expression %q", expr)
 			}
-			tokens = append(tokens, content)
+
+			dynamic := true
+			if len(content) >= 2 {
+				first, last := content[0], content[len(content)-1]
+				if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+					content = content[1 : len(content)-1]
+					dynamic = false
+				}
+			}
+			if _, err := strconv.Atoi(content); err == nil {
+				dynamic = false
+			}
+			tokens = append(tokens, expressionToken{value: content, dynamic: dynamic})
 			i += end + 1
 		case ' ', '\t', '\n', '\r':
 			i++
@@ -165,7 +189,7 @@ func tokenize(expr string) ([]string, error) {
 		}
 	}
 	if current.Len() > 0 {
-		tokens = append(tokens, current.String())
+		tokens = append(tokens, expressionToken{value: current.String()})
 	}
 	return tokens, nil
 }
