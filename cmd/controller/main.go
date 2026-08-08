@@ -499,6 +499,10 @@ func main() {
 						"results": loopResults,
 					})
 				}
+				if loopFailed {
+					fmt.Printf("  ✗ Host %s failed; stopping remaining tasks\n", host.Name)
+					break
+				}
 				continue
 			}
 
@@ -508,6 +512,15 @@ func main() {
 			}
 			if hasResult && task.Register != "" {
 				registerResult(hostRuntimeVars, host.Name, task, result)
+			}
+			if hasResult {
+				if failed, ok := result["failed"].(bool); ok && failed {
+					fmt.Printf("  ✗ Host %s failed; stopping remaining tasks\n", host.Name)
+					break
+				}
+			} else if task.ImportTasks == nil && task.IncludeTasks == nil {
+				fmt.Printf("  ✗ Host %s could not execute task; stopping remaining tasks\n", host.Name)
+				break
 			}
 		}
 	}
