@@ -16,7 +16,7 @@ func TestCompletionIncludesAgentFlags(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatalf("completion command failed: %v", err)
 	}
-	for _, flag := range []string{"--agent-path", "--agent-build", "--force-agent-upload"} {
+	for _, flag := range []string{"--agent-path", "--agent-build", "--force-agent-upload", "--endpoint"} {
 		if !strings.Contains(output.String(), flag) {
 			t.Fatalf("completion output does not include %s", flag)
 		}

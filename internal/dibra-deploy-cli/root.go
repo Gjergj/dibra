@@ -23,6 +23,7 @@ func NewRootCommand() *cobra.Command {
 	var agentPath string
 	var agentBuild bool
 	var forceAgentUpload bool
+	var endpoint string
 	var verbose bool
 
 	command := &cobra.Command{
@@ -49,6 +50,7 @@ func NewRootCommand() *cobra.Command {
 				mode = agent.ModeBuild
 			}
 			daemon, err := deploy.New(deploy.Config{
+				Endpoint:         endpoint,
 				AgentMode:        mode,
 				AgentPath:        agentPath,
 				Version:          version.Version,
@@ -65,6 +67,7 @@ func NewRootCommand() *cobra.Command {
 	command.Flags().StringVar(&agentPath, "agent-path", "", "Path to a pre-built agent binary")
 	command.Flags().BoolVar(&agentBuild, "agent-build", false, "Build the agent from source (requires Go)")
 	command.Flags().BoolVar(&forceAgentUpload, "force-agent-upload", false, "Force replacement of the local runtime agent")
+	command.Flags().StringVar(&endpoint, "endpoint", deploy.DefaultEndpoint, "Task server endpoint")
 	command.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose task output")
 	command.AddCommand(newCompletionCommand(command))
 	return command

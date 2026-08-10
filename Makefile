@@ -1,4 +1,4 @@
-.PHONY: build build-dev test test lint test-integration test-integration-up test-integration-down test-deploy-integration test-deploy-integration-only test-deploy-integration-up test-deploy-integration-down clean snapshot release-dry release-minor release-patch install
+.PHONY: build build-dev test test lint test-integration test-integration-up test-integration-down test-deploy-integration test-deploy-integration-only test-deploy-integration-up test-deploy-integration-down run-deploy-docker-host run-deploy-docker-host-down test-deploy-docker-host test-deploy-docker-host-down clean snapshot release-dry release-minor release-patch install
 
 # Version info for local builds
 VERSION ?= dev
@@ -8,6 +8,9 @@ LDFLAGS := -s -w \
 	-X github.com/gjergjiramku/dibra/internal/version.Version=$(VERSION) \
 	-X github.com/gjergjiramku/dibra/internal/version.Commit=$(COMMIT) \
 	-X github.com/gjergjiramku/dibra/internal/version.Date=$(DATE)
+
+# Endpoint used by the Docker-host debugging target.
+DEPLOY_ENDPOINT ?= http://host.docker.internal:8080/gettasks
 
 # Basic build (no version injection)
 build:
@@ -74,6 +77,19 @@ test-deploy-integration: test-deploy-integration-up
 # Run dibra-deploy integration tests with an already-running test container
 test-deploy-integration-only:
 	go test -tags=integration -v -timeout 10m ./test/deploy_integration/...
+
+# Run dibra-deploy in Linux against an API on the Docker host.
+run-deploy-docker-host:
+	DEPLOY_ENDPOINT="$(DEPLOY_ENDPOINT)" DIBRA_VERSION="$(VERSION)" DIBRA_COMMIT="$(COMMIT)" DIBRA_BUILD_DATE="$(DATE)" ./scripts/run-deploy-docker-host.sh
+
+# Stop and remove the container used by run-deploy-docker-host.
+run-deploy-docker-host-down:
+	docker compose -f test/docker-compose.yaml down -v
+
+# Backward-compatible names for the original debugging targets.
+test-deploy-docker-host: run-deploy-docker-host
+
+test-deploy-docker-host-down: run-deploy-docker-host-down
 
 # Clean up
 clean:
