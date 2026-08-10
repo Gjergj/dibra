@@ -1,0 +1,4 @@
+- name: Record dynamic include execution
+  copy:
+    content: included
+    dest: /tmp/dibra-deploy-it/results/included.txt

@@ -1,0 +1,4 @@
+tasks:
+  - name: Fail the deployment
+    shell:
+      cmd: /bin/false

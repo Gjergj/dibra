@@ -1,0 +1,13 @@
+- name: Create result directory
+  file:
+    path: /tmp/dibra-deploy-it/results
+    state: directory
+
+- name: Record first playbook execution
+  shell:
+    cmd: "printf 'first\\n' > /tmp/dibra-deploy-it/results/order.txt"
+
+- name: Record static import execution
+  copy:
+    content: imported
+    dest: /tmp/dibra-deploy-it/results/imported.txt

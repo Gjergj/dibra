@@ -1,0 +1,17 @@
+[Unit]
+Description=Dibra local pull deployment runner
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+StateDirectory=dibra-deploy
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/dibra-deploy
+ExecStart=/usr/local/bin/dibra-deploy
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

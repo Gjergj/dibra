@@ -45,6 +45,24 @@ builds:
       - -X github.com/gjergjiramku/dibra/internal/version.Commit={{.Commit}}
       - -X github.com/gjergjiramku/dibra/internal/version.Date={{.Date}}
 
+  - id: dibra-deploy
+    main: ./cmd/dibra-deploy
+    binary: dibra-deploy
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/gjergjiramku/dibra/internal/version.Version={{.Version}}
+      - -X github.com/gjergjiramku/dibra/internal/version.Commit={{.Commit}}
+      - -X github.com/gjergjiramku/dibra/internal/version.Date={{.Date}}
+
 upx:
   - ids:
       - agent
@@ -76,6 +94,18 @@ archives:
     name_template: "{{ .ProjectName }}-agent_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - none*
+
+  - id: dibra-deploy-archive
+    ids:
+      - dibra-deploy
+    formats:
+      - tar.gz
+    name_template: "dibra-deploy_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - src: packaging/systemd/dibra-deploy.service
+        dst: dibra-deploy.service
+      - src: docs/DibraDeploy.md
+        dst: README.md
 
 checksum:
   name_template: "checksums.txt"

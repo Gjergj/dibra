@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/ssh"
@@ -59,6 +60,19 @@ func CheckRemoteAgentVersion(client *ssh.Client, agentPath string) (string, erro
 		return "", err
 	}
 	output := strings.TrimSpace(stdout)
+	parts := strings.Fields(output)
+	if len(parts) >= 2 {
+		return strings.TrimPrefix(parts[1], "v"), nil
+	}
+	return output, nil
+}
+
+func CheckLocalAgentVersion(agentPath string) (string, error) {
+	stdout, err := exec.Command(agentPath, "--version").Output()
+	if err != nil {
+		return "", err
+	}
+	output := strings.TrimSpace(string(stdout))
 	parts := strings.Fields(output)
 	if len(parts) >= 2 {
 		return strings.TrimPrefix(parts[1], "v"), nil

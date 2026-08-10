@@ -1,4 +1,4 @@
-.PHONY: build build-dev test test lint test-integration test-integration-up test-integration-down clean snapshot release-dry release-minor release-patch install
+.PHONY: build build-dev test test lint test-integration test-integration-up test-integration-down test-deploy-integration test-deploy-integration-only test-deploy-integration-up test-deploy-integration-down clean snapshot release-dry release-minor release-patch install
 
 # Version info for local builds
 VERSION ?= dev
@@ -51,11 +51,29 @@ test-integration-down:
 test-integration: test-integration-up
 	@echo "Running integration tests..."
 	go test -tags=integration -v -timeout 20m ./test/integration/... || (make test-integration-down && exit 1)
+	go test -tags=integration -v -timeout 10m ./test/deploy_integration/... || (make test-integration-down && exit 1)
 	make test-integration-down
 
 # Run integration tests without managing container
 test-integration-only:
 	go test -tags=integration -v -timeout 20m ./test/integration/...
+	go test -tags=integration -v -timeout 10m ./test/deploy_integration/...
+
+# Start the shared Linux/systemd test container for dibra-deploy tests
+test-deploy-integration-up: test-integration-up
+
+# Stop the shared Linux/systemd test container
+test-deploy-integration-down: test-integration-down
+
+# Run only the dibra-deploy black-box integration suite
+test-deploy-integration: test-deploy-integration-up
+	@echo "Running dibra-deploy integration tests..."
+	go test -tags=integration -v -timeout 10m ./test/deploy_integration/... || (make test-deploy-integration-down && exit 1)
+	make test-deploy-integration-down
+
+# Run dibra-deploy integration tests with an already-running test container
+test-deploy-integration-only:
+	go test -tags=integration -v -timeout 10m ./test/deploy_integration/...
 
 # Clean up
 clean:

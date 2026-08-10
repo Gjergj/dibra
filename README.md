@@ -29,8 +29,28 @@ It's still under heavy development and largely untested in real world.
 6. **Reports** changed/ok/failed status for each task
 
 ## Installation
-#### MacOS
-`brew install gjergj/tap/dibra`
+
+### Controller on macOS
+
+```bash
+brew install gjergj/tap/dibra
+```
+
+### Local pull runner on Linux
+
+Install the latest `dibra-deploy` release and its systemd unit:
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-deploy.sh \
+  | sh
+sudo systemctl enable --now dibra-deploy.service
+```
+
+The installer verifies the release checksum and does not start the service by
+default. Pass `--enable` to install and start in one command. See
+[`docs/DibraDeploy.md`](docs/DibraDeploy.md) for pinned releases, manual
+installation, the ZIP contract, and service operation.
 
 
 
@@ -60,6 +80,9 @@ dibra completion bash > /usr/local/etc/bash_completion.d/dibra
 dibra completion zsh > /usr/local/share/zsh/site-functions/_dibra
 dibra completion fish > ~/.config/fish/completions/dibra.fish
 ```
+
+For pull-based local execution, `dibra-deploy` periodically fetches a ZIP
+project from a local task server and applies it without SSH.
 
 ## Limitations
  * Currently supports only Debian/Ubuntu systems.

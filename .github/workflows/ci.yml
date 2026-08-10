@@ -38,6 +38,24 @@ jobs:
         with:
           version: latest
 
+  deploy-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Run dibra-deploy integration tests
+        run: make test-deploy-integration
+
+      - name: Clean up integration containers
+        if: always()
+        run: make test-deploy-integration-down
+
   goreleaser-check:
     runs-on: ubuntu-latest
     steps:

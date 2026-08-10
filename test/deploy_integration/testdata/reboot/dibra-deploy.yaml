@@ -1,0 +1,3 @@
+version: 1
+playbooks:
+  - reboot.yaml

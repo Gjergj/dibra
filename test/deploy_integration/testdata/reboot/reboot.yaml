@@ -1,0 +1,4 @@
+tasks:
+  - name: Initiate the integration-test reboot
+    reboot:
+      reboot_command: /usr/local/bin/dibra-fake-reboot

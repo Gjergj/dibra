@@ -39,6 +39,19 @@ func NewResolver(opts Options) *Resolver {
 }
 
 func (r *Resolver) Resolve(client *ssh.Client) (string, error) {
+	if r.opts.Mode == ModePath {
+		return r.ResolveForTarget(Target{})
+	}
+	target, err := detectRemoteTarget(client)
+	if err != nil {
+		return "", fmt.Errorf("failed to detect remote OS/arch: %w", err)
+	}
+	return r.ResolveForTarget(target)
+}
+
+// ResolveForTarget applies the same path/build/download policy as Resolve for
+// a target that is already known, such as the machine running dibra-deploy.
+func (r *Resolver) ResolveForTarget(target Target) (string, error) {
 	switch r.opts.Mode {
 	case ModePath:
 		if _, err := os.Stat(r.opts.AgentPath); err != nil {
@@ -47,10 +60,6 @@ func (r *Resolver) Resolve(client *ssh.Client) (string, error) {
 		return r.opts.AgentPath, nil
 
 	case ModeBuild:
-		target, err := detectRemoteTarget(client)
-		if err != nil {
-			return "", fmt.Errorf("failed to detect remote OS/arch: %w", err)
-		}
 		b := builder.New(r.opts.ProjectRoot)
 		return b.BuildFor(target.OS, target.Arch)
 
@@ -59,11 +68,6 @@ func (r *Resolver) Resolve(client *ssh.Client) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("cannot auto-download agent: controller was built with version %q (no GitHub Release exists).\n"+
 				"Use --agent-build to build the agent from source, or install a released dibra controller binary.", r.opts.Version)
-		}
-
-		target, err := detectRemoteTarget(client)
-		if err != nil {
-			return "", fmt.Errorf("failed to detect remote OS/arch: %w", err)
 		}
 
 		return r.resolveFromCache(norm, target)

@@ -1,0 +1,5 @@
+version: 1
+playbooks:
+  - first.yaml
+  - failing.yaml
+  - must-not-run.yaml

@@ -1,0 +1,5 @@
+tasks:
+  - name: This playbook must not execute
+    copy:
+      content: unexpected
+      dest: /tmp/dibra-deploy-it/results/must-not-run.txt

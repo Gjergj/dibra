@@ -1,0 +1,5 @@
+tasks:
+  - name: Record the first playbook
+    copy:
+      content: first-ran
+      dest: /tmp/dibra-deploy-it/results/first-ran.txt

@@ -30,18 +30,20 @@ func TestPlaybook_Register(t *testing.T) {
 		}
 	})
 
-	t.Run("register_on_failure", func(t *testing.T) {
+	t.Run("registered_failure_stops_remaining_tasks", func(t *testing.T) {
 		remoteExec(t, client, "rm -f /tmp/dibra-fail.txt")
 
 		playbook := filepath.Join(testdataDir, "playbook_error.yaml")
-		runPlaybookFromFile(t, playbook)
+		output := runPlaybookFromFile(t, playbook)
 
-		content := remoteFileContent(t, client, "/tmp/dibra-fail.txt")
-		if !strings.Contains(content, "failed=true") {
-			t.Errorf("expected failed=true in content, got: %s", content)
+		if !strings.Contains(output, "FAILED") {
+			t.Errorf("expected the registered task to fail, got: %s", output)
 		}
-		if !strings.Contains(content, "rc=") {
-			t.Errorf("expected rc= in content, got: %s", content)
+		if !strings.Contains(output, "stopping remaining tasks") {
+			t.Errorf("expected the host to stop after failure, got: %s", output)
+		}
+		if remoteFileExists(t, client, "/tmp/dibra-fail.txt") {
+			t.Error("task after the registered failure unexpectedly ran")
 		}
 	})
 

@@ -1,0 +1,75 @@
+inventory: inventory-that-must-not-be-loaded.yaml
+hosts:
+  - name: unreachable
+    host: invalid.example.invalid
+    user: nobody
+
+vars_files:
+  - vars.yaml
+
+tasks:
+  - name: Run imported tasks
+    import_tasks: tasks/imported.yaml
+
+  - name: Run included tasks
+    include_tasks: tasks/included.yaml
+
+  - name: Exercise loops
+    shell:
+      cmd: "printf '%s\\n' '{{ item }}' >> /tmp/dibra-deploy-it/results/loop.txt"
+    loop:
+      - one
+      - two
+
+  - name: Produce a registered value
+    shell:
+      cmd: printf registered-value
+    register: generated
+
+  - name: Consume the registered value
+    copy:
+      content: "{{ generated.stdout }}"
+      dest: /tmp/dibra-deploy-it/results/registered.txt
+
+  - name: Stage a project file
+    copy:
+      src: assets/source.txt
+      dest: /tmp/dibra-deploy-it/results/copied.txt
+
+  - name: Render a project template
+    template:
+      src: assets/config.j2
+      dest: /tmp/dibra-deploy-it/results/template.txt
+
+  - name: Stage and execute a project script
+    script:
+      cmd: assets/write.sh /tmp/dibra-deploy-it/results/script.txt
+
+  - name: Create the unarchive destination
+    file:
+      path: /tmp/dibra-deploy-it/results/unarchived
+      state: directory
+
+  - name: Stage and extract a project archive
+    unarchive:
+      src: assets/bundle.zip
+      dest: /tmp/dibra-deploy-it/results/unarchived
+
+  - name: Fetch a local target file
+    fetch:
+      src: /tmp/dibra-deploy-it/results/copied.txt
+      dest: /tmp/dibra-deploy-it/results/fetched.txt
+      flat: true
+
+  - name: Gather local facts
+    gather_facts:
+
+  - name: Consume gathered facts
+    copy:
+      content: "user={{ ansible_user_id }} host={{ ansible_hostname }}"
+      dest: /tmp/dibra-deploy-it/results/facts.txt
+
+  - name: Confirm the implicit host
+    copy:
+      content: "host={{ inventory_hostname }}"
+      dest: /tmp/dibra-deploy-it/results/host.txt

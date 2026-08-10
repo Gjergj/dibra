@@ -42,16 +42,50 @@ dibra -config playbook.yaml --inventory inventory.yaml
 # Validate config without execution
 dibra validate -config playbook.yaml
 
+# Run the Linux local pull runner (requires root)
+sudo dibra-deploy
+
+# Install the released Linux local pull runner and systemd unit
+curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-deploy.sh | sh
+sudo systemctl enable --now dibra-deploy.service
+
+# dibra-deploy development agent modes
+sudo dibra-deploy --agent-build
+sudo dibra-deploy --agent-path /path/to/dibra-agent
+
 # Run integration tests
 make test-integration
 
 # Run integration tests (container must be running)
 make test-integration-only
 
+# Run only dibra-deploy integration tests
+make test-deploy-integration
+
+# Run dibra-deploy integration tests (container must be running)
+make test-deploy-integration-only
+
 # Start/stop test container
 make test-integration-up
 make test-integration-down
 ```
+
+## dibra-deploy
+
+`dibra-deploy` is the Linux root daemon that polls the fixed local endpoint,
+downloads ZIP projects, and executes their manifest-listed playbooks against
+the local machine through the standalone `dibra-agent` process. It does not use
+SSH and must preserve the existing controller and agent behavior.
+
+See [`docs/DibraDeploy.md`](docs/DibraDeploy.md) for the complete archive and
+manifest contract, polling behavior, agent resolution modes, reboot rules,
+systemd installation, and release packaging.
+
+The black-box integration suite is in `test/deploy_integration`. It installs the
+sample service in the privileged Linux test container and uses a real deploy
+binary and agent with an in-container task server. Reboot coverage always uses
+the fake `/usr/local/bin/dibra-fake-reboot` command; never point these tests at
+the host machine.
 
 ## Distribution & Releases
 
@@ -91,6 +125,7 @@ make release-check      # Validate .goreleaser.yaml
 |----------|--------|
 | **macOS** | `brew install Gjergj/tap/dibra` |
 | **macOS/Linux** | `curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install.sh \| sh` |
+| **Linux dibra-deploy** | `curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-deploy.sh \| sh` |
 | **Linux (deb)** | Download `.deb` from releases, `sudo dpkg -i dibra_*.deb` |
 | **Linux (rpm)** | Download `.rpm` from releases, `sudo rpm -i dibra_*.rpm` |
 | **Windows** | `scoop bucket add dibra https://github.com/Gjergj/scoop-bucket && scoop install dibra` |
