@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,6 +37,7 @@ func TestMain(m *testing.M) {
 
 func waitForSSH(timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
+	var lastErr error
 	for time.Now().Before(deadline) {
 		client, err := ssh.Connect(ssh.Config{
 			Host:     testHost,
@@ -47,9 +49,13 @@ func waitForSSH(timeout time.Duration) error {
 			client.Close()
 			return nil
 		}
+		lastErr = err
 		time.Sleep(1 * time.Second)
 	}
-	return nil
+	if lastErr == nil {
+		return fmt.Errorf("SSH did not become ready within %s", timeout)
+	}
+	return fmt.Errorf("SSH did not become ready within %s: %w", timeout, lastErr)
 }
 
 func getClient(t *testing.T) *ssh.Client {

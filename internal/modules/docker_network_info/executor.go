@@ -1,8 +1,8 @@
 package docker_network_info
 
 import (
-	"github.com/docker/docker/api/types"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/client"
 )
 
 // Execute inspects a Docker network and returns its full configuration
@@ -21,7 +21,7 @@ func Execute(req Request) Response {
 	defer cancel()
 
 	// Inspect network
-	inspect, err := cli.NetworkInspect(ctx, req.Name, types.NetworkInspectOptions{Verbose: true})
+	result, err := cli.NetworkInspect(ctx, req.Name, client.NetworkInspectOptions{Verbose: true})
 	if err != nil {
 		if docker.IsNotFoundError(err) {
 			return Response{
@@ -32,6 +32,7 @@ func Execute(req Request) Response {
 		}
 		return Response{Failed: true, Msg: docker.WrapError("inspect network", req.Name, err).Error()}
 	}
+	inspect := result.Network
 
 	// Convert to map for flexible JSON output
 	network := map[string]interface{}{

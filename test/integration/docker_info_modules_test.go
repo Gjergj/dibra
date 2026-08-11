@@ -346,6 +346,34 @@ tasks:
 		}
 	})
 
+	t.Run("ExplicitConnectionOptions", func(t *testing.T) {
+		playbook := `
+hosts:
+  - name: testhost
+    host: localhost
+    port: 2222
+    user: root
+    password: rootpass
+
+tasks:
+  - name: Get Docker host info through an explicit socket
+    docker_host_info:
+      containers: false
+      docker_host: unix:///var/run/docker.sock
+      api_version: auto
+      timeout: 15
+      debug: true
+      use_ssh_client: false
+`
+		output := runPlaybook(t, playbook)
+		if strings.Contains(output, "FAILED") {
+			t.Errorf("Expected explicit connection options to succeed: %s", output)
+		}
+		if !strings.Contains(output, "OK") {
+			t.Errorf("Expected OK in output: %s", output)
+		}
+	})
+
 	t.Run("GetHostInfoWithDiskUsage", func(t *testing.T) {
 		playbook := `
 hosts:

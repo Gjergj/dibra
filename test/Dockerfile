@@ -1,5 +1,7 @@
 FROM ubuntu:22.04
 
+ARG COMPOSE_VERSION=5.4.0
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV container=docker
 
@@ -27,7 +29,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install Docker Plugins manually
 RUN mkdir -p /usr/local/lib/docker/cli-plugins && \
-    curl -SL https://github.com/docker/compose/releases/download/v2.24.6/docker-compose-linux-$(uname -m) -o /usr/local/lib/docker/cli-plugins/docker-compose && \
+    curl -fSL https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/docker-compose-linux-$(uname -m) -o /usr/local/lib/docker/cli-plugins/docker-compose && \
     curl -SL https://github.com/docker/buildx/releases/download/v0.13.1/buildx-v0.13.1.linux-$(uname -m | sed s/x86_64/amd64/ | sed s/aarch64/arm64/) -o /usr/local/lib/docker/cli-plugins/docker-buildx && \
     chmod +x /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/lib/docker/cli-plugins/docker-buildx
 

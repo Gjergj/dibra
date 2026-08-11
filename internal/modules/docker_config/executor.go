@@ -7,10 +7,9 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/client"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
@@ -24,13 +23,13 @@ func Execute(req Request) Response {
 	defer cancel()
 
 	// List configs to find existing one
-	configs, err := cli.ConfigList(ctx, types.ConfigListOptions{})
+	configs, err := cli.ConfigList(ctx, client.ConfigListOptions{})
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("list configs", "", err).Error()}
 	}
 
 	var existingConfig *swarm.Config
-	for _, c := range configs {
+	for _, c := range configs.Items {
 		if c.Spec.Name == req.Name {
 			configCopy := c
 			existingConfig = &configCopy
@@ -45,7 +44,7 @@ func Execute(req Request) Response {
 
 	if state == "absent" {
 		if existingConfig != nil {
-			err := cli.ConfigRemove(ctx, existingConfig.ID)
+			_, err := cli.ConfigRemove(ctx, existingConfig.ID, client.ConfigRemoveOptions{})
 			if err != nil {
 				return Response{Failed: true, Msg: docker.WrapError("remove config", req.Name, err).Error()}
 			}
@@ -91,7 +90,7 @@ func Execute(req Request) Response {
 			Data: data,
 		}
 
-		resp, err := cli.ConfigCreate(ctx, spec)
+		resp, err := cli.ConfigCreate(ctx, client.ConfigCreateOptions{Spec: spec})
 		if err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("create config", req.Name, err).Error()}
 		}
@@ -119,7 +118,7 @@ func Execute(req Request) Response {
 		spec := existingConfig.Spec
 		spec.Labels = labels
 
-		err = cli.ConfigUpdate(ctx, existingConfig.ID, existingConfig.Version, spec)
+		_, err = cli.ConfigUpdate(ctx, existingConfig.ID, client.ConfigUpdateOptions{Version: existingConfig.Version, Spec: spec})
 		if err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("update config labels", req.Name, err).Error()}
 		}
@@ -132,7 +131,7 @@ func Execute(req Request) Response {
 
 // recreateConfig removes and recreates a config (required for data changes since configs are immutable)
 func recreateConfig(ctx context.Context, cli *client.Client, existingConfig *swarm.Config, name string, labels map[string]string, data []byte, dataHash string) Response {
-	err := cli.ConfigRemove(ctx, existingConfig.ID)
+	_, err := cli.ConfigRemove(ctx, existingConfig.ID, client.ConfigRemoveOptions{})
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("remove config for recreation", name, err).Error()}
 	}
@@ -144,7 +143,7 @@ func recreateConfig(ctx context.Context, cli *client.Client, existingConfig *swa
 		},
 		Data: data,
 	}
-	resp, err := cli.ConfigCreate(ctx, spec)
+	resp, err := cli.ConfigCreate(ctx, client.ConfigCreateOptions{Spec: spec})
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("recreate config", name, err).Error()}
 	}

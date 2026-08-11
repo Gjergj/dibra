@@ -1,9 +1,9 @@
 package docker_swarm_info
 
 import (
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/swarm"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 )
 
 // Execute retrieves Docker Swarm information
@@ -18,10 +18,11 @@ func Execute(req Request) Response {
 	defer cancel()
 
 	// Get server info to check swarm status
-	info, err := cli.Info(ctx)
+	infoResult, err := cli.Info(ctx, client.InfoOptions{})
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("get docker info", "", err).Error()}
 	}
+	info := infoResult.Info
 
 	// Check if in swarm mode
 	if info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
@@ -51,10 +52,11 @@ func Execute(req Request) Response {
 
 	// If manager, get detailed swarm inspect
 	if info.Swarm.ControlAvailable {
-		swarmInspect, err := cli.SwarmInspect(ctx)
+		swarmInspectResult, err := cli.SwarmInspect(ctx, client.SwarmInspectOptions{})
 		if err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("inspect swarm", "", err).Error()}
 		}
+		swarmInspect := swarmInspectResult.Swarm
 
 		swarmInfo["id"] = swarmInspect.ID
 		swarmInfo["created_at"] = swarmInspect.CreatedAt
@@ -106,13 +108,13 @@ func Execute(req Request) Response {
 
 		// Get nodes if requested
 		if req.Nodes {
-			nodes, err := cli.NodeList(ctx, types.NodeListOptions{})
+			nodes, err := cli.NodeList(ctx, client.NodeListOptions{})
 			if err != nil {
 				return Response{Failed: true, Msg: docker.WrapError("list nodes", "", err).Error()}
 			}
 
-			nodeList := make([]map[string]interface{}, len(nodes))
-			for i, node := range nodes {
+			nodeList := make([]map[string]interface{}, len(nodes.Items))
+			for i, node := range nodes.Items {
 				nodeList[i] = convertNodeToMap(node, req.Verbose)
 			}
 			resp.Nodes = nodeList

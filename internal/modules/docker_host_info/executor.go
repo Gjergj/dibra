@@ -1,8 +1,9 @@
 package docker_host_info
 
 import (
-	"github.com/docker/docker/api/types"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/types/system"
+	"github.com/moby/moby/client"
 )
 
 // Execute retrieves Docker daemon information
@@ -17,18 +18,18 @@ func Execute(req Request) Response {
 	defer cancel()
 
 	// Get server info
-	info, err := cli.Info(ctx)
+	infoResult, err := cli.Info(ctx, client.InfoOptions{})
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("get docker info", "", err).Error()}
 	}
 
 	// Get server version
-	version, err := cli.ServerVersion(ctx)
+	version, err := cli.ServerVersion(ctx, client.ServerVersionOptions{})
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("get docker version", "", err).Error()}
 	}
 
-	hostInfo := convertInfoToMap(info, version)
+	hostInfo := convertInfoToMap(infoResult.Info, version)
 
 	resp := Response{
 		Changed:  false, // Info modules never change anything
@@ -37,7 +38,7 @@ func Execute(req Request) Response {
 
 	// Get disk usage if requested
 	if req.DiskUsage {
-		du, err := cli.DiskUsage(ctx, types.DiskUsageOptions{})
+		du, err := cli.DiskUsage(ctx, client.DiskUsageOptions{Verbose: true})
 		if err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("get disk usage", "", err).Error()}
 		}
@@ -47,18 +48,15 @@ func Execute(req Request) Response {
 	return resp
 }
 
-func convertInfoToMap(info types.Info, version types.Version) map[string]interface{} {
+func convertInfoToMap(info system.Info, version client.ServerVersionResult) map[string]interface{} {
 	hostInfo := map[string]interface{}{
 		// Version info
 		"server_version":  info.ServerVersion,
 		"api_version":     version.APIVersion,
 		"min_api_version": version.MinAPIVersion,
-		"git_commit":      version.GitCommit,
-		"go_version":      version.GoVersion,
 		"os":              version.Os,
 		"arch":            version.Arch,
-		"kernel_version":  version.KernelVersion,
-		"build_time":      version.BuildTime,
+		"kernel_version":  info.KernelVersion,
 
 		// System info
 		"id":               info.ID,
@@ -125,60 +123,48 @@ func convertInfoToMap(info types.Info, version types.Version) map[string]interfa
 	return hostInfo
 }
 
-func convertDiskUsageToMap(du types.DiskUsage) map[string]interface{} {
+func convertDiskUsageToMap(du client.DiskUsageResult) map[string]interface{} {
 	usage := map[string]interface{}{
-		"layers_size": du.LayersSize,
+		"layers_size": du.Images.TotalSize,
 	}
 
 	// Container usage
-	if len(du.Containers) > 0 {
-		var totalSize int64
-		for _, c := range du.Containers {
-			totalSize += c.SizeRw
-		}
+	if du.Containers.TotalCount > 0 {
 		usage["containers"] = map[string]interface{}{
-			"count":      len(du.Containers),
-			"total_size": totalSize,
+			"count":       du.Containers.TotalCount,
+			"active":      du.Containers.ActiveCount,
+			"total_size":  du.Containers.TotalSize,
+			"reclaimable": du.Containers.Reclaimable,
 		}
 	}
 
 	// Image usage
-	if len(du.Images) > 0 {
-		var totalSize, sharedSize int64
-		for _, img := range du.Images {
-			totalSize += img.Size
-			sharedSize += img.SharedSize
-		}
+	if du.Images.TotalCount > 0 {
 		usage["images"] = map[string]interface{}{
-			"count":       len(du.Images),
-			"total_size":  totalSize,
-			"shared_size": sharedSize,
+			"count":       du.Images.TotalCount,
+			"active":      du.Images.ActiveCount,
+			"total_size":  du.Images.TotalSize,
+			"reclaimable": du.Images.Reclaimable,
 		}
 	}
 
 	// Volume usage
-	if len(du.Volumes) > 0 {
-		var totalSize int64
-		for _, v := range du.Volumes {
-			if v.UsageData != nil {
-				totalSize += v.UsageData.Size
-			}
-		}
+	if du.Volumes.TotalCount > 0 {
 		usage["volumes"] = map[string]interface{}{
-			"count":      len(du.Volumes),
-			"total_size": totalSize,
+			"count":       du.Volumes.TotalCount,
+			"active":      du.Volumes.ActiveCount,
+			"total_size":  du.Volumes.TotalSize,
+			"reclaimable": du.Volumes.Reclaimable,
 		}
 	}
 
 	// Build cache
-	if len(du.BuildCache) > 0 {
-		var totalSize int64
-		for _, bc := range du.BuildCache {
-			totalSize += bc.Size
-		}
+	if du.BuildCache.TotalCount > 0 {
 		usage["build_cache"] = map[string]interface{}{
-			"count":      len(du.BuildCache),
-			"total_size": totalSize,
+			"count":       du.BuildCache.TotalCount,
+			"active":      du.BuildCache.ActiveCount,
+			"total_size":  du.BuildCache.TotalSize,
+			"reclaimable": du.BuildCache.Reclaimable,
 		}
 	}
 

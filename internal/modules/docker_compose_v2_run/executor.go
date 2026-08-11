@@ -16,10 +16,16 @@ func Execute(req Request) Response {
 		return Response{Failed: true, Msg: fmt.Sprintf("project_src does not exist: %s", req.ProjectSrc)}
 	}
 
-	cmdEnv := docker.GetComposeEnv(req.ComposeCommonArgs, req.CommonArgs)
+	cmdEnv, err := docker.GetComposeEnv(req.ComposeCommonArgs, req.CommonArgs)
+	if err != nil {
+		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
+	}
 
 	// Base args
-	args := docker.GetComposeBaseArgs(req.ComposeCommonArgs)
+	args, err := docker.GetComposeBaseArgs(req.ComposeCommonArgs, req.CommonArgs)
+	if err != nil {
+		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
+	}
 	args = append(args, "run")
 
 	if req.Build {

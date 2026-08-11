@@ -3,17 +3,17 @@ package docker_container
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/docker/go-units"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
@@ -31,11 +31,12 @@ func Execute(req Request) Response {
 		state = "started"
 	}
 
-	existing, err := cli.ContainerInspect(ctx, req.Name)
+	inspectResult, err := cli.ContainerInspect(ctx, req.Name, client.ContainerInspectOptions{})
 	exists := err == nil
 	if err != nil && !docker.IsNotFoundError(err) {
 		return Response{Failed: true, Msg: docker.WrapError("inspect container", req.Name, err).Error()}
 	}
+	existing := inspectResult.Container
 
 	switch state {
 	case "absent":
@@ -61,7 +62,7 @@ func Execute(req Request) Response {
 	}
 }
 
-func handlePresentOrStarted(ctx context.Context, cli *client.Client, req Request, existing types.ContainerJSON, exists bool, state string) Response {
+func handlePresentOrStarted(ctx context.Context, cli *client.Client, req Request, existing container.InspectResponse, exists bool, state string) Response {
 	diffBuilder := docker.NewDiffBuilder()
 	var actions []string
 
@@ -140,10 +141,10 @@ func handlePresentOrStarted(ctx context.Context, cli *client.Client, req Request
 		return startResp
 	}
 
-	inspect, _ := cli.ContainerInspect(ctx, existing.ID)
+	inspectResult, _ := cli.ContainerInspect(ctx, existing.ID, client.ContainerInspectOptions{})
 	return Response{
 		Changed:   len(actions) > 0 || diffBuilder.HasDiffs(),
-		Container: convertContainer(inspect),
+		Container: convertContainer(inspectResult.Container),
 		Actions:   actions,
 		Diff:      diffBuilder.DiffMap(),
 	}
@@ -159,7 +160,7 @@ func handleImagePull(ctx context.Context, cli *client.Client, image string, pull
 		fallthrough
 	default:
 		if !containerExists {
-			_, _, err := cli.ImageInspectWithRaw(ctx, image)
+			_, err := cli.ImageInspect(ctx, image)
 			if docker.IsNotFoundError(err) {
 				return pullImage(ctx, cli, image, registryAuth)
 			}
@@ -170,11 +171,11 @@ func handleImagePull(ctx context.Context, cli *client.Client, image string, pull
 
 func pullImage(ctx context.Context, cli *client.Client, image string, registryAuth string) (bool, error) {
 	existingID := ""
-	if inspect, _, err := cli.ImageInspectWithRaw(ctx, image); err == nil {
+	if inspect, err := cli.ImageInspect(ctx, image); err == nil {
 		existingID = inspect.ID
 	}
 
-	pullOpts := types.ImagePullOptions{}
+	pullOpts := client.ImagePullOptions{}
 	if registryAuth != "" {
 		pullOpts.RegistryAuth = registryAuth
 	}
@@ -191,7 +192,7 @@ func pullImage(ctx context.Context, cli *client.Client, image string, registryAu
 	}
 
 	if existingID != "" {
-		if inspect, _, err := cli.ImageInspectWithRaw(ctx, image); err == nil {
+		if inspect, err := cli.ImageInspect(ctx, image); err == nil {
 			if inspect.ID == existingID {
 				return false, nil
 			}
@@ -201,7 +202,7 @@ func pullImage(ctx context.Context, cli *client.Client, image string, registryAu
 	return true, nil
 }
 
-func compareContainer(ctx context.Context, cli *client.Client, req Request, existing types.ContainerJSON, diff *docker.DiffBuilder) (needsRecreate, needsUpdate bool) {
+func compareContainer(ctx context.Context, cli *client.Client, req Request, existing container.InspectResponse, diff *docker.DiffBuilder) (needsRecreate, needsUpdate bool) {
 	if req.Image != "" {
 		imageID, err := resolveImageID(ctx, cli, req.Image)
 		if err == nil && existing.Image != imageID {
@@ -257,7 +258,7 @@ func compareContainer(ctx context.Context, cli *client.Client, req Request, exis
 
 	if len(req.Ports) > 0 {
 		desiredPorts, _ := buildPortBindings(req.Ports)
-		if !docker.ComparePortBindings(desiredPorts, existing.HostConfig.PortBindings) {
+		if !docker.ComparePortBindings(desiredPorts, toNatPortMap(existing.HostConfig.PortBindings)) {
 			diff.Add("ports", req.Ports, existing.HostConfig.PortBindings)
 			needsRecreate = true
 		}
@@ -304,14 +305,14 @@ func compareContainer(ctx context.Context, cli *client.Client, req Request, exis
 	return needsRecreate, needsUpdate
 }
 
-func checkMutableFields(req Request, existing types.ContainerJSON, diff *docker.DiffBuilder) bool {
+func checkMutableFields(req Request, existing container.InspectResponse, diff *docker.DiffBuilder) bool {
 	needsUpdate := false
 
 	if req.RestartPolicy != "" {
 		desiredPolicy, desiredMax := parseRestartPolicy(req.RestartPolicy)
 		currentPolicy := existing.HostConfig.RestartPolicy.Name
 		currentMax := existing.HostConfig.RestartPolicy.MaximumRetryCount
-		if desiredPolicy != currentPolicy || desiredMax != currentMax {
+		if desiredPolicy != string(currentPolicy) || desiredMax != currentMax {
 			diff.Add("restart_policy", req.RestartPolicy, fmt.Sprintf("%s:%d", currentPolicy, currentMax))
 			needsUpdate = true
 		}
@@ -348,42 +349,42 @@ func checkMutableFields(req Request, existing types.ContainerJSON, diff *docker.
 }
 
 func updateContainer(ctx context.Context, cli *client.Client, containerID string, req Request) Response {
-	updateConfig := container.UpdateConfig{
-		Resources: container.Resources{},
-	}
+	resources := container.Resources{}
+	updateOptions := client.ContainerUpdateOptions{Resources: &resources}
 
 	if req.RestartPolicy != "" {
 		name, maxRetry := parseRestartPolicy(req.RestartPolicy)
-		updateConfig.RestartPolicy = container.RestartPolicy{Name: name, MaximumRetryCount: maxRetry}
+		restartPolicy := container.RestartPolicy{Name: container.RestartPolicyMode(name), MaximumRetryCount: maxRetry}
+		updateOptions.RestartPolicy = &restartPolicy
 	}
 
 	if req.Memory != "" {
 		mem, err := units.RAMInBytes(req.Memory)
 		if err == nil {
-			updateConfig.Resources.Memory = mem
+			resources.Memory = mem
 		}
 	}
 
 	if req.MemorySwap != "" {
 		if req.MemorySwap == "-1" {
-			updateConfig.Resources.MemorySwap = -1
+			resources.MemorySwap = -1
 		} else {
 			swap, err := units.RAMInBytes(req.MemorySwap)
 			if err == nil {
-				updateConfig.Resources.MemorySwap = swap
+				resources.MemorySwap = swap
 			}
 		}
 	}
 
 	if req.CPUs > 0 {
-		updateConfig.Resources.NanoCPUs = int64(req.CPUs * 1e9)
+		resources.NanoCPUs = int64(req.CPUs * 1e9)
 	}
 
 	if req.PidsLimit > 0 {
-		updateConfig.Resources.PidsLimit = &req.PidsLimit
+		resources.PidsLimit = &req.PidsLimit
 	}
 
-	_, err := cli.ContainerUpdate(ctx, containerID, updateConfig)
+	_, err := cli.ContainerUpdate(ctx, containerID, updateOptions)
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("update container", containerID, err).Error()}
 	}
@@ -391,7 +392,7 @@ func updateContainer(ctx context.Context, cli *client.Client, containerID string
 	return Response{Changed: true, Msg: "container updated"}
 }
 
-func reconcileNetworks(ctx context.Context, cli *client.Client, req Request, existing types.ContainerJSON, diff *docker.DiffBuilder) Response {
+func reconcileNetworks(ctx context.Context, cli *client.Client, req Request, existing container.InspectResponse, diff *docker.DiffBuilder) Response {
 	if len(req.Networks) == 0 {
 		return Response{Changed: false}
 	}
@@ -421,18 +422,26 @@ func reconcileNetworks(ctx context.Context, cli *client.Client, req Request, exi
 				Links:   netConfig.Links,
 			}
 			if netConfig.IPv4Address != "" {
+				address, err := netip.ParseAddr(netConfig.IPv4Address)
+				if err != nil {
+					return Response{Failed: true, Msg: fmt.Sprintf("invalid IPv4 address %q: %v", netConfig.IPv4Address, err)}
+				}
 				endpointConfig.IPAMConfig = &network.EndpointIPAMConfig{
-					IPv4Address: netConfig.IPv4Address,
+					IPv4Address: address,
 				}
 			}
 			if netConfig.IPv6Address != "" {
+				address, err := netip.ParseAddr(netConfig.IPv6Address)
+				if err != nil {
+					return Response{Failed: true, Msg: fmt.Sprintf("invalid IPv6 address %q: %v", netConfig.IPv6Address, err)}
+				}
 				if endpointConfig.IPAMConfig == nil {
 					endpointConfig.IPAMConfig = &network.EndpointIPAMConfig{}
 				}
-				endpointConfig.IPAMConfig.IPv6Address = netConfig.IPv6Address
+				endpointConfig.IPAMConfig.IPv6Address = address
 			}
 
-			if err := cli.NetworkConnect(ctx, name, existing.ID, endpointConfig); err != nil {
+			if _, err := cli.NetworkConnect(ctx, name, client.NetworkConnectOptions{Container: existing.ID, EndpointConfig: endpointConfig}); err != nil {
 				return Response{Failed: true, Msg: docker.WrapError("connect network", name, err).Error()}
 			}
 			diff.Add("network."+name, "connected", "disconnected")
@@ -451,7 +460,7 @@ func reconcileNetworks(ctx context.Context, cli *client.Client, req Request, exi
 			if _, desired := desiredNetworks[name]; desired {
 				continue
 			}
-			if err := cli.NetworkDisconnect(ctx, name, existing.ID, false); err != nil {
+			if _, err := cli.NetworkDisconnect(ctx, name, client.NetworkDisconnectOptions{Container: existing.ID}); err != nil {
 				// Don't fail on disconnect errors - network might already be gone
 				if !docker.IsNotFoundError(err) {
 					return Response{Failed: true, Msg: docker.WrapError("disconnect network", name, err).Error()}
@@ -466,7 +475,7 @@ func reconcileNetworks(ctx context.Context, cli *client.Client, req Request, exi
 }
 
 func resolveImageID(ctx context.Context, cli *client.Client, image string) (string, error) {
-	inspect, _, err := cli.ImageInspectWithRaw(ctx, image)
+	inspect, err := cli.ImageInspect(ctx, image)
 	if err != nil {
 		return "", err
 	}
@@ -495,7 +504,11 @@ func createAndStart(ctx context.Context, cli *client.Client, req Request, state 
 		return Response{Failed: true, Msg: err.Error()}
 	}
 
-	created, err := cli.ContainerCreate(ctx, config, hostConfig, nil, nil, req.Name)
+	created, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config:     config,
+		HostConfig: hostConfig,
+		Name:       req.Name,
+	})
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("create container", req.Name, err).Error()}
 	}
@@ -506,16 +519,26 @@ func createAndStart(ctx context.Context, cli *client.Client, req Request, state 
 			Links:   n.Links,
 		}
 		if n.IPv4Address != "" {
-			endpointConfig.IPAMConfig = &network.EndpointIPAMConfig{IPv4Address: n.IPv4Address}
+			address, err := netip.ParseAddr(n.IPv4Address)
+			if err != nil {
+				_, _ = cli.ContainerRemove(ctx, created.ID, client.ContainerRemoveOptions{Force: true})
+				return Response{Failed: true, Msg: fmt.Sprintf("invalid IPv4 address %q: %v", n.IPv4Address, err)}
+			}
+			endpointConfig.IPAMConfig = &network.EndpointIPAMConfig{IPv4Address: address}
 		}
 		if n.IPv6Address != "" {
+			address, err := netip.ParseAddr(n.IPv6Address)
+			if err != nil {
+				_, _ = cli.ContainerRemove(ctx, created.ID, client.ContainerRemoveOptions{Force: true})
+				return Response{Failed: true, Msg: fmt.Sprintf("invalid IPv6 address %q: %v", n.IPv6Address, err)}
+			}
 			if endpointConfig.IPAMConfig == nil {
 				endpointConfig.IPAMConfig = &network.EndpointIPAMConfig{}
 			}
-			endpointConfig.IPAMConfig.IPv6Address = n.IPv6Address
+			endpointConfig.IPAMConfig.IPv6Address = address
 		}
-		if err := cli.NetworkConnect(ctx, n.Name, created.ID, endpointConfig); err != nil {
-			_ = cli.ContainerRemove(ctx, created.ID, types.ContainerRemoveOptions{Force: true})
+		if _, err := cli.NetworkConnect(ctx, n.Name, client.NetworkConnectOptions{Container: created.ID, EndpointConfig: endpointConfig}); err != nil {
+			_, _ = cli.ContainerRemove(ctx, created.ID, client.ContainerRemoveOptions{Force: true})
 			return Response{Failed: true, Msg: docker.WrapError("connect network", n.Name, err).Error()}
 		}
 	}
@@ -524,13 +547,13 @@ func createAndStart(ctx context.Context, cli *client.Client, req Request, state 
 		return Response{Changed: true, Msg: "container created", Container: map[string]interface{}{"Id": created.ID}}
 	}
 
-	if err := cli.ContainerStart(ctx, created.ID, types.ContainerStartOptions{}); err != nil {
-		_ = cli.ContainerRemove(ctx, created.ID, types.ContainerRemoveOptions{Force: true})
+	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
+		_, _ = cli.ContainerRemove(ctx, created.ID, client.ContainerRemoveOptions{Force: true})
 		return Response{Failed: true, Msg: docker.WrapError("start container", req.Name, err).Error()}
 	}
 
-	inspect, _ := cli.ContainerInspect(ctx, created.ID)
-	return Response{Changed: true, Msg: "container started", Container: convertContainer(inspect)}
+	inspectResult, _ := cli.ContainerInspect(ctx, created.ID, client.ContainerInspectOptions{})
+	return Response{Changed: true, Msg: "container started", Container: convertContainer(inspectResult.Container)}
 }
 
 func buildContainerConfig(req Request) (*container.Config, *container.HostConfig, error) {
@@ -556,14 +579,14 @@ func buildContainerConfig(req Request) (*container.Config, *container.HostConfig
 		port := nat.Port(p)
 		exposedPorts[port] = struct{}{}
 	}
-	config.ExposedPorts = exposedPorts
+	config.ExposedPorts = toNetworkPortSet(exposedPorts)
 
 	hostConfig := &container.HostConfig{
 		AutoRemove:   req.AutoRemove,
 		Privileged:   req.Privileged,
 		NetworkMode:  container.NetworkMode(req.NetworkMode),
 		Binds:        req.Volumes,
-		PortBindings: portBindings,
+		PortBindings: toNetworkPortMap(portBindings),
 		CapAdd:       req.CapAdd,
 		CapDrop:      req.CapDrop,
 		Links:        req.Links,
@@ -573,7 +596,7 @@ func buildContainerConfig(req Request) (*container.Config, *container.HostConfig
 
 	if req.RestartPolicy != "" {
 		name, maxRetry := parseRestartPolicy(req.RestartPolicy)
-		hostConfig.RestartPolicy = container.RestartPolicy{Name: name, MaximumRetryCount: maxRetry}
+		hostConfig.RestartPolicy = container.RestartPolicy{Name: container.RestartPolicyMode(name), MaximumRetryCount: maxRetry}
 	}
 
 	if req.LogDriver != "" {
@@ -671,6 +694,56 @@ func buildPortBindings(ports []string) (nat.PortMap, nat.PortSet) {
 	return portMap, exposedPorts
 }
 
+func toNetworkPortMap(input nat.PortMap) network.PortMap {
+	result := make(network.PortMap, len(input))
+	for port, bindings := range input {
+		key, err := network.ParsePort(string(port))
+		if err != nil {
+			continue
+		}
+		converted := make([]network.PortBinding, 0, len(bindings))
+		for _, binding := range bindings {
+			var hostIP netip.Addr
+			if binding.HostIP != "" {
+				hostIP, err = netip.ParseAddr(binding.HostIP)
+				if err != nil {
+					continue
+				}
+			}
+			converted = append(converted, network.PortBinding{HostIP: hostIP, HostPort: binding.HostPort})
+		}
+		result[key] = converted
+	}
+	return result
+}
+
+func toNetworkPortSet(input nat.PortSet) network.PortSet {
+	result := make(network.PortSet, len(input))
+	for port := range input {
+		key, err := network.ParsePort(string(port))
+		if err == nil {
+			result[key] = struct{}{}
+		}
+	}
+	return result
+}
+
+func toNatPortMap(input network.PortMap) nat.PortMap {
+	result := make(nat.PortMap, len(input))
+	for port, bindings := range input {
+		converted := make([]nat.PortBinding, 0, len(bindings))
+		for _, binding := range bindings {
+			hostIP := ""
+			if binding.HostIP.IsValid() {
+				hostIP = binding.HostIP.String()
+			}
+			converted = append(converted, nat.PortBinding{HostIP: hostIP, HostPort: binding.HostPort})
+		}
+		result[nat.Port(port.String())] = converted
+	}
+	return result
+}
+
 func buildHealthcheck(hc *Healthcheck) *container.HealthConfig {
 	config := &container.HealthConfig{
 		Test:    hc.Test,
@@ -727,21 +800,21 @@ func parseRestartPolicy(policy string) (string, int) {
 }
 
 func removeContainer(ctx context.Context, cli *client.Client, name string, force bool, keepVolumes bool) Response {
-	existing, err := cli.ContainerInspect(ctx, name)
-	if err == nil && existing.State.Running {
+	inspectResult, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
+	if err == nil && inspectResult.Container.State.Running {
 		timeout := 10
 		if force {
-			_ = cli.ContainerKill(ctx, name, "SIGKILL")
+			_, _ = cli.ContainerKill(ctx, name, client.ContainerKillOptions{Signal: "SIGKILL"})
 		} else {
-			_ = cli.ContainerStop(ctx, name, container.StopOptions{Timeout: &timeout})
+			_, _ = cli.ContainerStop(ctx, name, client.ContainerStopOptions{Timeout: &timeout})
 		}
 	}
 
-	opts := types.ContainerRemoveOptions{
+	opts := client.ContainerRemoveOptions{
 		Force:         true,
 		RemoveVolumes: !keepVolumes,
 	}
-	if err := cli.ContainerRemove(ctx, name, opts); err != nil {
+	if _, err := cli.ContainerRemove(ctx, name, opts); err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("remove container", name, err).Error()}
 	}
 	return Response{Changed: true, Msg: "container removed", Actions: []string{"removed"}}
@@ -749,12 +822,12 @@ func removeContainer(ctx context.Context, cli *client.Client, name string, force
 
 func stopContainer(ctx context.Context, cli *client.Client, name string, force bool) Response {
 	if force {
-		if err := cli.ContainerKill(ctx, name, "SIGKILL"); err != nil {
+		if _, err := cli.ContainerKill(ctx, name, client.ContainerKillOptions{Signal: "SIGKILL"}); err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("kill container", name, err).Error()}
 		}
 	} else {
 		timeout := 10
-		if err := cli.ContainerStop(ctx, name, container.StopOptions{Timeout: &timeout}); err != nil {
+		if _, err := cli.ContainerStop(ctx, name, client.ContainerStopOptions{Timeout: &timeout}); err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("stop container", name, err).Error()}
 		}
 	}
@@ -762,11 +835,11 @@ func stopContainer(ctx context.Context, cli *client.Client, name string, force b
 }
 
 func startContainer(ctx context.Context, cli *client.Client, name string) Response {
-	if err := cli.ContainerStart(ctx, name, types.ContainerStartOptions{}); err != nil {
+	if _, err := cli.ContainerStart(ctx, name, client.ContainerStartOptions{}); err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("start container", name, err).Error()}
 	}
-	inspect, _ := cli.ContainerInspect(ctx, name)
-	return Response{Changed: true, Container: convertContainer(inspect), Actions: []string{"started"}}
+	inspectResult, _ := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
+	return Response{Changed: true, Container: convertContainer(inspectResult.Container), Actions: []string{"started"}}
 }
 
 func parseCommand(cmd interface{}) []string {
@@ -802,7 +875,7 @@ func convertEnv(env map[string]string) []string {
 	return res
 }
 
-func convertContainer(c types.ContainerJSON) map[string]interface{} {
+func convertContainer(c container.InspectResponse) map[string]interface{} {
 	return map[string]interface{}{
 		"Id":              c.ID,
 		"Name":            c.Name,

@@ -2,6 +2,7 @@ package docker_container_info
 
 import (
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/client"
 )
 
 // Execute inspects a Docker container and returns its full configuration
@@ -20,7 +21,7 @@ func Execute(req Request) Response {
 	defer cancel()
 
 	// Inspect container
-	inspect, err := cli.ContainerInspect(ctx, req.Name)
+	result, err := cli.ContainerInspect(ctx, req.Name, client.ContainerInspectOptions{})
 	if err != nil {
 		if docker.IsNotFoundError(err) {
 			return Response{
@@ -31,6 +32,7 @@ func Execute(req Request) Response {
 		}
 		return Response{Failed: true, Msg: docker.WrapError("inspect container", req.Name, err).Error()}
 	}
+	inspect := result.Container
 
 	// Convert to map for flexible JSON output
 	container := map[string]interface{}{
@@ -127,6 +129,7 @@ func Execute(req Request) Response {
 	// NetworkSettings
 	if inspect.NetworkSettings != nil {
 		networks := make(map[string]interface{})
+		var bridgeIPAddress, bridgeGateway, bridgeMACAddress string
 		for name, endpoint := range inspect.NetworkSettings.Networks {
 			networks[name] = map[string]interface{}{
 				"network_id":          endpoint.NetworkID,
@@ -139,14 +142,23 @@ func Execute(req Request) Response {
 				"mac_address":         endpoint.MacAddress,
 				"aliases":             endpoint.Aliases,
 			}
+			if name == "bridge" {
+				if endpoint.IPAddress.IsValid() {
+					bridgeIPAddress = endpoint.IPAddress.String()
+				}
+				if endpoint.Gateway.IsValid() {
+					bridgeGateway = endpoint.Gateway.String()
+				}
+				bridgeMACAddress = endpoint.MacAddress.String()
+			}
 		}
 		container["network_settings"] = map[string]interface{}{
-			"bridge":      inspect.NetworkSettings.Bridge,
+			"bridge":      "",
 			"ports":       inspect.NetworkSettings.Ports,
 			"networks":    networks,
-			"ip_address":  inspect.NetworkSettings.IPAddress,
-			"gateway":     inspect.NetworkSettings.Gateway,
-			"mac_address": inspect.NetworkSettings.MacAddress,
+			"ip_address":  bridgeIPAddress,
+			"gateway":     bridgeGateway,
+			"mac_address": bridgeMACAddress,
 		}
 	}
 

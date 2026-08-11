@@ -2,6 +2,7 @@ package docker_volume_info
 
 import (
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/client"
 )
 
 // Execute inspects a Docker volume and returns its full configuration
@@ -20,7 +21,7 @@ func Execute(req Request) Response {
 	defer cancel()
 
 	// Inspect volume
-	inspect, err := cli.VolumeInspect(ctx, req.Name)
+	result, err := cli.VolumeInspect(ctx, req.Name, client.VolumeInspectOptions{})
 	if err != nil {
 		if docker.IsNotFoundError(err) {
 			return Response{
@@ -31,6 +32,7 @@ func Execute(req Request) Response {
 		}
 		return Response{Failed: true, Msg: docker.WrapError("inspect volume", req.Name, err).Error()}
 	}
+	inspect := result.Volume
 
 	// Convert to map for flexible JSON output
 	volume := map[string]interface{}{

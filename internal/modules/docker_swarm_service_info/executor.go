@@ -1,9 +1,8 @@
 package docker_swarm_service_info
 
 import (
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
@@ -21,7 +20,7 @@ func Execute(req Request) Response {
 	}
 
 	// Inspect service
-	service, _, err := cli.ServiceInspectWithRaw(ctx, req.Name, types.ServiceInspectOptions{})
+	serviceResult, err := cli.ServiceInspect(ctx, req.Name, client.ServiceInspectOptions{})
 	if err != nil {
 		if docker.IsNotFoundError(err) {
 			return Response{
@@ -32,18 +31,19 @@ func Execute(req Request) Response {
 		}
 		return Response{Failed: true, Msg: docker.WrapError("inspect service", req.Name, err).Error()}
 	}
+	service := serviceResult.Service
 
 	// Get tasks for this service
-	taskFilter := filters.NewArgs()
+	taskFilter := client.Filters{}
 	taskFilter.Add("service", service.ID)
-	tasks, err := cli.TaskList(ctx, types.TaskListOptions{Filters: taskFilter})
+	tasks, err := cli.TaskList(ctx, client.TaskListOptions{Filters: taskFilter})
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("list tasks", req.Name, err).Error()}
 	}
 
 	// Convert tasks to TaskInfo
-	taskInfos := make([]TaskInfo, 0, len(tasks))
-	for _, task := range tasks {
+	taskInfos := make([]TaskInfo, 0, len(tasks.Items))
+	for _, task := range tasks.Items {
 		taskInfos = append(taskInfos, TaskInfo{
 			ID:           task.ID,
 			NodeID:       task.NodeID,

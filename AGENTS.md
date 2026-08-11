@@ -185,6 +185,39 @@ not add a Docker-specific field to `config.Task`, a controller argument-mapping
 case, or an agent dispatch case. Builtin modules that have not migrated still
 use their existing explicit paths.
 
+### Docker Connection Compatibility
+
+All Docker modules must use the shared connection implementation in
+`internal/modules/docker/connection.go`. Do not construct a Moby client, Docker
+CLI connection flags, or Docker connection environment independently in an
+executor.
+
+The common arguments are `docker_host`, `api_version`, `timeout`, `tls`,
+`validate_certs`, `ca_path`, `client_cert`, `client_key`, `tls_hostname`,
+`cli_context`, `debug`, and `use_ssh_client`. The resolver owns defaults,
+environment fallbacks, TLS hostname derivation, and validation. In particular:
+
+- `client_cert` and `client_key` must be supplied together.
+- `validate_certs: true` implies TLS; `tls: true` without validation permits an
+  unverified TLS connection.
+- `docker_host` and `cli_context` are mutually exclusive. `cli_context` is only
+  available to modules implemented through the Docker CLI.
+- API-backed modules negotiate the Engine API when `api_version: auto` is used.
+  A fixed version disables negotiation.
+- `ssh://` daemon hosts use the system OpenSSH client and Docker's
+  `system dial-stdio` transport. Dibra has no Paramiko transport, so
+  `use_ssh_client` is accepted for upstream compatibility and both values use
+  OpenSSH.
+
+The Engine SDK is pinned through the supported split Moby modules
+`github.com/moby/moby/client` and `github.com/moby/moby/api`. These pins describe
+the maximum Engine API surface Dibra compiles against; they do not select the
+Docker Compose version. Compose-backed modules invoke the installed
+`docker compose` plugin and support only the current Compose behavior documented
+by this repository. `github.com/docker/cli v28.5.2` supplies only the OpenSSH
+connection helper compatible with Dibra's Go 1.24 toolchain; it neither bundles
+nor selects the runtime Docker CLI or Compose plugin.
+
 ### Module Invocation State
 
 Every controller-to-agent module request uses the shared envelope in
@@ -4038,9 +4071,11 @@ tasks:
 ## Testing
 
 ### Integration Tests
-NEVER RUN THE FULL SUITE OF INTEGRATION TESTS BUT RUN ONLT THE SPECIFIC ONES WE ARE WORKING ON.
+NEVER RUN THE FULL SUITE OF INTEGRATION TESTS BUT RUN ONLY THE SPECIFIC ONES WE ARE WORKING ON.
 
 Integration tests run against a Docker container with Ubuntu 22.04 + systemd + SSH.
+All integration invocations must use `-count=1`; these tests depend on external
+container state and must never reuse Go's successful-result cache.
 
 ```bash
 # Full test cycle: start container → run tests → stop container
@@ -4055,7 +4090,7 @@ make test-integration-down    # Stop and remove container
 To run specific tests make sure we have docker up and pass the specific module test suite
 ```bash
 make test-integration-up      # Start container (SSH on port 2222)
-go test -tags=integration -v -timeout 20m ./test/integration/... -run TestPlaybook_Service # for the service module
+go test -tags=integration -count=1 -v -timeout 20m ./test/integration/... -run TestPlaybook_Service # for the service module
 make test-integration-down    # Stop and remove container
 ```
 
@@ -4115,6 +4150,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_DockerNodeLabelsToRemove` | Node label removal support (Phase 6.5.3) |
 | `TestPlaybook_DockerSwarmServiceInfo` | Swarm service info module (Phase 6.6) |
 | `TestPlaybook_DockerNodeInfo` | Node info module (Phase 6.7) |
+| `TestPlaybook_DockerHostInfo` | Host info and shared explicit Docker connection options |
 | `TestPlaybook_DockerVolume` | Volume deep compare, driver options, metadata, recreate (Phase 7.4) |
 | `TestPlaybook_DockerSecretHashIdempotency` | Secret hash-based idempotency, data change detection (Phase 7.3) |
 | `TestPlaybook_DockerConfigHashIdempotency` | Config hash-based idempotency, label-only updates (Phase 7.3) |

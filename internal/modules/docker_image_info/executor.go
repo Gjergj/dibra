@@ -3,8 +3,8 @@ package docker_image_info
 import (
 	"strings"
 
-	"github.com/docker/docker/api/types"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/client"
 )
 
 // Execute inspects Docker images and returns their configuration
@@ -23,7 +23,7 @@ func Execute(req Request) Response {
 	defer cancel()
 
 	// Try to inspect directly first (works for ID or exact name:tag)
-	inspect, _, err := cli.ImageInspectWithRaw(ctx, req.Name)
+	inspect, err := cli.ImageInspect(ctx, req.Name)
 	if err != nil {
 		if docker.IsNotFoundError(err) {
 			return Response{
@@ -46,28 +46,24 @@ func Execute(req Request) Response {
 	}
 }
 
-func convertImageToMap(inspect types.ImageInspect) map[string]interface{} {
+func convertImageToMap(inspect client.ImageInspectResult) map[string]interface{} {
 	img := map[string]interface{}{
-		"id":             inspect.ID,
-		"repo_tags":      inspect.RepoTags,
-		"repo_digests":   inspect.RepoDigests,
-		"parent":         inspect.Parent,
-		"comment":        inspect.Comment,
-		"created":        inspect.Created,
-		"docker_version": inspect.DockerVersion,
-		"author":         inspect.Author,
-		"architecture":   inspect.Architecture,
-		"os":             inspect.Os,
-		"os_version":     inspect.OsVersion,
-		"size":           inspect.Size,
-		"virtual_size":   inspect.Size, // VirtualSize is deprecated, use Size
+		"id":           inspect.ID,
+		"repo_tags":    inspect.RepoTags,
+		"repo_digests": inspect.RepoDigests,
+		"comment":      inspect.Comment,
+		"created":      inspect.Created,
+		"author":       inspect.Author,
+		"architecture": inspect.Architecture,
+		"os":           inspect.Os,
+		"os_version":   inspect.OsVersion,
+		"size":         inspect.Size,
+		"virtual_size": inspect.Size, // VirtualSize is deprecated, use Size
 	}
 
 	// Config
 	if inspect.Config != nil {
 		config := map[string]interface{}{
-			"hostname":      inspect.Config.Hostname,
-			"domainname":    inspect.Config.Domainname,
 			"user":          inspect.Config.User,
 			"exposed_ports": inspect.Config.ExposedPorts,
 			"env":           inspect.Config.Env,

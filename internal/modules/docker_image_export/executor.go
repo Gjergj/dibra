@@ -41,7 +41,7 @@ func Execute(req Request) Response {
 			fullImageName = fmt.Sprintf("%s:%s", name, tag)
 		}
 
-		inspect, _, err := cli.ImageInspectWithRaw(ctx, fullImageName)
+		inspect, err := cli.ImageInspect(ctx, fullImageName)
 		if err != nil {
 			return Response{Failed: true, Msg: fmt.Sprintf("image not found: %s", fullImageName)}
 		}

@@ -7,10 +7,9 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/client"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
@@ -24,13 +23,13 @@ func Execute(req Request) Response {
 	defer cancel()
 
 	// List secrets to find existing one
-	secrets, err := cli.SecretList(ctx, types.SecretListOptions{})
+	secrets, err := cli.SecretList(ctx, client.SecretListOptions{})
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("list secrets", "", err).Error()}
 	}
 
 	var existingSecret *swarm.Secret
-	for _, s := range secrets {
+	for _, s := range secrets.Items {
 		if s.Spec.Name == req.Name {
 			secretCopy := s
 			existingSecret = &secretCopy
@@ -45,7 +44,7 @@ func Execute(req Request) Response {
 
 	if state == "absent" {
 		if existingSecret != nil {
-			err := cli.SecretRemove(ctx, existingSecret.ID)
+			_, err := cli.SecretRemove(ctx, existingSecret.ID, client.SecretRemoveOptions{})
 			if err != nil {
 				return Response{Failed: true, Msg: docker.WrapError("remove secret", req.Name, err).Error()}
 			}
@@ -91,7 +90,7 @@ func Execute(req Request) Response {
 			Data: data,
 		}
 
-		resp, err := cli.SecretCreate(ctx, spec)
+		resp, err := cli.SecretCreate(ctx, client.SecretCreateOptions{Spec: spec})
 		if err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("create secret", req.Name, err).Error()}
 		}
@@ -119,7 +118,7 @@ func Execute(req Request) Response {
 		spec := existingSecret.Spec
 		spec.Labels = labels
 
-		err = cli.SecretUpdate(ctx, existingSecret.ID, existingSecret.Version, spec)
+		_, err = cli.SecretUpdate(ctx, existingSecret.ID, client.SecretUpdateOptions{Version: existingSecret.Version, Spec: spec})
 		if err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("update secret labels", req.Name, err).Error()}
 		}
@@ -132,7 +131,7 @@ func Execute(req Request) Response {
 
 // recreateSecret removes and recreates a secret (required for data changes since secrets are immutable)
 func recreateSecret(ctx context.Context, cli *client.Client, existingSecret *swarm.Secret, name string, labels map[string]string, data []byte, dataHash string) Response {
-	err := cli.SecretRemove(ctx, existingSecret.ID)
+	_, err := cli.SecretRemove(ctx, existingSecret.ID, client.SecretRemoveOptions{})
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("remove secret for recreation", name, err).Error()}
 	}
@@ -144,7 +143,7 @@ func recreateSecret(ctx context.Context, cli *client.Client, existingSecret *swa
 		},
 		Data: data,
 	}
-	resp, err := cli.SecretCreate(ctx, spec)
+	resp, err := cli.SecretCreate(ctx, client.SecretCreateOptions{Spec: spec})
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("recreate secret", name, err).Error()}
 	}

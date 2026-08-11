@@ -52,9 +52,9 @@ func Execute(req Request) Response {
 		cli, err := docker.GetClient(req.CommonArgs)
 		if err == nil {
 			defer cli.Close()
-			inspect, _, err := cli.ImageInspectWithRaw(context.Background(), fullImageName)
+			inspect, err := cli.ImageInspect(context.Background(), fullImageName)
 			if err == nil {
-					// Image exists, no change needed (unless we need to compare build context)
+				// Image exists, no change needed (unless we need to compare build context)
 				return Response{
 					Changed: false,
 					Msg:     "image already exists",
@@ -139,16 +139,13 @@ func Execute(req Request) Response {
 	// Build context path
 	args = append(args, "--", req.Path)
 
-	// Set up environment
-	env := os.Environ()
-	if req.DockerHost != "" {
-		env = append(env, fmt.Sprintf("DOCKER_HOST=%s", req.DockerHost))
+	args, err := docker.DockerCLIArgs(req.CommonArgs, args...)
+	if err != nil {
+		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
 	}
-	if req.TLS {
-		env = append(env, "DOCKER_TLS_VERIFY=1")
-		if req.CAPath != "" {
-			env = append(env, fmt.Sprintf("DOCKER_CERT_PATH=%s", req.CAPath))
-		}
+	env, err := docker.DockerCLIEnv(req.CommonArgs)
+	if err != nil {
+		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
 	}
 
 	// Execute build

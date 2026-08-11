@@ -4,9 +4,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/swarm"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
@@ -22,10 +22,11 @@ func Execute(req Request) Response {
 	// 1. Identify the node
 	var targetNode swarm.Node
 
-	info, err := cli.Info(ctx)
+	infoResult, err := cli.Info(ctx, client.InfoOptions{})
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("get info", "", err).Error()}
 	}
+	info := infoResult.Info
 
 	if !info.Swarm.ControlAvailable {
 		return Response{Failed: true, Msg: "this node is not a swarm manager; docker_node can only be run on manager nodes"}
@@ -33,20 +34,20 @@ func Execute(req Request) Response {
 
 	if req.Self {
 		nodeID := info.Swarm.NodeID
-		node, _, err := cli.NodeInspectWithRaw(ctx, nodeID)
+		result, err := cli.NodeInspect(ctx, nodeID, client.NodeInspectOptions{})
 		if err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("inspect node", nodeID, err).Error()}
 		}
-		targetNode = node
+		targetNode = result.Node
 	} else if req.Hostname != "" {
 		// Find node by hostname
-		nodes, err := cli.NodeList(ctx, types.NodeListOptions{})
+		nodes, err := cli.NodeList(ctx, client.NodeListOptions{})
 		if err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("list nodes", "", err).Error()}
 		}
 
 		found := false
-		for _, node := range nodes {
+		for _, node := range nodes.Items {
 			if node.Description.Hostname == req.Hostname || node.ID == req.Hostname {
 				targetNode = node
 				found = true
@@ -135,13 +136,15 @@ func Execute(req Request) Response {
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
 			// Re-fetch node to get current version
-			targetNode, _, err = cli.NodeInspectWithRaw(ctx, targetNode.ID)
+			result, inspectErr := cli.NodeInspect(ctx, targetNode.ID, client.NodeInspectOptions{})
+			err = inspectErr
 			if err != nil {
 				return Response{Failed: true, Msg: docker.WrapError("inspect node", targetNode.ID, err).Error()}
 			}
+			targetNode = result.Node
 		}
 
-		err = cli.NodeUpdate(ctx, targetNode.ID, targetNode.Version, spec)
+		_, err = cli.NodeUpdate(ctx, targetNode.ID, client.NodeUpdateOptions{Version: targetNode.Version, Spec: spec})
 		if err == nil {
 			return Response{Changed: true, Msg: "node updated"}
 		}

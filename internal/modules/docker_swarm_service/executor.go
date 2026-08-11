@@ -2,16 +2,17 @@ package docker_swarm_service
 
 import (
 	"fmt"
+	"net/netip"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/client"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
@@ -31,14 +32,14 @@ func Execute(req Request) Response {
 
 	// Helper to find service
 	findService := func(name string) (swarm.Service, bool, error) {
-		svc, _, err := cli.ServiceInspectWithRaw(ctx, name, types.ServiceInspectOptions{})
+		result, err := cli.ServiceInspect(ctx, name, client.ServiceInspectOptions{})
 		if err != nil {
-			if client.IsErrNotFound(err) {
+			if docker.IsNotFoundError(err) {
 				return swarm.Service{}, false, nil
 			}
 			return swarm.Service{}, false, err
 		}
-		return svc, true, nil
+		return result.Service, true, nil
 	}
 
 	existing, exists, err := findService(req.Name)
@@ -50,7 +51,7 @@ func Execute(req Request) Response {
 		if !exists {
 			return Response{Changed: false, Msg: "service already absent"}
 		}
-		err := cli.ServiceRemove(ctx, req.Name)
+		_, err := cli.ServiceRemove(ctx, req.Name, client.ServiceRemoveOptions{})
 		if err != nil {
 			return Response{Failed: true, Msg: fmt.Sprintf("failed to remove service: %v", err)}
 		}
@@ -75,7 +76,7 @@ func Execute(req Request) Response {
 				mode = swarm.PortConfigPublishModeIngress
 			}
 			ports = append(ports, swarm.PortConfig{
-				Protocol:      swarm.PortConfigProtocol(p.Protocol),
+				Protocol:      network.IPProtocol(p.Protocol),
 				TargetPort:    p.TargetPort,
 				PublishedPort: p.PublishedPort,
 				PublishMode:   mode,
@@ -197,8 +198,12 @@ func Execute(req Request) Response {
 
 		// DNS configuration
 		if len(req.DNS) > 0 || len(req.DNSSearch) > 0 || len(req.DNSOptions) > 0 {
+			nameservers, err := parseDNSAddresses(req.DNS)
+			if err != nil {
+				return Response{Failed: true, Msg: err.Error()}
+			}
 			containerSpec.DNSConfig = &swarm.DNSConfig{
-				Nameservers: req.DNS,
+				Nameservers: nameservers,
 				Search:      req.DNSSearch,
 				Options:     req.DNSOptions,
 			}
@@ -296,10 +301,10 @@ func Execute(req Request) Response {
 				updateConfig.Parallelism = req.UpdateParallelism
 			}
 			if req.UpdateFailureAction != "" {
-				updateConfig.FailureAction = req.UpdateFailureAction
+				updateConfig.FailureAction = swarm.FailureAction(req.UpdateFailureAction)
 			}
 			if req.UpdateOrder != "" {
-				updateConfig.Order = req.UpdateOrder
+				updateConfig.Order = swarm.UpdateOrder(req.UpdateOrder)
 			}
 			if req.UpdateMonitor != "" {
 				monitor, _ := time.ParseDuration(req.UpdateMonitor)
@@ -322,10 +327,10 @@ func Execute(req Request) Response {
 				rollbackConfig.Parallelism = req.RollbackParallelism
 			}
 			if req.RollbackFailureAction != "" {
-				rollbackConfig.FailureAction = req.RollbackFailureAction
+				rollbackConfig.FailureAction = swarm.FailureAction(req.RollbackFailureAction)
 			}
 			if req.RollbackOrder != "" {
-				rollbackConfig.Order = req.RollbackOrder
+				rollbackConfig.Order = swarm.UpdateOrder(req.RollbackOrder)
 			}
 			if req.RollbackMonitor != "" {
 				monitor, _ := time.ParseDuration(req.RollbackMonitor)
@@ -425,7 +430,7 @@ func Execute(req Request) Response {
 				spec.TaskTemplate.ForceUpdate++
 			}
 
-			resp, err := cli.ServiceUpdate(ctx, existing.ID, existing.Version, spec, types.ServiceUpdateOptions{})
+			resp, err := cli.ServiceUpdate(ctx, existing.ID, client.ServiceUpdateOptions{Version: existing.Version, Spec: spec})
 			if err != nil {
 				return Response{Failed: true, Msg: fmt.Sprintf("failed to update service: %v", err)}
 			}
@@ -436,7 +441,7 @@ func Execute(req Request) Response {
 		}
 
 		// Create
-		resp, err := cli.ServiceCreate(ctx, spec, types.ServiceCreateOptions{})
+		resp, err := cli.ServiceCreate(ctx, client.ServiceCreateOptions{Spec: spec})
 		if err != nil {
 			return Response{Failed: true, Msg: fmt.Sprintf("failed to create service: %v", err)}
 		}
@@ -445,4 +450,16 @@ func Execute(req Request) Response {
 	}
 
 	return Response{Failed: true, Msg: fmt.Sprintf("unknown state: %s", state)}
+}
+
+func parseDNSAddresses(values []string) ([]netip.Addr, error) {
+	addresses := make([]netip.Addr, 0, len(values))
+	for _, value := range values {
+		address, err := netip.ParseAddr(value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid DNS nameserver %q: %w", value, err)
+		}
+		addresses = append(addresses, address)
+	}
+	return addresses, nil
 }

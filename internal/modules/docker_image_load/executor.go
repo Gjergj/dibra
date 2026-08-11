@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
@@ -36,14 +37,14 @@ func Execute(req Request) Response {
 	defer file.Close()
 
 	// Load images from tar
-	resp, err := cli.ImageLoad(ctx, file, true)
+	resp, err := cli.ImageLoad(ctx, file, client.ImageLoadWithQuiet(true))
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to load images: %v", err)}
 	}
-	defer resp.Body.Close()
+	defer resp.Close()
 
 	// Read output
-	output, err := io.ReadAll(resp.Body)
+	output, err := io.ReadAll(resp)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to read response: %v", err)}
 	}

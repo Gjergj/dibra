@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/docker/docker/api/types"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
@@ -143,11 +143,13 @@ func Execute(req Request) Response {
 
 	// Copy to container
 	destDir := filepath.Dir(req.ContainerPath)
-	copyOptions := types.CopyToContainerOptions{
+	copyOptions := client.CopyToContainerOptions{
+		DestinationPath:           destDir,
+		Content:                   &tarBuf,
 		AllowOverwriteDirWithFile: true,
 	}
 
-	err = cli.CopyToContainer(ctx, req.Container, destDir, &tarBuf, copyOptions)
+	_, err = cli.CopyToContainer(ctx, req.Container, copyOptions)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to copy to container: %v", err)}
 	}
@@ -158,4 +160,3 @@ func Execute(req Request) Response {
 		Msg:           "file copied to container",
 	}
 }
-

@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/docker/docker/api/types/registry"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/client"
 )
 
 // DockerConfig represents the full docker config.json structure
@@ -132,11 +132,10 @@ func Execute(req Request) Response {
 		}
 
 		if validate {
-			authConfig := registry.AuthConfig{
+			authConfig := client.RegistryLoginOptions{
 				Username:      req.Username,
 				Password:      req.Password,
 				ServerAddress: reg,
-				Email:         req.Email,
 			}
 
 			resp, err := cli.RegistryLogin(ctx, authConfig)
@@ -154,7 +153,7 @@ func Execute(req Request) Response {
 				return Response{Failed: true, Msg: fmt.Sprintf("failed to write config: %v", err)}
 			}
 
-			return Response{Changed: true, Msg: "login succeeded", Token: resp.IdentityToken, Registry: reg}
+			return Response{Changed: true, Msg: "login succeeded", Token: resp.Auth.IdentityToken, Registry: reg}
 		}
 
 		// Skip validation, just store credentials

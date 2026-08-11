@@ -4,9 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/client"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
@@ -47,7 +46,7 @@ func normalizeImageRef(name, tag string) string {
 // handleAbsent removes an image
 func handleAbsent(ctx context.Context, cli *client.Client, ref string, req Request) Response {
 	// Check if exists
-	_, _, err := cli.ImageInspectWithRaw(ctx, ref)
+	_, err := cli.ImageInspect(ctx, ref)
 	if docker.IsNotFoundError(err) {
 		return Response{Changed: false, Msg: "image already absent"}
 	}
@@ -59,7 +58,7 @@ func handleAbsent(ctx context.Context, cli *client.Client, ref string, req Reque
 	force := req.ForceRemove || req.ForceSource
 
 	// Remove
-	opts := types.ImageRemoveOptions{
+	opts := client.ImageRemoveOptions{
 		Force:         force,
 		PruneChildren: true,
 	}
@@ -101,7 +100,7 @@ func handlePull(ctx context.Context, cli *client.Client, ref string, req Request
 
 	// Get existing image ID before pull (3.2.3)
 	var existingID string
-	if inspect, _, err := cli.ImageInspectWithRaw(ctx, ref); err == nil {
+	if inspect, err := cli.ImageInspect(ctx, ref); err == nil {
 		existingID = inspect.ID
 	}
 
@@ -142,7 +141,7 @@ func pullImage(ctx context.Context, cli *client.Client, image, existingID, usern
 	// Encode registry auth (3.1.3)
 	registryAuth := docker.EncodeRegistryAuth(username, password)
 
-	pullOpts := types.ImagePullOptions{}
+	pullOpts := client.ImagePullOptions{}
 	if registryAuth != "" {
 		pullOpts.RegistryAuth = registryAuth
 	}
@@ -160,7 +159,7 @@ func pullImage(ctx context.Context, cli *client.Client, image, existingID, usern
 	}
 
 	// Get the new image ID
-	inspect, _, err := cli.ImageInspectWithRaw(ctx, image)
+	inspect, err := cli.ImageInspect(ctx, image)
 	if err != nil {
 		return false, "", "", docker.WrapError("inspect image after pull", image, err)
 	}
@@ -176,7 +175,7 @@ func pullImage(ctx context.Context, cli *client.Client, image, existingID, usern
 // handleLocal handles source=local (tag and optionally push)
 func handleLocal(ctx context.Context, cli *client.Client, ref string, req Request) Response {
 	// Check source image exists
-	inspect, _, err := cli.ImageInspectWithRaw(ctx, ref)
+	inspect, err := cli.ImageInspect(ctx, ref)
 	if err != nil {
 		if docker.IsNotFoundError(err) {
 			return Response{Failed: true, Msg: fmt.Sprintf("image %s not found locally", ref)}
@@ -219,7 +218,7 @@ func handleLocal(ctx context.Context, cli *client.Client, ref string, req Reques
 func tagImage(ctx context.Context, cli *client.Client, sourceRef, targetRef, sourceID string, force bool) (changed bool, err error) {
 	// Check if target already exists with same image ID (3.3.1, 3.3.2)
 	if !force {
-		if targetInspect, _, err := cli.ImageInspectWithRaw(ctx, targetRef); err == nil {
+		if targetInspect, err := cli.ImageInspect(ctx, targetRef); err == nil {
 			if targetInspect.ID == sourceID {
 				// Already tagged correctly (3.3.4)
 				return false, nil
@@ -228,7 +227,7 @@ func tagImage(ctx context.Context, cli *client.Client, sourceRef, targetRef, sou
 	}
 
 	// Tag the image (3.3.3)
-	if err := cli.ImageTag(ctx, sourceRef, targetRef); err != nil {
+	if _, err := cli.ImageTag(ctx, client.ImageTagOptions{Source: sourceRef, Target: targetRef}); err != nil {
 		return false, docker.WrapError("tag image", targetRef, err)
 	}
 
@@ -240,7 +239,7 @@ func pushImage(ctx context.Context, cli *client.Client, ref, username, password 
 	// Encode registry auth (3.4.3)
 	registryAuth := docker.EncodeRegistryAuth(username, password)
 
-	pushOpts := types.ImagePushOptions{}
+	pushOpts := client.ImagePushOptions{}
 	if registryAuth != "" {
 		pushOpts.RegistryAuth = registryAuth
 	}

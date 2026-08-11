@@ -35,11 +35,17 @@ func Execute(req Request) Response {
 	}
 
 	// Construct environment
-	cmdEnv := docker.GetComposeEnv(req.ComposeCommonArgs, req.CommonArgs)
+	cmdEnv, err := docker.GetComposeEnv(req.ComposeCommonArgs, req.CommonArgs)
+	if err != nil {
+		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
+	}
 
 	// Base args with --ansi never for stable output parsing
-	args := []string{"compose", "--ansi", "never"}
-	args = append(args, docker.GetComposeBaseArgs(req.ComposeCommonArgs)[1:]...) // skip "compose" already added
+	args, err := docker.GetComposeBaseArgs(req.ComposeCommonArgs, req.CommonArgs)
+	if err != nil {
+		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
+	}
+	args = append(args, "--ansi", "never")
 
 	// Use cmd.Dir for project directory context
 	runDir := req.ProjectSrc

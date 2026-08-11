@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 func Execute(req Request) Response {
@@ -19,20 +21,18 @@ func Execute(req Request) Response {
 		state = "present"
 	}
 
-	cmdEnv := os.Environ()
-	if req.DockerHost != "" {
-		cmdEnv = append(cmdEnv, fmt.Sprintf("DOCKER_HOST=%s", req.DockerHost))
-	}
-	if req.TLS {
-		cmdEnv = append(cmdEnv, "DOCKER_TLS_VERIFY=1")
-		if req.CAPath != "" {
-			cmdEnv = append(cmdEnv, fmt.Sprintf("DOCKER_CERT_PATH=%s", req.CAPath))
-		}
+	cmdEnv, err := docker.DockerCLIEnv(req.CommonArgs)
+	if err != nil {
+		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
 	}
 
 	if state == "absent" {
 		// docker stack rm <name>
-		cmd := exec.Command("docker", "stack", "rm", req.Name)
+		args, argsErr := docker.DockerCLIArgs(req.CommonArgs, "stack", "rm", req.Name)
+		if argsErr != nil {
+			return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", argsErr)}
+		}
+		cmd := exec.Command("docker", args...)
 		cmd.Env = cmdEnv
 		output, err := cmd.CombinedOutput()
 		outputStr := string(output)
@@ -72,6 +72,10 @@ func Execute(req Request) Response {
 
 	args = append(args, req.Name)
 
+	args, err = docker.DockerCLIArgs(req.CommonArgs, args...)
+	if err != nil {
+		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
+	}
 	cmd := exec.Command("docker", args...)
 	cmd.Env = cmdEnv
 	output, err := cmd.CombinedOutput()

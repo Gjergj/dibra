@@ -6,9 +6,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
@@ -49,10 +49,10 @@ func Execute(req Request) Response {
 	}
 
 	// Create exec configuration
-	execConfig := types.ExecConfig{
+	execConfig := client.ExecCreateOptions{
 		User:         req.User,
 		Privileged:   req.Privileged,
-		Tty:          req.TTY,
+		TTY:          req.TTY,
 		AttachStdin:  req.Stdin != "",
 		AttachStdout: true,
 		AttachStderr: true,
@@ -64,20 +64,20 @@ func Execute(req Request) Response {
 	}
 
 	// Create exec instance
-	execResp, err := cli.ContainerExecCreate(ctx, req.Container, execConfig)
+	execResp, err := cli.ExecCreate(ctx, req.Container, execConfig)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to create exec: %v", err)}
 	}
 	execID := execResp.ID
 
 	// Start exec
-	startCheck := types.ExecStartCheck{
+	startOptions := client.ExecStartOptions{
 		Detach: req.Detach,
-		Tty:    req.TTY,
+		TTY:    req.TTY,
 	}
 
 	if req.Detach {
-		err = cli.ContainerExecStart(ctx, execID, startCheck)
+		_, err = cli.ExecStart(ctx, execID, startOptions)
 		if err != nil {
 			return Response{Failed: true, Msg: fmt.Sprintf("failed to start exec: %v", err)}
 		}
@@ -85,7 +85,7 @@ func Execute(req Request) Response {
 	}
 
 	// Attach to exec
-	hijack, err := cli.ContainerExecAttach(ctx, execID, startCheck)
+	hijack, err := cli.ExecAttach(ctx, execID, client.ExecAttachOptions{TTY: req.TTY})
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to attach to exec: %v", err)}
 	}
@@ -120,7 +120,7 @@ func Execute(req Request) Response {
 	}
 
 	// Get exit code
-	inspectResp, err := cli.ContainerExecInspect(ctx, execID)
+	inspectResp, err := cli.ExecInspect(ctx, execID, client.ExecInspectOptions{})
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to inspect exec: %v", err)}
 	}

@@ -1,10 +1,9 @@
 package docker_node_info
 
 import (
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/swarm"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
@@ -18,10 +17,11 @@ func Execute(req Request) Response {
 	defer cancel()
 
 	// Get docker info for self lookup and manager check
-	info, err := cli.Info(ctx)
+	infoResult, err := cli.Info(ctx, client.InfoOptions{})
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("get docker info", "", err).Error()}
 	}
+	info := infoResult.Info
 
 	if info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
 		return Response{
@@ -45,12 +45,12 @@ func Execute(req Request) Response {
 		}
 
 		// Find node by hostname or ID
-		nodes, err := cli.NodeList(ctx, types.NodeListOptions{})
+		nodes, err := cli.NodeList(ctx, client.NodeListOptions{})
 		if err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("list nodes", "", err).Error()}
 		}
 
-		for _, node := range nodes {
+		for _, node := range nodes.Items {
 			if node.Description.Hostname == req.Name || node.ID == req.Name {
 				targetNodeID = node.ID
 				break
@@ -70,7 +70,7 @@ func Execute(req Request) Response {
 	}
 
 	// Inspect node
-	node, _, err := cli.NodeInspectWithRaw(ctx, targetNodeID)
+	nodeResult, err := cli.NodeInspect(ctx, targetNodeID, client.NodeInspectOptions{})
 	if err != nil {
 		if docker.IsNotFoundError(err) {
 			return Response{
@@ -81,16 +81,17 @@ func Execute(req Request) Response {
 		}
 		return Response{Failed: true, Msg: docker.WrapError("inspect node", targetNodeID, err).Error()}
 	}
+	node := nodeResult.Node
 
 	// Get tasks for this node (only if we're a manager)
 	var taskInfos []TaskInfo
 	if info.Swarm.ControlAvailable {
-		taskFilter := filters.NewArgs()
+		taskFilter := client.Filters{}
 		taskFilter.Add("node", targetNodeID)
-		tasks, err := cli.TaskList(ctx, types.TaskListOptions{Filters: taskFilter})
+		tasks, err := cli.TaskList(ctx, client.TaskListOptions{Filters: taskFilter})
 		if err == nil {
-			taskInfos = make([]TaskInfo, 0, len(tasks))
-			for _, task := range tasks {
+			taskInfos = make([]TaskInfo, 0, len(tasks.Items))
+			for _, task := range tasks.Items {
 				taskInfos = append(taskInfos, TaskInfo{
 					ID:           task.ID,
 					ServiceID:    task.ServiceID,

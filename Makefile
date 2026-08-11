@@ -53,14 +53,14 @@ test-integration-down:
 # Run integration tests (requires container to be running)
 test-integration: test-integration-up
 	@echo "Running integration tests..."
-	go test -tags=integration -v -timeout 20m ./test/integration/... || (make test-integration-down && exit 1)
-	go test -tags=integration -v -timeout 10m ./test/deploy_integration/... || (make test-integration-down && exit 1)
+	go test -tags=integration -count=1 -v -timeout 20m ./test/integration/... || (make test-integration-down && exit 1)
+	go test -tags=integration -count=1 -v -timeout 10m ./test/deploy_integration/... || (make test-integration-down && exit 1)
 	make test-integration-down
 
 # Run integration tests without managing container
 test-integration-only:
-	go test -tags=integration -v -timeout 20m ./test/integration/...
-	go test -tags=integration -v -timeout 10m ./test/deploy_integration/...
+	go test -tags=integration -count=1 -v -timeout 20m ./test/integration/...
+	go test -tags=integration -count=1 -v -timeout 10m ./test/deploy_integration/...
 
 # Start the shared Linux/systemd test container for dibra-deploy tests
 test-deploy-integration-up: test-integration-up
@@ -71,12 +71,12 @@ test-deploy-integration-down: test-integration-down
 # Run only the dibra-deploy black-box integration suite
 test-deploy-integration: test-deploy-integration-up
 	@echo "Running dibra-deploy integration tests..."
-	go test -tags=integration -v -timeout 10m ./test/deploy_integration/... || (make test-deploy-integration-down && exit 1)
+	go test -tags=integration -count=1 -v -timeout 10m ./test/deploy_integration/... || (make test-deploy-integration-down && exit 1)
 	make test-deploy-integration-down
 
 # Run dibra-deploy integration tests with an already-running test container
 test-deploy-integration-only:
-	go test -tags=integration -v -timeout 10m ./test/deploy_integration/...
+	go test -tags=integration -count=1 -v -timeout 10m ./test/deploy_integration/...
 
 # Run dibra-deploy in Linux against an API on the Docker host.
 # make run-deploy-docker-host \

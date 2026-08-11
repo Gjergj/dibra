@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/docker/docker/api/types/volume"
-	"github.com/docker/docker/client"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/types/volume"
+	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
@@ -26,14 +26,14 @@ func Execute(req Request) Response {
 
 	// Helper to inspect volume
 	findVolume := func(name string) (volume.Volume, bool, error) {
-		vol, err := cli.VolumeInspect(ctx, name)
+		result, err := cli.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 		if err != nil {
-			if client.IsErrNotFound(err) {
+			if docker.IsNotFoundError(err) {
 				return volume.Volume{}, false, nil
 			}
 			return volume.Volume{}, false, err
 		}
-		return vol, true, nil
+		return result.Volume, true, nil
 	}
 
 	existing, exists, err := findVolume(req.Name)
@@ -46,7 +46,7 @@ func Execute(req Request) Response {
 			return Response{Changed: false, Msg: "volume already absent"}
 		}
 		// Remove
-		err := cli.VolumeRemove(ctx, req.Name, req.Force)
+		_, err := cli.VolumeRemove(ctx, req.Name, client.VolumeRemoveOptions{Force: req.Force})
 		if err != nil {
 			// Check for "volume in use" error
 			if isVolumeInUseError(err) {
@@ -67,7 +67,7 @@ func Execute(req Request) Response {
 			// Idempotency check
 			if recreate == "always" {
 				// Remove and recreate
-				err := cli.VolumeRemove(ctx, req.Name, req.Force)
+				_, err := cli.VolumeRemove(ctx, req.Name, client.VolumeRemoveOptions{Force: req.Force})
 				if err != nil {
 					if isVolumeInUseError(err) {
 						return Response{Failed: true, Msg: fmt.Sprintf("cannot recreate volume '%s': volume is in use by a container; use force=true or stop the container first", req.Name)}
@@ -106,7 +106,7 @@ func Execute(req Request) Response {
 		}
 
 		// Create
-		opts := volume.CreateOptions{
+		opts := client.VolumeCreateOptions{
 			Name:       req.Name,
 			Driver:     req.Driver,
 			DriverOpts: req.DriverOptions,
@@ -117,18 +117,19 @@ func Execute(req Request) Response {
 		if err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("create volume", req.Name, err).Error()}
 		}
+		created := resp.Volume
 
 		return Response{
 			Changed:    true,
 			Msg:        "volume created",
-			VolumeID:   resp.Name,
-			Name:       resp.Name,
-			Driver:     resp.Driver,
-			Mountpoint: resp.Mountpoint,
-			CreatedAt:  resp.CreatedAt,
-			Scope:      resp.Scope,
-			Labels:     resp.Labels,
-			Options:    resp.Options,
+			VolumeID:   created.Name,
+			Name:       created.Name,
+			Driver:     created.Driver,
+			Mountpoint: created.Mountpoint,
+			CreatedAt:  created.CreatedAt,
+			Scope:      created.Scope,
+			Labels:     created.Labels,
+			Options:    created.Options,
 		}
 	}
 

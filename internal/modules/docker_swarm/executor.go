@@ -3,8 +3,9 @@ package docker_swarm
 import (
 	"fmt"
 
-	"github.com/docker/docker/api/types/swarm"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
@@ -22,10 +23,11 @@ func Execute(req Request) Response {
 		state = "present"
 	}
 
-	info, err := cli.Info(ctx)
+	infoResult, err := cli.Info(ctx, client.InfoOptions{})
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to get docker info: %v", err)}
 	}
+	info := infoResult.Info
 
 	isActive := info.Swarm.LocalNodeState == swarm.LocalNodeStateActive
 
@@ -35,7 +37,7 @@ func Execute(req Request) Response {
 			return Response{Changed: false, Msg: "node is not part of a swarm"}
 		}
 
-		err := cli.SwarmLeave(ctx, req.Force)
+		_, err := cli.SwarmLeave(ctx, client.SwarmLeaveOptions{Force: req.Force})
 		if err != nil {
 			return Response{Failed: true, Msg: fmt.Sprintf("failed to leave swarm: %v", err)}
 		}
@@ -50,10 +52,11 @@ func Execute(req Request) Response {
 			// TODO: Check AdvertiseAddr, etc.
 
 			// Return tokens
-			inspect, err := cli.SwarmInspect(ctx)
+			inspectResult, err := cli.SwarmInspect(ctx, client.SwarmInspectOptions{})
 			if err != nil {
 				return Response{Failed: true, Msg: fmt.Sprintf("failed to inspect swarm: %v", err)}
 			}
+			inspect := inspectResult.Swarm
 
 			return Response{
 				Changed: false,
@@ -76,26 +79,28 @@ func Execute(req Request) Response {
 			listenAddr = "0.0.0.0:2377"
 		}
 
-		reqInit := swarm.InitRequest{
+		reqInit := client.SwarmInitOptions{
 			ListenAddr:      listenAddr,
 			AdvertiseAddr:   req.AdvertiseAddr,
 			ForceNewCluster: req.ForceNewCluster,
 		}
 
-		swarmID, err := cli.SwarmInit(ctx, reqInit)
+		initResult, err := cli.SwarmInit(ctx, reqInit)
 		if err != nil {
 			return Response{Failed: true, Msg: fmt.Sprintf("failed to init swarm: %v", err)}
 		}
 
 		// Get info again for NodeID and Tokens
-		inspect, _ := cli.SwarmInspect(ctx)
-		info, _ := cli.Info(ctx)
+		inspectResult, _ := cli.SwarmInspect(ctx, client.SwarmInspectOptions{})
+		infoResult, _ = cli.Info(ctx, client.InfoOptions{})
+		inspect := inspectResult.Swarm
+		info = infoResult.Info
 
 		return Response{
 			Changed: true,
 			Msg:     "swarm initialized",
-			SwarmID: swarmID,
-			NodeID:  info.Swarm.NodeID,
+			SwarmID: inspect.ID,
+			NodeID:  initResult.NodeID,
 			JoinTokens: struct {
 				Worker  string `json:"worker,omitempty"`
 				Manager string `json:"manager,omitempty"`
@@ -112,14 +117,14 @@ func Execute(req Request) Response {
 			return Response{Changed: false, Msg: "already in a swarm"}
 		}
 
-		reqJoin := swarm.JoinRequest{
+		reqJoin := client.SwarmJoinOptions{
 			ListenAddr:    req.ListenAddr,
 			AdvertiseAddr: req.AdvertiseAddr,
 			RemoteAddrs:   req.RemoteAddrs,
 			JoinToken:     req.JoinToken,
 		}
 
-		err := cli.SwarmJoin(ctx, reqJoin)
+		_, err := cli.SwarmJoin(ctx, reqJoin)
 		if err != nil {
 			return Response{Failed: true, Msg: fmt.Sprintf("failed to join swarm: %v", err)}
 		}

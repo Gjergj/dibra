@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/errdefs"
+	"github.com/containerd/errdefs"
 )
 
 // DockerError wraps a Docker API error with additional context.
@@ -43,10 +42,6 @@ func WrapError(operation, target string, err error) error {
 func IsNotFoundError(err error) bool {
 	if err == nil {
 		return false
-	}
-	// Check Docker SDK error
-	if client.IsErrNotFound(err) {
-		return true
 	}
 	// Check errdefs
 	if errdefs.IsNotFound(err) {
@@ -135,7 +130,7 @@ func IsForbiddenError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errdefs.IsForbidden(err) {
+	if errdefs.IsPermissionDenied(err) {
 		return true
 	}
 	errStr := strings.ToLower(err.Error())

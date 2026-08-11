@@ -3,12 +3,12 @@ package docker_network
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"sort"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
@@ -44,26 +44,26 @@ func Execute(req Request) Response {
 }
 
 // findNetwork looks up a network by name
-func findNetwork(cli *client.Client, ctx context.Context, name string) (types.NetworkResource, bool, error) {
-	net, err := cli.NetworkInspect(ctx, name, types.NetworkInspectOptions{Verbose: true})
+func findNetwork(cli *client.Client, ctx context.Context, name string) (network.Inspect, bool, error) {
+	result, err := cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{Verbose: true})
 	if err != nil {
 		if docker.IsNotFoundError(err) {
-			return types.NetworkResource{}, false, nil
+			return network.Inspect{}, false, nil
 		}
-		return types.NetworkResource{}, false, err
+		return network.Inspect{}, false, err
 	}
-	return net, true, nil
+	return result.Network, true, nil
 }
 
 // handleAbsent removes a network if it exists
-func handleAbsent(cli *client.Client, ctx context.Context, name string, existing types.NetworkResource, exists bool) Response {
+func handleAbsent(cli *client.Client, ctx context.Context, name string, existing network.Inspect, exists bool) Response {
 	if !exists {
 		return Response{Changed: false, Msg: "network already absent"}
 	}
 
 	// Disconnect any connected containers first
 	for containerID := range existing.Containers {
-		if err := cli.NetworkDisconnect(ctx, existing.ID, containerID, true); err != nil {
+		if _, err := cli.NetworkDisconnect(ctx, existing.ID, client.NetworkDisconnectOptions{Container: containerID, Force: true}); err != nil {
 			// Log but continue - container might have been removed
 			if !docker.IsNotFoundError(err) {
 				return Response{Failed: true, Msg: docker.WrapError("disconnect container", containerID, err).Error()}
@@ -71,14 +71,14 @@ func handleAbsent(cli *client.Client, ctx context.Context, name string, existing
 		}
 	}
 
-	if err := cli.NetworkRemove(ctx, name); err != nil {
+	if _, err := cli.NetworkRemove(ctx, name, client.NetworkRemoveOptions{}); err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("remove network", name, err).Error()}
 	}
 	return Response{Changed: true, Msg: "network removed", NetworkID: existing.ID}
 }
 
 // handlePresent ensures a network exists with the desired configuration
-func handlePresent(cli *client.Client, ctx context.Context, req Request, existing types.NetworkResource, exists bool) Response {
+func handlePresent(cli *client.Client, ctx context.Context, req Request, existing network.Inspect, exists bool) Response {
 	diffBuilder := docker.NewDiffBuilder()
 
 	if exists {
@@ -124,7 +124,7 @@ func handlePresent(cli *client.Client, ctx context.Context, req Request, existin
 	// Network exists, check for container connection changes
 	changed := false
 	if len(req.Connected) > 0 || (!req.Appends && len(existing.Containers) > 0) {
-		currentContainers := make(map[string]types.EndpointResource)
+		currentContainers := make(map[string]network.EndpointResource)
 		for id, endpoint := range existing.Containers {
 			currentContainers[id] = endpoint
 		}
@@ -148,7 +148,7 @@ func handlePresent(cli *client.Client, ctx context.Context, req Request, existin
 // checkNeedsRecreate compares immutable network settings
 // Only checks fields that were explicitly set in the request (non-zero values)
 // This allows updating just container connections without re-specifying all options
-func checkNeedsRecreate(req Request, existing types.NetworkResource, diff *docker.DiffBuilder) bool {
+func checkNeedsRecreate(req Request, existing network.Inspect, diff *docker.DiffBuilder) bool {
 	needsRecreate := false
 
 	// Driver is immutable - only check if explicitly specified
@@ -250,9 +250,9 @@ func formatExistingIPAM(ipam network.IPAM) []map[string]string {
 	result := make([]map[string]string, len(ipam.Config))
 	for i, cfg := range ipam.Config {
 		result[i] = map[string]string{
-			"subnet":   cfg.Subnet,
-			"gateway":  cfg.Gateway,
-			"ip_range": cfg.IPRange,
+			"subnet":   prefixString(cfg.Subnet),
+			"gateway":  addrString(cfg.Gateway),
+			"ip_range": prefixString(cfg.IPRange),
 		}
 	}
 	return result
@@ -260,15 +260,17 @@ func formatExistingIPAM(ipam network.IPAM) []map[string]string {
 
 // createNetwork creates a new Docker network with the specified configuration
 func createNetwork(cli *client.Client, ctx context.Context, req Request) (string, error) {
-	opts := types.NetworkCreate{
+	opts := client.NetworkCreateOptions{
 		Driver:     req.Driver,
 		Options:    req.Options,
 		Internal:   req.Internal,
 		Attachable: req.Attachable,
 		Labels:     req.Labels,
-		EnableIPv6: req.EnableIPv6,
 		ConfigOnly: req.ConfigOnly,
 		Ingress:    req.Ingress,
+	}
+	if req.EnableIPv6 {
+		opts.EnableIPv6 = &req.EnableIPv6
 	}
 
 	// Handle Scope if specified
@@ -278,20 +280,38 @@ func createNetwork(cli *client.Client, ctx context.Context, req Request) (string
 
 	// Handle ConfigFrom
 	if req.ConfigFrom != "" {
-		opts.ConfigFrom = &network.ConfigReference{
-			Network: req.ConfigFrom,
-		}
+		opts.ConfigFrom = req.ConfigFrom
 	}
 
 	// Build IPAM configuration
 	if len(req.IPAMConfig) > 0 || req.IPAMDriver != "" {
 		ipamConfigs := make([]network.IPAMConfig, 0, len(req.IPAMConfig))
 		for _, cfg := range req.IPAMConfig {
+			subnet, err := parsePrefix(cfg.Subnet, "subnet")
+			if err != nil {
+				return "", err
+			}
+			gateway, err := parseAddress(cfg.Gateway, "gateway")
+			if err != nil {
+				return "", err
+			}
+			ipRange, err := parsePrefix(cfg.IPRange, "ip_range")
+			if err != nil {
+				return "", err
+			}
+			auxAddresses := make(map[string]netip.Addr, len(cfg.AuxAddress))
+			for name, value := range cfg.AuxAddress {
+				address, err := parseAddress(value, fmt.Sprintf("aux_address.%s", name))
+				if err != nil {
+					return "", err
+				}
+				auxAddresses[name] = address
+			}
 			ipamCfg := network.IPAMConfig{
-				Subnet:     cfg.Subnet,
-				Gateway:    cfg.Gateway,
-				IPRange:    cfg.IPRange,
-				AuxAddress: cfg.AuxAddress,
+				Subnet:     subnet,
+				Gateway:    gateway,
+				IPRange:    ipRange,
+				AuxAddress: auxAddresses,
 			}
 			ipamConfigs = append(ipamConfigs, ipamCfg)
 		}
@@ -317,7 +337,7 @@ func createNetwork(cli *client.Client, ctx context.Context, req Request) (string
 }
 
 // reconcileConnectedContainers ensures the desired containers are connected to the network
-func reconcileConnectedContainers(cli *client.Client, ctx context.Context, networkID string, desired []ConnectedContainer, current map[string]types.EndpointResource, appends bool) (bool, error) {
+func reconcileConnectedContainers(cli *client.Client, ctx context.Context, networkID string, desired []ConnectedContainer, current map[string]network.EndpointResource, appends bool) (bool, error) {
 	changed := false
 	// Build map of desired container names/IDs
 	desiredMap := make(map[string]ConnectedContainer)
@@ -338,7 +358,7 @@ func reconcileConnectedContainers(cli *client.Client, ctx context.Context, netwo
 			_, wantedByName := desiredMap[containerName]
 
 			if !wantedByID && !wantedByName {
-				if err := cli.NetworkDisconnect(ctx, networkID, containerID, false); err != nil {
+				if _, err := cli.NetworkDisconnect(ctx, networkID, client.NetworkDisconnectOptions{Container: containerID}); err != nil {
 					if !docker.IsNotFoundError(err) {
 						return false, docker.WrapError("disconnect container", containerName, err)
 					}
@@ -352,7 +372,7 @@ func reconcileConnectedContainers(cli *client.Client, ctx context.Context, netwo
 	for _, c := range desired {
 		// Check if already connected
 		alreadyConnected := false
-		var currentEndpoint types.EndpointResource
+		var currentEndpoint network.EndpointResource
 		for containerID, endpoint := range current {
 			if containerID == c.Name || endpoint.Name == c.Name {
 				alreadyConnected = true
@@ -369,9 +389,17 @@ func reconcileConnectedContainers(cli *client.Client, ctx context.Context, netwo
 		}
 
 		if c.IPv4Address != "" || c.IPv6Address != "" {
+			ipv4Address, err := parseAddress(c.IPv4Address, "ipv4_address")
+			if err != nil {
+				return false, docker.WrapError("connect container", c.Name, err)
+			}
+			ipv6Address, err := parseAddress(c.IPv6Address, "ipv6_address")
+			if err != nil {
+				return false, docker.WrapError("connect container", c.Name, err)
+			}
 			endpointSettings.IPAMConfig = &network.EndpointIPAMConfig{
-				IPv4Address: c.IPv4Address,
-				IPv6Address: c.IPv6Address,
+				IPv4Address: ipv4Address,
+				IPv6Address: ipv6Address,
 			}
 		}
 
@@ -379,19 +407,19 @@ func reconcileConnectedContainers(cli *client.Client, ctx context.Context, netwo
 			// Check if endpoint settings need updating
 			if needsEndpointUpdate(c, currentEndpoint) {
 				// Disconnect and reconnect with new settings
-				if err := cli.NetworkDisconnect(ctx, networkID, c.Name, false); err != nil {
+				if _, err := cli.NetworkDisconnect(ctx, networkID, client.NetworkDisconnectOptions{Container: c.Name}); err != nil {
 					if !docker.IsNotFoundError(err) {
 						return false, docker.WrapError("disconnect container for update", c.Name, err)
 					}
 				}
-				if err := cli.NetworkConnect(ctx, networkID, c.Name, endpointSettings); err != nil {
+				if _, err := cli.NetworkConnect(ctx, networkID, client.NetworkConnectOptions{Container: c.Name, EndpointConfig: endpointSettings}); err != nil {
 					return false, docker.WrapError("reconnect container", c.Name, err)
 				}
 				changed = true
 			}
 		} else {
 			// Connect new container
-			if err := cli.NetworkConnect(ctx, networkID, c.Name, endpointSettings); err != nil {
+			if _, err := cli.NetworkConnect(ctx, networkID, client.NetworkConnectOptions{Container: c.Name, EndpointConfig: endpointSettings}); err != nil {
 				// Check if it's because container doesn't exist
 				if docker.IsNotFoundError(err) {
 					return false, docker.WrapError("connect container (not found)", c.Name, err)
@@ -407,15 +435,15 @@ func reconcileConnectedContainers(cli *client.Client, ctx context.Context, netwo
 
 // needsEndpointUpdate checks if a container's endpoint settings need updating
 // Note: EndpointResource has limited fields - only basic IP info is available
-func needsEndpointUpdate(desired ConnectedContainer, current types.EndpointResource) bool {
+func needsEndpointUpdate(desired ConnectedContainer, current network.EndpointResource) bool {
 	// Check IP addresses
 	if desired.IPv4Address != "" {
-		if current.IPv4Address != desired.IPv4Address {
+		if !current.IPv4Address.IsValid() || current.IPv4Address.Addr().String() != desired.IPv4Address {
 			return true
 		}
 	}
 	if desired.IPv6Address != "" {
-		if current.IPv6Address != desired.IPv6Address {
+		if !current.IPv6Address.IsValid() || current.IPv6Address.Addr().String() != desired.IPv6Address {
 			return true
 		}
 	}
@@ -425,6 +453,42 @@ func needsEndpointUpdate(desired ConnectedContainer, current types.EndpointResou
 	// This is a limitation - aliases can only be checked via container inspect
 
 	return false
+}
+
+func parsePrefix(value, field string) (netip.Prefix, error) {
+	if value == "" {
+		return netip.Prefix{}, nil
+	}
+	prefix, err := netip.ParsePrefix(value)
+	if err != nil {
+		return netip.Prefix{}, fmt.Errorf("invalid %s %q: %w", field, value, err)
+	}
+	return prefix, nil
+}
+
+func parseAddress(value, field string) (netip.Addr, error) {
+	if value == "" {
+		return netip.Addr{}, nil
+	}
+	address, err := netip.ParseAddr(value)
+	if err != nil {
+		return netip.Addr{}, fmt.Errorf("invalid %s %q: %w", field, value, err)
+	}
+	return address, nil
+}
+
+func prefixString(prefix netip.Prefix) string {
+	if !prefix.IsValid() {
+		return ""
+	}
+	return prefix.String()
+}
+
+func addrString(address netip.Addr) string {
+	if !address.IsValid() {
+		return ""
+	}
+	return address.String()
 }
 
 // mapsContain checks if all keys in 'required' exist in 'actual' with the same values

@@ -1,8 +1,8 @@
 package docker_node_info
 
 import (
-	"github.com/docker/docker/api/types/swarm"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/types/swarm"
 )
 
 type Request struct {

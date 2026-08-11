@@ -3,9 +3,8 @@ package docker_prune
 import (
 	"fmt"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
@@ -23,10 +22,11 @@ func Execute(req Request) Response {
 	// Prune Containers
 	if req.Containers {
 		f := buildFilters(req.ContainersFilters)
-		pruneReport, err := cli.ContainersPrune(ctx, f)
+		result, err := cli.ContainerPrune(ctx, client.ContainerPruneOptions{Filters: f})
 		if err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("prune containers", "", err).Error()}
 		}
+		pruneReport := result.Report
 		if len(pruneReport.ContainersDeleted) > 0 {
 			resp.Changed = true
 			resp.ContainersDeleted = pruneReport.ContainersDeleted
@@ -37,10 +37,11 @@ func Execute(req Request) Response {
 	// Prune Images
 	if req.Images {
 		f := buildFilters(req.ImagesFilters)
-		pruneReport, err := cli.ImagesPrune(ctx, f)
+		result, err := cli.ImagePrune(ctx, client.ImagePruneOptions{Filters: f})
 		if err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("prune images", "", err).Error()}
 		}
+		pruneReport := result.Report
 		if len(pruneReport.ImagesDeleted) > 0 {
 			resp.Changed = true
 			for _, img := range pruneReport.ImagesDeleted {
@@ -55,10 +56,11 @@ func Execute(req Request) Response {
 	// Prune Networks
 	if req.Networks {
 		f := buildFilters(req.NetworksFilters)
-		pruneReport, err := cli.NetworksPrune(ctx, f)
+		result, err := cli.NetworkPrune(ctx, client.NetworkPruneOptions{Filters: f})
 		if err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("prune networks", "", err).Error()}
 		}
+		pruneReport := result.Report
 		if len(pruneReport.NetworksDeleted) > 0 {
 			resp.Changed = true
 			resp.NetworksDeleted = pruneReport.NetworksDeleted
@@ -68,10 +70,11 @@ func Execute(req Request) Response {
 	// Prune Volumes
 	if req.Volumes {
 		f := buildFilters(req.VolumesFilters)
-		pruneReport, err := cli.VolumesPrune(ctx, f)
+		result, err := cli.VolumePrune(ctx, client.VolumePruneOptions{Filters: f})
 		if err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("prune volumes", "", err).Error()}
 		}
+		pruneReport := result.Report
 		if len(pruneReport.VolumesDeleted) > 0 {
 			resp.Changed = true
 			resp.VolumesDeleted = pruneReport.VolumesDeleted
@@ -81,7 +84,7 @@ func Execute(req Request) Response {
 
 	// Prune Builder
 	if req.Builder {
-		opts := types.BuildCachePruneOptions{
+		opts := client.BuildCachePruneOptions{
 			All: req.BuilderCacheAll,
 		}
 		if req.BuilderCacheFilters != nil {
@@ -92,10 +95,11 @@ func Execute(req Request) Response {
 			// Some older daemons may not support this; treat as soft error
 			return Response{Failed: true, Msg: docker.WrapError("prune builder cache", "", err).Error()}
 		}
-		if pruneReport.SpaceReclaimed > 0 || len(pruneReport.CachesDeleted) > 0 {
+		report := pruneReport.Report
+		if report.SpaceReclaimed > 0 || len(report.CachesDeleted) > 0 {
 			resp.Changed = true
-			resp.BuildCacheItemsUsed = len(pruneReport.CachesDeleted)
-			reclaimed += pruneReport.SpaceReclaimed
+			resp.BuildCacheItemsUsed = len(report.CachesDeleted)
+			reclaimed += report.SpaceReclaimed
 		}
 	}
 
@@ -110,8 +114,8 @@ func Execute(req Request) Response {
 }
 
 // buildFilters converts a map of filter key-value pairs to Docker filters.Args
-func buildFilters(filterMap map[string]string) filters.Args {
-	f := filters.NewArgs()
+func buildFilters(filterMap map[string]string) client.Filters {
+	f := client.Filters{}
 	for k, v := range filterMap {
 		f.Add(k, v)
 	}
