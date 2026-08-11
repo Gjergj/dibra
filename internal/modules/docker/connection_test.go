@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -20,7 +21,17 @@ var dockerEnvironmentKeys = []string{
 func clearDockerEnvironment(t *testing.T) {
 	t.Helper()
 	for _, key := range dockerEnvironmentKeys {
-		t.Setenv(key, "")
+		value, found := os.LookupEnv(key)
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("unset %s: %v", key, err)
+		}
+		t.Cleanup(func() {
+			if found {
+				_ = os.Setenv(key, value)
+			} else {
+				_ = os.Unsetenv(key)
+			}
+		})
 	}
 }
 
@@ -80,15 +91,19 @@ func TestResolveConnectionArgumentsOverrideEnvironment(t *testing.T) {
 	t.Setenv("DOCKER_TIMEOUT", "11")
 	t.Setenv("DOCKER_CERT_PATH", "/environment-certs")
 	t.Setenv("DOCKER_TLS_HOSTNAME", "environment.example")
+	t.Setenv("DOCKER_TLS", "true")
+	t.Setenv("DOCKER_TLS_VERIFY", "true")
 
 	got, err := ResolveConnection(CommonArgs{
-		DockerHost:  "tcp://argument:2376",
-		APIVersion:  "1.55",
-		Timeout:     23,
-		CAPath:      "/args/ca.pem",
-		ClientCert:  "/args/cert.pem",
-		ClientKey:   "/args/key.pem",
-		TLSHostname: "argument.example",
+		DockerHost:    pointer("tcp://argument:2376"),
+		APIVersion:    pointer("1.55"),
+		Timeout:       pointer(23),
+		CAPath:        pointer("/args/ca.pem"),
+		ClientCert:    pointer("/args/cert.pem"),
+		ClientKey:     pointer("/args/key.pem"),
+		TLSHostname:   pointer("argument.example"),
+		TLS:           pointer(false),
+		ValidateCerts: pointer(false),
 	})
 	if err != nil {
 		t.Fatalf("ResolveConnection() error = %v", err)
@@ -102,14 +117,63 @@ func TestResolveConnectionArgumentsOverrideEnvironment(t *testing.T) {
 	if got.TLSHostname != "argument.example" {
 		t.Errorf("TLSHostname = %q, want argument.example", got.TLSHostname)
 	}
+	if got.TLS || got.ValidateCerts {
+		t.Errorf("explicit false TLS arguments did not override environment: %#v", got)
+	}
+}
+
+func TestResolveConnectionExplicitZeroValuesOverrideEnvironment(t *testing.T) {
+	environment := StaticEnvironment{
+		"DOCKER_HOST":         "tcp://environment:2376",
+		"DOCKER_API_VERSION":  "1.55",
+		"DOCKER_TIMEOUT":      "45",
+		"DOCKER_CERT_PATH":    "/environment-certs",
+		"DOCKER_TLS_HOSTNAME": "environment.example",
+		"DOCKER_TLS":          "true",
+		"DOCKER_TLS_VERIFY":   "true",
+	}
+
+	got, err := ResolveConnectionWithEnvironment(CommonArgs{
+		DockerHost:    pointer(""),
+		APIVersion:    pointer(""),
+		Timeout:       pointer(0),
+		CAPath:        pointer(""),
+		ClientCert:    pointer(""),
+		ClientKey:     pointer(""),
+		TLSHostname:   pointer(""),
+		TLS:           pointer(false),
+		ValidateCerts: pointer(false),
+	}, environment)
+	if err != nil {
+		t.Fatalf("ResolveConnectionWithEnvironment() error = %v", err)
+	}
+	if got.DockerHost != "" || got.APIVersion != "" || got.Timeout != 0 {
+		t.Fatalf("explicit zero values did not override environment: %#v", got)
+	}
+	if got.CAPath != "" || got.ClientCert != "" || got.ClientKey != "" || got.TLSHostname != "" {
+		t.Errorf("explicit empty TLS paths did not override environment: %#v", got)
+	}
+	if got.TLS || got.ValidateCerts {
+		t.Errorf("explicit false TLS values did not override environment: %#v", got)
+	}
 }
 
 func TestResolveConnectionValidatesSharedOptions(t *testing.T) {
 	t.Run("certificate pair", func(t *testing.T) {
 		clearDockerEnvironment(t)
-		_, err := ResolveConnection(CommonArgs{ClientCert: "/cert.pem"})
+		_, err := ResolveConnection(CommonArgs{ClientCert: pointer("/cert.pem")})
 		if err == nil || !strings.Contains(err.Error(), "specified together") {
 			t.Fatalf("ResolveConnection() error = %v, want client certificate pair error", err)
+		}
+	})
+
+	t.Run("certificate environment does not complete explicit pair", func(t *testing.T) {
+		_, err := ResolveConnectionWithEnvironment(
+			CommonArgs{ClientCert: pointer("/cert.pem")},
+			StaticEnvironment{"DOCKER_CERT_PATH": "/environment-certs"},
+		)
+		if err == nil || !strings.Contains(err.Error(), "specified together") {
+			t.Fatalf("ResolveConnectionWithEnvironment() error = %v, want client certificate pair error", err)
 		}
 	})
 
@@ -117,14 +181,14 @@ func TestResolveConnectionValidatesSharedOptions(t *testing.T) {
 		clearDockerEnvironment(t)
 		t.Setenv("DOCKER_TIMEOUT", "never")
 		_, err := ResolveConnection(CommonArgs{})
-		if err == nil || !strings.Contains(err.Error(), "positive integer") {
+		if err == nil || !strings.Contains(err.Error(), "must be an integer") {
 			t.Fatalf("ResolveConnection() error = %v, want timeout error", err)
 		}
 	})
 
 	t.Run("host and context", func(t *testing.T) {
 		clearDockerEnvironment(t)
-		_, err := ResolveConnection(CommonArgs{DockerHost: "unix:///tmp/docker.sock", CLIContext: "production"})
+		_, err := ResolveConnection(CommonArgs{DockerHost: pointer("unix:///tmp/docker.sock"), CLIContext: pointer("production")})
 		if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
 			t.Fatalf("ResolveConnection() error = %v, want mutual exclusion error", err)
 		}
@@ -134,15 +198,15 @@ func TestResolveConnectionValidatesSharedOptions(t *testing.T) {
 func TestDockerCLIConnection(t *testing.T) {
 	clearDockerEnvironment(t)
 	common := CommonArgs{
-		DockerHost:    "tcp://daemon.example:2376",
-		TLS:           true,
-		ValidateCerts: true,
-		CAPath:        "/certs/ca.pem",
-		ClientCert:    "/certs/cert.pem",
-		ClientKey:     "/certs/key.pem",
-		TLSHostname:   "tls.example",
-		APIVersion:    "1.55",
-		Debug:         true,
+		DockerHost:    pointer("tcp://daemon.example:2376"),
+		TLS:           pointer(true),
+		ValidateCerts: pointer(true),
+		CAPath:        pointer("/certs/ca.pem"),
+		ClientCert:    pointer("/certs/cert.pem"),
+		ClientKey:     pointer("/certs/key.pem"),
+		TLSHostname:   pointer("tls.example"),
+		APIVersion:    pointer("1.55"),
+		Debug:         pointer(true),
 	}
 
 	gotArgs, err := DockerCLIArgs(common, "compose", "version")
@@ -174,7 +238,7 @@ func TestDockerCLIConnection(t *testing.T) {
 func TestDockerCLIContextDoesNotInjectDefaultHost(t *testing.T) {
 	clearDockerEnvironment(t)
 
-	got, err := DockerCLIArgs(CommonArgs{CLIContext: "production"}, "info")
+	got, err := DockerCLIArgs(CommonArgs{CLIContext: pointer("production")}, "info")
 	if err != nil {
 		t.Fatalf("DockerCLIArgs() error = %v", err)
 	}
@@ -184,13 +248,77 @@ func TestDockerCLIContextDoesNotInjectDefaultHost(t *testing.T) {
 	}
 }
 
+func TestDockerCLIContextConflictsWithSuppliedEmptyHost(t *testing.T) {
+	_, err := DockerCLIArgsWithEnvironment(
+		CommonArgs{CLIContext: pointer("production")},
+		StaticEnvironment{"DOCKER_HOST": ""},
+		"info",
+	)
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("DockerCLIArgsWithEnvironment() error = %v, want mutual exclusion error", err)
+	}
+}
+
+func TestCLIAndAPIHostnameFallbacksRemainDistinct(t *testing.T) {
+	environment := StaticEnvironment{"DOCKER_HOST": "tcp://daemon.example:2376"}
+
+	apiConnection, err := ResolveConnectionWithEnvironment(CommonArgs{}, environment)
+	if err != nil {
+		t.Fatalf("ResolveConnectionWithEnvironment() error = %v", err)
+	}
+	if apiConnection.TLSHostname != "daemon.example" {
+		t.Errorf("API TLSHostname = %q, want daemon.example", apiConnection.TLSHostname)
+	}
+
+	cliConnection, err := resolveCLIConnection(CommonArgs{}, environment)
+	if err != nil {
+		t.Fatalf("resolveCLIConnection() error = %v", err)
+	}
+	if cliConnection.TLSHostname != "" {
+		t.Errorf("CLI TLSHostname = %q, want empty unless explicitly configured", cliConnection.TLSHostname)
+	}
+}
+
+func TestDockerCLIEnvironmentUsesResolvedPrecedence(t *testing.T) {
+	environment := StaticEnvironment{
+		"DOCKER_HOST":         "tcp://environment:2376",
+		"DOCKER_CONTEXT":      "ambient-context",
+		"DOCKER_API_VERSION":  "1.44",
+		"DOCKER_TLS_HOSTNAME": "environment.example",
+		"UNCHANGED":           "value",
+	}
+	got, err := DockerCLIEnvWithEnvironment(CommonArgs{
+		APIVersion:  pointer("1.55"),
+		TLSHostname: pointer("argument.example"),
+	}, environment)
+	if err != nil {
+		t.Fatalf("DockerCLIEnvWithEnvironment() error = %v", err)
+	}
+	for _, want := range []string{
+		"DOCKER_API_VERSION=1.55",
+		"DOCKER_TLS_HOSTNAME=argument.example",
+		"UNCHANGED=value",
+	} {
+		if !environmentContains(got, want) {
+			t.Errorf("environment missing %q: %#v", want, got)
+		}
+	}
+	for _, removed := range []string{"DOCKER_HOST=", "DOCKER_CONTEXT="} {
+		for _, entry := range got {
+			if strings.HasPrefix(entry, removed) {
+				t.Errorf("environment retained conflicting value %q", entry)
+			}
+		}
+	}
+}
+
 func TestGetClientUsesResolvedHostAndAPIVersion(t *testing.T) {
 	clearDockerEnvironment(t)
 
 	cli, err := GetClient(CommonArgs{
-		DockerHost: "unix:///tmp/dibra-docker.sock",
-		APIVersion: "1.44",
-		Timeout:    2,
+		DockerHost: pointer("unix:///tmp/dibra-docker.sock"),
+		APIVersion: pointer("1.44"),
+		Timeout:    pointer(2),
 	})
 	if err != nil {
 		t.Fatalf("GetClient() error = %v", err)
@@ -207,7 +335,7 @@ func TestGetClientUsesResolvedHostAndAPIVersion(t *testing.T) {
 func TestGetClientBuildsOpenSSHTransport(t *testing.T) {
 	clearDockerEnvironment(t)
 
-	cli, err := GetClient(CommonArgs{DockerHost: "ssh://deploy@docker.example", UseSSHClient: true})
+	cli, err := GetClient(CommonArgs{DockerHost: pointer("ssh://deploy@docker.example"), UseSSHClient: pointer(true)})
 	if err != nil {
 		t.Fatalf("GetClient() error = %v", err)
 	}
@@ -237,4 +365,8 @@ func environmentContains(environment []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func pointer[T any](value T) *T {
+	return &value
 }

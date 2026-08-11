@@ -197,6 +197,22 @@ The common arguments are `docker_host`, `api_version`, `timeout`, `tls`,
 `cli_context`, `debug`, and `use_ssh_client`. The resolver owns defaults,
 environment fallbacks, TLS hostname derivation, and validation. In particular:
 
+- Connection values use upstream precedence: an explicitly supplied module
+  argument wins over its environment variable, which wins over the default.
+  Explicit `false`, `0`, and empty-string values are still supplied values and
+  must suppress environment fallbacks. The pointer fields in
+  `docker.CommonArgs` preserve this omitted-versus-explicit distinction across
+  JSON decoding; do not replace them with plain value fields.
+- API-backed modules consume `DOCKER_HOST`, `DOCKER_API_VERSION`,
+  `DOCKER_TIMEOUT`, `DOCKER_CERT_PATH`, `DOCKER_TLS`, `DOCKER_TLS_VERIFY`, and
+  `DOCKER_TLS_HOSTNAME`. `DOCKER_CERT_PATH` supplies `ca.pem`, `cert.pem`, and
+  `key.pem` only for the corresponding omitted arguments.
+- CLI-backed modules resolve their supported connection environment through
+  the CLI resolver, scrub conflicting ambient Docker variables from the child
+  process, and pass the effective host/TLS settings as flags. API-backed
+  connections derive an omitted TLS hostname from `docker_host`; CLI-backed
+  connections leave hostname selection to the Docker CLI unless
+  `tls_hostname` or `DOCKER_TLS_HOSTNAME` is set.
 - `client_cert` and `client_key` must be supplied together.
 - `validate_certs: true` implies TLS; `tls: true` without validation permits an
   unverified TLS connection.
@@ -217,6 +233,19 @@ Docker Compose version. Compose-backed modules invoke the installed
 by this repository. `github.com/docker/cli v28.5.2` supplies only the OpenSSH
 connection helper compatible with Dibra's Go 1.24 toolchain; it neither bundles
 nor selects the runtime Docker CLI or Compose plugin.
+
+Docker executor side effects are injected through `docker.Dependencies` in
+`internal/modules/docker/dependencies.go`. Every Docker executor keeps the
+production `Execute(req)` entry point and also exposes
+`ExecuteWithDependencies(req, dependencies)` for direct unit tests. Use the
+injected Moby `client.APIClient` factory, `FileSystem`, `Clock`, `Environment`,
+and `CLIRunner`; do not call `docker.GetClient`, `os` filesystem functions,
+`time.Now`/`time.Sleep`, or `exec.Command` directly from a Docker executor.
+Fakes can embed `client.APIClient`, `docker.FileSystem`, or `docker.Clock` and
+override only the methods exercised by the test. Connection precedence belongs
+in table-driven unit tests; the integration lane also invokes the agent with a
+controlled remote environment to prove fallback and explicit-argument
+precedence against a real daemon.
 
 ### Module Invocation State
 

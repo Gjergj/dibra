@@ -13,7 +13,13 @@ type ComposeCommonArgs struct {
 
 // GetComposeBaseArgs returns the base CLI arguments for docker compose.
 func GetComposeBaseArgs(args ComposeCommonArgs, common CommonArgs) ([]string, error) {
-	cliArgs, err := DockerCLIArgs(common, "compose")
+	return GetComposeBaseArgsWithEnvironment(args, common, OSEnvironment{})
+}
+
+// GetComposeBaseArgsWithEnvironment is the injectable form of
+// GetComposeBaseArgs.
+func GetComposeBaseArgsWithEnvironment(args ComposeCommonArgs, common CommonArgs, environment Environment) ([]string, error) {
+	cliArgs, err := DockerCLIArgsWithEnvironment(common, environment, "compose")
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +37,12 @@ func GetComposeBaseArgs(args ComposeCommonArgs, common CommonArgs) ([]string, er
 
 // GetComposeEnv returns the environment variables for docker compose execution.
 func GetComposeEnv(args ComposeCommonArgs, common CommonArgs) ([]string, error) {
-	cmdEnv, err := DockerCLIEnv(common)
+	return GetComposeEnvWithEnvironment(args, common, OSEnvironment{})
+}
+
+// GetComposeEnvWithEnvironment is the injectable form of GetComposeEnv.
+func GetComposeEnvWithEnvironment(args ComposeCommonArgs, common CommonArgs, environment Environment) ([]string, error) {
+	cmdEnv, err := DockerCLIEnvWithEnvironment(common, environment)
 	if err != nil {
 		return nil, err
 	}

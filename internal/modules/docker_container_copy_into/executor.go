@@ -8,20 +8,24 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
-	cli, err := docker.GetClient(req.CommonArgs)
+	return ExecuteWithDependencies(req, docker.Dependencies{})
+}
+
+func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	dependencies = dependencies.Resolve()
+	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to create docker client: %v", err)}
 	}
 	defer cli.Close()
 
-	ctx, cancel := docker.GetContext(req.CommonArgs)
+	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
 	if req.Container == "" {
@@ -56,14 +60,14 @@ func Execute(req Request) Response {
 		localPath := req.Path
 		if req.LocalFollow {
 			// Resolve symlinks
-			resolved, err := filepath.EvalSymlinks(localPath)
+			resolved, err := dependencies.FileSystem.EvalSymlinks(localPath)
 			if err != nil {
 				return Response{Failed: true, Msg: fmt.Sprintf("failed to resolve symlink: %v", err)}
 			}
 			localPath = resolved
 		}
 
-		info, err := os.Stat(localPath)
+		info, err := dependencies.FileSystem.Stat(localPath)
 		if err != nil {
 			return Response{Failed: true, Msg: fmt.Sprintf("failed to stat local file: %v", err)}
 		}
@@ -71,7 +75,7 @@ func Execute(req Request) Response {
 			return Response{Failed: true, Msg: "local path must be a regular file"}
 		}
 
-		fileContent, err = os.ReadFile(localPath)
+		fileContent, err = dependencies.FileSystem.ReadFile(localPath)
 		if err != nil {
 			return Response{Failed: true, Msg: fmt.Sprintf("failed to read local file: %v", err)}
 		}
@@ -126,7 +130,7 @@ func Execute(req Request) Response {
 		Size:    int64(len(fileContent)),
 		Uid:     ownerID,
 		Gid:     groupID,
-		ModTime: time.Now(),
+		ModTime: dependencies.Clock.Now(),
 	}
 
 	if err := tw.WriteHeader(hdr); err != nil {

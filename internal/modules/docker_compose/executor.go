@@ -1,9 +1,9 @@
 package docker_compose
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 
@@ -24,8 +24,13 @@ var actionPatterns = []*regexp.Regexp{
 }
 
 func Execute(req Request) Response {
+	return ExecuteWithDependencies(req, docker.Dependencies{})
+}
+
+func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	dependencies = dependencies.Resolve()
 	// Check if directory exists
-	if _, err := os.Stat(req.ProjectSrc); os.IsNotExist(err) {
+	if _, err := dependencies.FileSystem.Stat(req.ProjectSrc); os.IsNotExist(err) {
 		return Response{Failed: true, Msg: fmt.Sprintf("project_src does not exist: %s", req.ProjectSrc)}
 	}
 
@@ -35,13 +40,13 @@ func Execute(req Request) Response {
 	}
 
 	// Construct environment
-	cmdEnv, err := docker.GetComposeEnv(req.ComposeCommonArgs, req.CommonArgs)
+	cmdEnv, err := docker.GetComposeEnvWithEnvironment(req.ComposeCommonArgs, req.CommonArgs, dependencies.Environment)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
 	}
 
 	// Base args with --ansi never for stable output parsing
-	args, err := docker.GetComposeBaseArgs(req.ComposeCommonArgs, req.CommonArgs)
+	args, err := docker.GetComposeBaseArgsWithEnvironment(req.ComposeCommonArgs, req.CommonArgs, dependencies.Environment)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
 	}
@@ -119,12 +124,13 @@ func Execute(req Request) Response {
 
 	finalArgs := append(args, actionArgs...)
 
-	cmd := exec.Command("docker", finalArgs...)
-	cmd.Dir = runDir
-	cmd.Env = cmdEnv
-
-	output, err := cmd.CombinedOutput()
-	outputStr := string(output)
+	result, err := dependencies.CLIRunner.Run(context.Background(), docker.CLICommand{
+		Name: "docker",
+		Args: finalArgs,
+		Dir:  runDir,
+		Env:  cmdEnv,
+	})
+	outputStr := string(result.Output)
 
 	if err != nil {
 		return Response{

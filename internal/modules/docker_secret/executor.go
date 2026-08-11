@@ -13,13 +13,18 @@ import (
 )
 
 func Execute(req Request) Response {
-	cli, err := docker.GetClient(req.CommonArgs)
+	return ExecuteWithDependencies(req, docker.Dependencies{})
+}
+
+func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	dependencies = dependencies.Resolve()
+	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("create client", "", err).Error()}
 	}
 	defer cli.Close()
 
-	ctx, cancel := docker.GetContext(req.CommonArgs)
+	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
 	// List secrets to find existing one
@@ -130,7 +135,7 @@ func Execute(req Request) Response {
 }
 
 // recreateSecret removes and recreates a secret (required for data changes since secrets are immutable)
-func recreateSecret(ctx context.Context, cli *client.Client, existingSecret *swarm.Secret, name string, labels map[string]string, data []byte, dataHash string) Response {
+func recreateSecret(ctx context.Context, cli client.APIClient, existingSecret *swarm.Secret, name string, labels map[string]string, data []byte, dataHash string) Response {
 	_, err := cli.SecretRemove(ctx, existingSecret.ID, client.SecretRemoveOptions{})
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("remove secret for recreation", name, err).Error()}

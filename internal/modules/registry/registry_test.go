@@ -7,6 +7,7 @@ import (
 
 	"github.com/gjergjiramku/dibra/internal/execution"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_container"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_container_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_image"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_image_export"
 )
@@ -72,8 +73,28 @@ func TestDecodeUsesRegisteredConcreteRequestType(t *testing.T) {
 	if !ok {
 		t.Fatalf("arguments type = %T", invocation.Arguments)
 	}
-	if request.Name != "web" || request.Image != "nginx:alpine" || !request.ValidateCerts {
+	if request.Name != "web" || request.Image != "nginx:alpine" || request.ValidateCerts == nil || !*request.ValidateCerts {
 		t.Fatalf("decoded request = %#v", request)
+	}
+}
+
+func TestDecodePreservesExplicitFalseDockerConnectionArguments(t *testing.T) {
+	explicit, err := Decode("docker_container_info", json.RawMessage(`{"name":"web","tls":false,"validate_certs":false}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	explicitRequest := explicit.Arguments.(docker_container_info.Request)
+	if explicitRequest.TLS == nil || *explicitRequest.TLS || explicitRequest.ValidateCerts == nil || *explicitRequest.ValidateCerts {
+		t.Fatalf("explicit false values were not preserved: %#v", explicitRequest.CommonArgs)
+	}
+
+	omitted, err := Decode("docker_container_info", json.RawMessage(`{"name":"web"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	omittedRequest := omitted.Arguments.(docker_container_info.Request)
+	if omittedRequest.TLS != nil || omittedRequest.ValidateCerts != nil {
+		t.Fatalf("omitted values were not preserved: %#v", omittedRequest.CommonArgs)
 	}
 }
 

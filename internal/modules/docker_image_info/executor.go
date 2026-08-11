@@ -9,17 +9,22 @@ import (
 
 // Execute inspects Docker images and returns their configuration
 func Execute(req Request) Response {
+	return ExecuteWithDependencies(req, docker.Dependencies{})
+}
+
+func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	dependencies = dependencies.Resolve()
 	if req.Name == "" {
 		return Response{Failed: true, Msg: "name is required"}
 	}
 
-	cli, err := docker.GetClient(req.CommonArgs)
+	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("create docker client", "", err).Error()}
 	}
 	defer cli.Close()
 
-	ctx, cancel := docker.GetContext(req.CommonArgs)
+	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
 	// Try to inspect directly first (works for ID or exact name:tag)

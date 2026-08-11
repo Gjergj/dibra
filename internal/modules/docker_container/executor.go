@@ -17,13 +17,18 @@ import (
 )
 
 func Execute(req Request) Response {
-	cli, err := docker.GetClient(req.CommonArgs)
+	return ExecuteWithDependencies(req, docker.Dependencies{})
+}
+
+func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	dependencies = dependencies.Resolve()
+	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("create client", "", err).Error()}
 	}
 	defer cli.Close()
 
-	ctx, cancel := docker.GetContext(req.CommonArgs)
+	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
 	state := req.State
@@ -62,7 +67,7 @@ func Execute(req Request) Response {
 	}
 }
 
-func handlePresentOrStarted(ctx context.Context, cli *client.Client, req Request, existing container.InspectResponse, exists bool, state string) Response {
+func handlePresentOrStarted(ctx context.Context, cli client.APIClient, req Request, existing container.InspectResponse, exists bool, state string) Response {
 	diffBuilder := docker.NewDiffBuilder()
 	var actions []string
 
@@ -150,7 +155,7 @@ func handlePresentOrStarted(ctx context.Context, cli *client.Client, req Request
 	}
 }
 
-func handleImagePull(ctx context.Context, cli *client.Client, image string, pullPolicy PullPolicy, containerExists bool, registryAuth string) (bool, error) {
+func handleImagePull(ctx context.Context, cli client.APIClient, image string, pullPolicy PullPolicy, containerExists bool, registryAuth string) (bool, error) {
 	switch pullPolicy {
 	case PullNever:
 		return false, nil
@@ -169,7 +174,7 @@ func handleImagePull(ctx context.Context, cli *client.Client, image string, pull
 	}
 }
 
-func pullImage(ctx context.Context, cli *client.Client, image string, registryAuth string) (bool, error) {
+func pullImage(ctx context.Context, cli client.APIClient, image string, registryAuth string) (bool, error) {
 	existingID := ""
 	if inspect, err := cli.ImageInspect(ctx, image); err == nil {
 		existingID = inspect.ID
@@ -202,7 +207,7 @@ func pullImage(ctx context.Context, cli *client.Client, image string, registryAu
 	return true, nil
 }
 
-func compareContainer(ctx context.Context, cli *client.Client, req Request, existing container.InspectResponse, diff *docker.DiffBuilder) (needsRecreate, needsUpdate bool) {
+func compareContainer(ctx context.Context, cli client.APIClient, req Request, existing container.InspectResponse, diff *docker.DiffBuilder) (needsRecreate, needsUpdate bool) {
 	if req.Image != "" {
 		imageID, err := resolveImageID(ctx, cli, req.Image)
 		if err == nil && existing.Image != imageID {
@@ -348,7 +353,7 @@ func checkMutableFields(req Request, existing container.InspectResponse, diff *d
 	return needsUpdate
 }
 
-func updateContainer(ctx context.Context, cli *client.Client, containerID string, req Request) Response {
+func updateContainer(ctx context.Context, cli client.APIClient, containerID string, req Request) Response {
 	resources := container.Resources{}
 	updateOptions := client.ContainerUpdateOptions{Resources: &resources}
 
@@ -392,7 +397,7 @@ func updateContainer(ctx context.Context, cli *client.Client, containerID string
 	return Response{Changed: true, Msg: "container updated"}
 }
 
-func reconcileNetworks(ctx context.Context, cli *client.Client, req Request, existing container.InspectResponse, diff *docker.DiffBuilder) Response {
+func reconcileNetworks(ctx context.Context, cli client.APIClient, req Request, existing container.InspectResponse, diff *docker.DiffBuilder) Response {
 	if len(req.Networks) == 0 {
 		return Response{Changed: false}
 	}
@@ -474,7 +479,7 @@ func reconcileNetworks(ctx context.Context, cli *client.Client, req Request, exi
 	return Response{Changed: changed}
 }
 
-func resolveImageID(ctx context.Context, cli *client.Client, image string) (string, error) {
+func resolveImageID(ctx context.Context, cli client.APIClient, image string) (string, error) {
 	inspect, err := cli.ImageInspect(ctx, image)
 	if err != nil {
 		return "", err
@@ -482,7 +487,7 @@ func resolveImageID(ctx context.Context, cli *client.Client, image string) (stri
 	return inspect.ID, nil
 }
 
-func recreateContainer(ctx context.Context, cli *client.Client, req Request, state string, prevActions []string) Response {
+func recreateContainer(ctx context.Context, cli client.APIClient, req Request, state string, prevActions []string) Response {
 	removeResp := removeContainer(ctx, cli, req.Name, req.ForceKill, req.KeepVolumes)
 	if removeResp.Failed {
 		return removeResp
@@ -498,7 +503,7 @@ func recreateContainer(ctx context.Context, cli *client.Client, req Request, sta
 	return createResp
 }
 
-func createAndStart(ctx context.Context, cli *client.Client, req Request, state string) Response {
+func createAndStart(ctx context.Context, cli client.APIClient, req Request, state string) Response {
 	config, hostConfig, err := buildContainerConfig(req)
 	if err != nil {
 		return Response{Failed: true, Msg: err.Error()}
@@ -799,7 +804,7 @@ func parseRestartPolicy(policy string) (string, int) {
 	return name, maxRetry
 }
 
-func removeContainer(ctx context.Context, cli *client.Client, name string, force bool, keepVolumes bool) Response {
+func removeContainer(ctx context.Context, cli client.APIClient, name string, force bool, keepVolumes bool) Response {
 	inspectResult, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
 	if err == nil && inspectResult.Container.State.Running {
 		timeout := 10
@@ -820,7 +825,7 @@ func removeContainer(ctx context.Context, cli *client.Client, name string, force
 	return Response{Changed: true, Msg: "container removed", Actions: []string{"removed"}}
 }
 
-func stopContainer(ctx context.Context, cli *client.Client, name string, force bool) Response {
+func stopContainer(ctx context.Context, cli client.APIClient, name string, force bool) Response {
 	if force {
 		if _, err := cli.ContainerKill(ctx, name, client.ContainerKillOptions{Signal: "SIGKILL"}); err != nil {
 			return Response{Failed: true, Msg: docker.WrapError("kill container", name, err).Error()}
@@ -834,7 +839,7 @@ func stopContainer(ctx context.Context, cli *client.Client, name string, force b
 	return Response{Changed: true, Msg: "container stopped", Actions: []string{"stopped"}}
 }
 
-func startContainer(ctx context.Context, cli *client.Client, name string) Response {
+func startContainer(ctx context.Context, cli client.APIClient, name string) Response {
 	if _, err := cli.ContainerStart(ctx, name, client.ContainerStartOptions{}); err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("start container", name, err).Error()}
 	}

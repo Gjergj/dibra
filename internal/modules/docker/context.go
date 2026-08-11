@@ -7,12 +7,20 @@ import (
 
 // Note: DefaultTimeoutSeconds is defined in client.go
 
-// GetContext creates a context with timeout from CommonArgs.
-// If timeout is 0 or negative, uses DefaultTimeoutSeconds.
+// GetContext creates a context with the resolved timeout from CommonArgs.
 func GetContext(args CommonArgs) (context.Context, context.CancelFunc) {
-	timeout := args.Timeout
+	return GetContextWithEnvironment(args, OSEnvironment{})
+}
+
+// GetContextWithEnvironment applies the same injectable timeout resolution as
+// the Engine API client.
+func GetContextWithEnvironment(args CommonArgs, environment Environment) (context.Context, context.CancelFunc) {
+	timeout := args.TimeoutOrDefault()
+	if connection, err := ResolveConnectionWithEnvironment(args, environment); err == nil {
+		timeout = connection.Timeout
+	}
 	if timeout <= 0 {
-		timeout = DefaultTimeoutSeconds
+		return context.WithCancel(context.Background())
 	}
 	return context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 }
@@ -28,8 +36,8 @@ func GetContextWithTimeout(timeoutSeconds int) (context.Context, context.CancelF
 
 // TimeoutOrDefault returns the timeout from CommonArgs or the default value.
 func (args CommonArgs) TimeoutOrDefault() int {
-	if args.Timeout <= 0 {
+	if args.Timeout == nil {
 		return DefaultTimeoutSeconds
 	}
-	return args.Timeout
+	return *args.Timeout
 }

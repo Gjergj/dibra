@@ -1,9 +1,9 @@
 package docker_compose_v2_run
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
@@ -11,18 +11,23 @@ import (
 )
 
 func Execute(req Request) Response {
+	return ExecuteWithDependencies(req, docker.Dependencies{})
+}
+
+func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	dependencies = dependencies.Resolve()
 	// Check if directory exists
-	if _, err := os.Stat(req.ProjectSrc); os.IsNotExist(err) {
+	if _, err := dependencies.FileSystem.Stat(req.ProjectSrc); os.IsNotExist(err) {
 		return Response{Failed: true, Msg: fmt.Sprintf("project_src does not exist: %s", req.ProjectSrc)}
 	}
 
-	cmdEnv, err := docker.GetComposeEnv(req.ComposeCommonArgs, req.CommonArgs)
+	cmdEnv, err := docker.GetComposeEnvWithEnvironment(req.ComposeCommonArgs, req.CommonArgs, dependencies.Environment)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
 	}
 
 	// Base args
-	args, err := docker.GetComposeBaseArgs(req.ComposeCommonArgs, req.CommonArgs)
+	args, err := docker.GetComposeBaseArgsWithEnvironment(req.ComposeCommonArgs, req.CommonArgs, dependencies.Environment)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
 	}
@@ -104,27 +109,30 @@ func Execute(req Request) Response {
 	}
 	args = append(args, argv...)
 
-	cmd := exec.Command("docker", args...)
-	cmd.Dir = req.ProjectSrc
-	cmd.Env = cmdEnv
-
+	var stdin *strings.Reader
 	if req.Stdin != "" && !req.Detach {
-		stdin := req.Stdin
+		stdinValue := req.Stdin
 		if req.StdinAddNewline {
-			stdin += "\n"
+			stdinValue += "\n"
 		}
-		cmd.Stdin = strings.NewReader(stdin)
+		stdin = strings.NewReader(stdinValue)
 	}
 
-	output, err := cmd.CombinedOutput()
-	outputStr := string(output)
+	result, err := dependencies.CLIRunner.Run(context.Background(), docker.CLICommand{
+		Name:  "docker",
+		Args:  args,
+		Dir:   req.ProjectSrc,
+		Env:   cmdEnv,
+		Stdin: stdin,
+	})
+	outputStr := string(result.Output)
 
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		if result.ExitCode >= 0 {
 			return Response{
 				Failed:  false, // It didn't fail to run, the command just returned non-zero
 				Changed: true,
-				RC:      exitErr.ExitCode(),
+				RC:      result.ExitCode,
 				Stdout:  outputStr,
 				Msg:     "command executed with non-zero exit code",
 			}

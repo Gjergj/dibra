@@ -12,13 +12,18 @@ import (
 )
 
 func Execute(req Request) Response {
-	cli, err := docker.GetClient(req.CommonArgs)
+	return ExecuteWithDependencies(req, docker.Dependencies{})
+}
+
+func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	dependencies = dependencies.Resolve()
+	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("create docker client", "", err).Error()}
 	}
 	defer cli.Close()
 
-	ctx, cancel := docker.GetContext(req.CommonArgs)
+	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
 	state := req.State
@@ -44,7 +49,7 @@ func Execute(req Request) Response {
 }
 
 // findNetwork looks up a network by name
-func findNetwork(cli *client.Client, ctx context.Context, name string) (network.Inspect, bool, error) {
+func findNetwork(cli client.APIClient, ctx context.Context, name string) (network.Inspect, bool, error) {
 	result, err := cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{Verbose: true})
 	if err != nil {
 		if docker.IsNotFoundError(err) {
@@ -56,7 +61,7 @@ func findNetwork(cli *client.Client, ctx context.Context, name string) (network.
 }
 
 // handleAbsent removes a network if it exists
-func handleAbsent(cli *client.Client, ctx context.Context, name string, existing network.Inspect, exists bool) Response {
+func handleAbsent(cli client.APIClient, ctx context.Context, name string, existing network.Inspect, exists bool) Response {
 	if !exists {
 		return Response{Changed: false, Msg: "network already absent"}
 	}
@@ -78,7 +83,7 @@ func handleAbsent(cli *client.Client, ctx context.Context, name string, existing
 }
 
 // handlePresent ensures a network exists with the desired configuration
-func handlePresent(cli *client.Client, ctx context.Context, req Request, existing network.Inspect, exists bool) Response {
+func handlePresent(cli client.APIClient, ctx context.Context, req Request, existing network.Inspect, exists bool) Response {
 	diffBuilder := docker.NewDiffBuilder()
 
 	if exists {
@@ -259,7 +264,7 @@ func formatExistingIPAM(ipam network.IPAM) []map[string]string {
 }
 
 // createNetwork creates a new Docker network with the specified configuration
-func createNetwork(cli *client.Client, ctx context.Context, req Request) (string, error) {
+func createNetwork(cli client.APIClient, ctx context.Context, req Request) (string, error) {
 	opts := client.NetworkCreateOptions{
 		Driver:     req.Driver,
 		Options:    req.Options,
@@ -337,7 +342,7 @@ func createNetwork(cli *client.Client, ctx context.Context, req Request) (string
 }
 
 // reconcileConnectedContainers ensures the desired containers are connected to the network
-func reconcileConnectedContainers(cli *client.Client, ctx context.Context, networkID string, desired []ConnectedContainer, current map[string]network.EndpointResource, appends bool) (bool, error) {
+func reconcileConnectedContainers(cli client.APIClient, ctx context.Context, networkID string, desired []ConnectedContainer, current map[string]network.EndpointResource, appends bool) (bool, error) {
 	changed := false
 	// Build map of desired container names/IDs
 	desiredMap := make(map[string]ConnectedContainer)

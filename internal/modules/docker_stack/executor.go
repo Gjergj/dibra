@@ -1,15 +1,20 @@
 package docker_stack
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 func Execute(req Request) Response {
+	return ExecuteWithDependencies(req, docker.Dependencies{})
+}
+
+func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	dependencies = dependencies.Resolve()
 	// docker_stack wraps the CLI: docker stack deploy / docker stack rm
 
 	if req.Name == "" {
@@ -21,21 +26,19 @@ func Execute(req Request) Response {
 		state = "present"
 	}
 
-	cmdEnv, err := docker.DockerCLIEnv(req.CommonArgs)
+	cmdEnv, err := docker.DockerCLIEnvWithEnvironment(req.CommonArgs, dependencies.Environment)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
 	}
 
 	if state == "absent" {
 		// docker stack rm <name>
-		args, argsErr := docker.DockerCLIArgs(req.CommonArgs, "stack", "rm", req.Name)
+		args, argsErr := docker.DockerCLIArgsWithEnvironment(req.CommonArgs, dependencies.Environment, "stack", "rm", req.Name)
 		if argsErr != nil {
 			return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", argsErr)}
 		}
-		cmd := exec.Command("docker", args...)
-		cmd.Env = cmdEnv
-		output, err := cmd.CombinedOutput()
-		outputStr := string(output)
+		result, err := dependencies.CLIRunner.Run(context.Background(), docker.CLICommand{Name: "docker", Args: args, Env: cmdEnv})
+		outputStr := string(result.Output)
 
 		if err != nil {
 			// Check if it's because stack doesn't exist
@@ -54,7 +57,7 @@ func Execute(req Request) Response {
 	}
 
 	// Check if compose file exists
-	if _, err := os.Stat(req.ComposeFile); os.IsNotExist(err) {
+	if _, err := dependencies.FileSystem.Stat(req.ComposeFile); os.IsNotExist(err) {
 		return Response{Failed: true, Msg: fmt.Sprintf("compose_file does not exist: %s", req.ComposeFile)}
 	}
 
@@ -72,14 +75,12 @@ func Execute(req Request) Response {
 
 	args = append(args, req.Name)
 
-	args, err = docker.DockerCLIArgs(req.CommonArgs, args...)
+	args, err = docker.DockerCLIArgsWithEnvironment(req.CommonArgs, dependencies.Environment, args...)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
 	}
-	cmd := exec.Command("docker", args...)
-	cmd.Env = cmdEnv
-	output, err := cmd.CombinedOutput()
-	outputStr := string(output)
+	result, err := dependencies.CLIRunner.Run(context.Background(), docker.CLICommand{Name: "docker", Args: args, Env: cmdEnv})
+	outputStr := string(result.Output)
 
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to deploy stack: %v", err), Stdout: outputStr}

@@ -9,13 +9,18 @@ import (
 )
 
 func Execute(req Request) Response {
-	cli, err := docker.GetClient(req.CommonArgs)
+	return ExecuteWithDependencies(req, docker.Dependencies{})
+}
+
+func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	dependencies = dependencies.Resolve()
+	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("create docker client", "", err).Error()}
 	}
 	defer cli.Close()
 
-	ctx, cancel := docker.GetContext(req.CommonArgs)
+	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
 	// Normalize Name and Tag
@@ -44,7 +49,7 @@ func normalizeImageRef(name, tag string) string {
 }
 
 // handleAbsent removes an image
-func handleAbsent(ctx context.Context, cli *client.Client, ref string, req Request) Response {
+func handleAbsent(ctx context.Context, cli client.APIClient, ref string, req Request) Response {
 	// Check if exists
 	_, err := cli.ImageInspect(ctx, ref)
 	if docker.IsNotFoundError(err) {
@@ -70,7 +75,7 @@ func handleAbsent(ctx context.Context, cli *client.Client, ref string, req Reque
 }
 
 // handlePresent ensures an image is present
-func handlePresent(ctx context.Context, cli *client.Client, ref string, req Request) Response {
+func handlePresent(ctx context.Context, cli client.APIClient, ref string, req Request) Response {
 	source := req.Source
 	if source == "" {
 		source = "pull"
@@ -87,7 +92,7 @@ func handlePresent(ctx context.Context, cli *client.Client, ref string, req Requ
 }
 
 // handlePull pulls an image from registry (3.1, 3.2)
-func handlePull(ctx context.Context, cli *client.Client, ref string, req Request) Response {
+func handlePull(ctx context.Context, cli client.APIClient, ref string, req Request) Response {
 	// Determine pull policy (3.2, 3.5: handle backward compat)
 	pullPolicy := req.Pull
 	if pullPolicy == "" {
@@ -137,7 +142,7 @@ func handlePull(ctx context.Context, cli *client.Client, ref string, req Request
 }
 
 // pullImage performs the actual image pull (3.1, 3.2)
-func pullImage(ctx context.Context, cli *client.Client, image, existingID, username, password string) (changed bool, imageID, digest string, err error) {
+func pullImage(ctx context.Context, cli client.APIClient, image, existingID, username, password string) (changed bool, imageID, digest string, err error) {
 	// Encode registry auth (3.1.3)
 	registryAuth := docker.EncodeRegistryAuth(username, password)
 
@@ -173,7 +178,7 @@ func pullImage(ctx context.Context, cli *client.Client, image, existingID, usern
 }
 
 // handleLocal handles source=local (tag and optionally push)
-func handleLocal(ctx context.Context, cli *client.Client, ref string, req Request) Response {
+func handleLocal(ctx context.Context, cli client.APIClient, ref string, req Request) Response {
 	// Check source image exists
 	inspect, err := cli.ImageInspect(ctx, ref)
 	if err != nil {
@@ -215,7 +220,7 @@ func handleLocal(ctx context.Context, cli *client.Client, ref string, req Reques
 }
 
 // tagImage tags an image with idempotency (3.3)
-func tagImage(ctx context.Context, cli *client.Client, sourceRef, targetRef, sourceID string, force bool) (changed bool, err error) {
+func tagImage(ctx context.Context, cli client.APIClient, sourceRef, targetRef, sourceID string, force bool) (changed bool, err error) {
 	// Check if target already exists with same image ID (3.3.1, 3.3.2)
 	if !force {
 		if targetInspect, err := cli.ImageInspect(ctx, targetRef); err == nil {
@@ -235,7 +240,7 @@ func tagImage(ctx context.Context, cli *client.Client, sourceRef, targetRef, sou
 }
 
 // pushImage pushes an image to registry (3.4)
-func pushImage(ctx context.Context, cli *client.Client, ref, username, password string) (digest string, err error) {
+func pushImage(ctx context.Context, cli client.APIClient, ref, username, password string) (digest string, err error) {
 	// Encode registry auth (3.4.3)
 	registryAuth := docker.EncodeRegistryAuth(username, password)
 

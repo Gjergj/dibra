@@ -3,8 +3,6 @@ package docker_image_build
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -20,6 +18,11 @@ var (
 )
 
 func Execute(req Request) Response {
+	return ExecuteWithDependencies(req, docker.Dependencies{})
+}
+
+func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	dependencies = dependencies.Resolve()
 	// Validate inputs
 	if req.Name == "" {
 		return Response{Failed: true, Msg: "name is required"}
@@ -29,7 +32,7 @@ func Execute(req Request) Response {
 	}
 
 	// Check build context exists
-	if info, err := os.Stat(req.Path); err != nil || !info.IsDir() {
+	if info, err := dependencies.FileSystem.Stat(req.Path); err != nil || !info.IsDir() {
 		return Response{Failed: true, Msg: fmt.Sprintf("build path does not exist or is not a directory: %s", req.Path)}
 	}
 
@@ -49,7 +52,7 @@ func Execute(req Request) Response {
 	// Check if image already exists and get its ID (for idempotency)
 	var existingImageID string
 	if rebuild == "never" {
-		cli, err := docker.GetClient(req.CommonArgs)
+		cli, err := dependencies.NewClient(req.CommonArgs)
 		if err == nil {
 			defer cli.Close()
 			inspect, err := cli.ImageInspect(context.Background(), fullImageName)
@@ -139,21 +142,18 @@ func Execute(req Request) Response {
 	// Build context path
 	args = append(args, "--", req.Path)
 
-	args, err := docker.DockerCLIArgs(req.CommonArgs, args...)
+	args, err := docker.DockerCLIArgsWithEnvironment(req.CommonArgs, dependencies.Environment, args...)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
 	}
-	env, err := docker.DockerCLIEnv(req.CommonArgs)
+	env, err := docker.DockerCLIEnvWithEnvironment(req.CommonArgs, dependencies.Environment)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
 	}
 
 	// Execute build
-	cmd := exec.Command("docker", args...)
-	cmd.Env = env
-
-	output, err := cmd.CombinedOutput()
-	outputStr := string(output)
+	result, err := dependencies.CLIRunner.Run(context.Background(), docker.CLICommand{Name: "docker", Args: args, Env: env})
+	outputStr := string(result.Output)
 
 	// Parse build output for errors, image ID, and digest
 	logs := parseLogLines(outputStr)

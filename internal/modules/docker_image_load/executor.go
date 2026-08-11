@@ -3,7 +3,6 @@ package docker_image_load
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
@@ -11,26 +10,31 @@ import (
 )
 
 func Execute(req Request) Response {
+	return ExecuteWithDependencies(req, docker.Dependencies{})
+}
+
+func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	dependencies = dependencies.Resolve()
 	if req.Path == "" {
 		return Response{Failed: true, Msg: "path is required"}
 	}
 
 	// Check archive exists
-	if _, err := os.Stat(req.Path); err != nil {
+	if _, err := dependencies.FileSystem.Stat(req.Path); err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("archive not found: %s", req.Path)}
 	}
 
-	cli, err := docker.GetClient(req.CommonArgs)
+	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to create docker client: %v", err)}
 	}
 	defer cli.Close()
 
-	ctx, cancel := docker.GetContext(req.CommonArgs)
+	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
 	// Open archive file
-	file, err := os.Open(req.Path)
+	file, err := dependencies.FileSystem.Open(req.Path)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to open archive: %v", err)}
 	}

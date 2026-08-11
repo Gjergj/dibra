@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -18,24 +17,25 @@ import (
 
 const (
 	DefaultDockerHost     = "unix:///var/run/docker.sock"
+	DefaultTLS            = false
 	DefaultTLSVerify      = false
 	DefaultTimeoutSeconds = 60
 )
 
 // CommonArgs contains the connection arguments shared by Docker modules.
 type CommonArgs struct {
-	DockerHost    string `json:"docker_host"`
-	TLS           bool   `json:"tls"`
-	ValidateCerts bool   `json:"validate_certs"`
-	CAPath        string `json:"ca_path"`
-	ClientCert    string `json:"client_cert"`
-	ClientKey     string `json:"client_key"`
-	TLSHostname   string `json:"tls_hostname"`
-	APIVersion    string `json:"api_version"`
-	Timeout       int    `json:"timeout"`
-	CLIContext    string `json:"cli_context"`
-	Debug         bool   `json:"debug"`
-	UseSSHClient  bool   `json:"use_ssh_client"`
+	DockerHost    *string `json:"docker_host"`
+	TLS           *bool   `json:"tls"`
+	ValidateCerts *bool   `json:"validate_certs"`
+	CAPath        *string `json:"ca_path"`
+	ClientCert    *string `json:"client_cert"`
+	ClientKey     *string `json:"client_key"`
+	TLSHostname   *string `json:"tls_hostname"`
+	APIVersion    *string `json:"api_version"`
+	Timeout       *int    `json:"timeout"`
+	CLIContext    *string `json:"cli_context"`
+	Debug         *bool   `json:"debug"`
+	UseSSHClient  *bool   `json:"use_ssh_client"`
 }
 
 // ConnectionOptions is the normalized connection configuration used by both
@@ -58,68 +58,66 @@ type ConnectionOptions struct {
 // ResolveConnection applies community.docker-compatible environment fallbacks
 // and validates options which are shared by every Docker transport.
 func ResolveConnection(args CommonArgs) (ConnectionOptions, error) {
+	return ResolveConnectionWithEnvironment(args, OSEnvironment{})
+}
+
+// ResolveConnectionWithEnvironment is the injectable form of
+// ResolveConnection. It implements the API-backed community.docker fallback
+// order: explicit module argument, then environment variable, then default.
+func ResolveConnectionWithEnvironment(args CommonArgs, environment Environment) (ConnectionOptions, error) {
+	if environment == nil {
+		environment = OSEnvironment{}
+	}
+	if (args.ClientCert == nil) != (args.ClientKey == nil) {
+		return ConnectionOptions{}, fmt.Errorf("client_cert and client_key must be specified together")
+	}
+
+	dockerHost := stringFromArgumentOrEnvironment(args.DockerHost, environment, "DOCKER_HOST", DefaultDockerHost)
+	tlsHostname := stringFromArgumentOrEnvironment(args.TLSHostname, environment, "DOCKER_TLS_HOSTNAME", "")
+	apiVersion := stringFromArgumentOrEnvironment(args.APIVersion, environment, "DOCKER_API_VERSION", "auto")
+	timeout, err := intFromArgumentOrEnvironment(args.Timeout, environment, "DOCKER_TIMEOUT", DefaultTimeoutSeconds)
+	if err != nil {
+		return ConnectionOptions{}, err
+	}
+	tlsEnabled, err := boolFromArgumentOrEnvironment(args.TLS, environment, "DOCKER_TLS", DefaultTLS)
+	if err != nil {
+		return ConnectionOptions{}, err
+	}
+	validateCerts, err := boolFromArgumentOrEnvironment(args.ValidateCerts, environment, "DOCKER_TLS_VERIFY", DefaultTLSVerify)
+	if err != nil {
+		return ConnectionOptions{}, err
+	}
+
 	result := ConnectionOptions{
-		DockerHost:    firstNonEmpty(args.DockerHost, os.Getenv("DOCKER_HOST")),
-		TLS:           args.TLS,
-		ValidateCerts: args.ValidateCerts,
-		CAPath:        args.CAPath,
-		ClientCert:    args.ClientCert,
-		ClientKey:     args.ClientKey,
-		TLSHostname:   firstNonEmpty(args.TLSHostname, os.Getenv("DOCKER_TLS_HOSTNAME")),
-		APIVersion:    firstNonEmpty(args.APIVersion, os.Getenv("DOCKER_API_VERSION")),
-		Timeout:       args.Timeout,
-		CLIContext:    args.CLIContext,
-		Debug:         args.Debug,
-		UseSSHClient:  args.UseSSHClient,
+		DockerHost:    dockerHost,
+		TLS:           tlsEnabled,
+		ValidateCerts: validateCerts,
+		CAPath:        valueOrDefault(args.CAPath, ""),
+		ClientCert:    valueOrDefault(args.ClientCert, ""),
+		ClientKey:     valueOrDefault(args.ClientKey, ""),
+		TLSHostname:   tlsHostname,
+		APIVersion:    apiVersion,
+		Timeout:       timeout,
+		CLIContext:    valueOrDefault(args.CLIContext, ""),
+		Debug:         valueOrDefault(args.Debug, false),
+		UseSSHClient:  valueOrDefault(args.UseSSHClient, false),
 	}
 
 	if result.DockerHost != "" && result.CLIContext != "" {
 		return ConnectionOptions{}, fmt.Errorf("docker_host and cli_context are mutually exclusive")
 	}
-	if result.DockerHost == "" && result.CLIContext == "" {
-		result.DockerHost = DefaultDockerHost
-	}
-	if result.APIVersion == "" {
-		result.APIVersion = "auto"
-	}
-
-	if result.Timeout <= 0 {
-		if value := os.Getenv("DOCKER_TIMEOUT"); value != "" {
-			timeout, err := strconv.Atoi(value)
-			if err != nil || timeout <= 0 {
-				return ConnectionOptions{}, fmt.Errorf("DOCKER_TIMEOUT must be a positive integer, got %q", value)
-			}
-			result.Timeout = timeout
-		} else {
-			result.Timeout = DefaultTimeoutSeconds
-		}
-	}
-
-	var err error
-	if !result.TLS {
-		result.TLS, err = boolFromEnv("DOCKER_TLS")
-		if err != nil {
-			return ConnectionOptions{}, err
-		}
-	}
-	if !result.ValidateCerts {
-		result.ValidateCerts, err = boolFromEnv("DOCKER_TLS_VERIFY")
-		if err != nil {
-			return ConnectionOptions{}, err
-		}
-	}
 	if result.ValidateCerts {
 		result.TLS = true
 	}
 
-	if certDirectory := os.Getenv("DOCKER_CERT_PATH"); certDirectory != "" {
-		if result.CAPath == "" {
+	if certDirectory, found := environment.LookupEnv("DOCKER_CERT_PATH"); found {
+		if args.CAPath == nil {
 			result.CAPath = filepath.Join(certDirectory, "ca.pem")
 		}
-		if result.ClientCert == "" {
+		if args.ClientCert == nil {
 			result.ClientCert = filepath.Join(certDirectory, "cert.pem")
 		}
-		if result.ClientKey == "" {
+		if args.ClientKey == nil {
 			result.ClientKey = filepath.Join(certDirectory, "key.pem")
 		}
 	}
@@ -138,8 +136,14 @@ func ResolveConnection(args CommonArgs) (ConnectionOptions, error) {
 }
 
 // GetClient creates an Engine API client from the shared connection options.
-func GetClient(args CommonArgs) (*client.Client, error) {
-	connection, err := ResolveConnection(args)
+func GetClient(args CommonArgs) (client.APIClient, error) {
+	return GetClientWithEnvironment(args, OSEnvironment{})
+}
+
+// GetClientWithEnvironment creates an Engine API client using an injectable
+// environment and returns the Moby API interface used by module executors.
+func GetClientWithEnvironment(args CommonArgs, environment Environment) (client.APIClient, error) {
+	connection, err := ResolveConnectionWithEnvironment(args, environment)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +203,12 @@ func newTLSConfig(connection ConnectionOptions) (*tls.Config, error) {
 
 // DockerCLIArgs prepends normalized global Docker CLI connection flags.
 func DockerCLIArgs(common CommonArgs, command ...string) ([]string, error) {
-	connection, err := ResolveConnection(common)
+	return DockerCLIArgsWithEnvironment(common, OSEnvironment{}, command...)
+}
+
+// DockerCLIArgsWithEnvironment is the injectable form of DockerCLIArgs.
+func DockerCLIArgsWithEnvironment(common CommonArgs, environment Environment, command ...string) ([]string, error) {
+	connection, err := resolveCLIConnection(common, environment)
 	if err != nil {
 		return nil, err
 	}
@@ -233,27 +242,98 @@ func DockerCLIArgs(common CommonArgs, command ...string) ([]string, error) {
 
 // DockerCLIEnv returns a deterministic environment for Docker CLI-backed modules.
 func DockerCLIEnv(common CommonArgs) ([]string, error) {
-	connection, err := ResolveConnection(common)
+	return DockerCLIEnvWithEnvironment(common, OSEnvironment{})
+}
+
+// DockerCLIEnvWithEnvironment returns the child environment after applying
+// the same explicit-argument-over-environment precedence used for CLI flags.
+func DockerCLIEnvWithEnvironment(common CommonArgs, environment Environment) ([]string, error) {
+	connection, err := resolveCLIConnection(common, environment)
 	if err != nil {
 		return nil, err
 	}
-	environment := withoutEnvironmentKeys(os.Environ(),
+	result := withoutEnvironmentKeys(environment.Environ(),
 		"DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_TLS", "DOCKER_TLS_VERIFY",
 		"DOCKER_CERT_PATH", "DOCKER_API_VERSION", "DOCKER_TLS_HOSTNAME")
 	if connection.APIVersion != "auto" {
-		environment = setEnvironment(environment, "DOCKER_API_VERSION", connection.APIVersion)
+		result = setEnvironment(result, "DOCKER_API_VERSION", connection.APIVersion)
 	}
 	if connection.TLSHostname != "" {
-		environment = setEnvironment(environment, "DOCKER_TLS_HOSTNAME", connection.TLSHostname)
+		result = setEnvironment(result, "DOCKER_TLS_HOSTNAME", connection.TLSHostname)
 	}
-	return environment, nil
+	return result, nil
 }
 
-func boolFromEnv(name string) (bool, error) {
-	value := strings.TrimSpace(strings.ToLower(os.Getenv(name)))
-	if value == "" {
-		return false, nil
+func resolveCLIConnection(args CommonArgs, environment Environment) (ConnectionOptions, error) {
+	if environment == nil {
+		environment = OSEnvironment{}
 	}
+	if (args.ClientCert == nil) != (args.ClientKey == nil) {
+		return ConnectionOptions{}, fmt.Errorf("client_cert and client_key must be specified together")
+	}
+
+	dockerHost, dockerHostSupplied := stringFromArgumentOrEnvironmentWithPresence(args.DockerHost, environment, "DOCKER_HOST")
+	cliContext := valueOrDefault(args.CLIContext, "")
+	if dockerHostSupplied && args.CLIContext != nil {
+		return ConnectionOptions{}, fmt.Errorf("docker_host and cli_context are mutually exclusive")
+	}
+	if dockerHost == "" && cliContext == "" {
+		dockerHost = DefaultDockerHost
+	}
+
+	tlsEnabled, err := boolFromArgumentOrEnvironment(args.TLS, environment, "DOCKER_TLS", DefaultTLS)
+	if err != nil {
+		return ConnectionOptions{}, err
+	}
+	validateCerts, err := boolFromArgumentOrEnvironment(args.ValidateCerts, environment, "DOCKER_TLS_VERIFY", DefaultTLSVerify)
+	if err != nil {
+		return ConnectionOptions{}, err
+	}
+	if validateCerts {
+		tlsEnabled = true
+	}
+
+	connection := ConnectionOptions{
+		DockerHost:    dockerHost,
+		TLS:           tlsEnabled,
+		ValidateCerts: validateCerts,
+		CAPath:        valueOrDefault(args.CAPath, ""),
+		ClientCert:    valueOrDefault(args.ClientCert, ""),
+		ClientKey:     valueOrDefault(args.ClientKey, ""),
+		TLSHostname:   stringFromArgumentOrEnvironment(args.TLSHostname, environment, "DOCKER_TLS_HOSTNAME", ""),
+		APIVersion:    stringFromArgumentOrEnvironment(args.APIVersion, environment, "DOCKER_API_VERSION", "auto"),
+		Timeout:       valueOrDefault(args.Timeout, DefaultTimeoutSeconds),
+		CLIContext:    cliContext,
+		Debug:         valueOrDefault(args.Debug, false),
+		UseSSHClient:  valueOrDefault(args.UseSSHClient, false),
+	}
+
+	if certDirectory, found := environment.LookupEnv("DOCKER_CERT_PATH"); found {
+		if args.CAPath == nil {
+			connection.CAPath = filepath.Join(certDirectory, "ca.pem")
+		}
+		if args.ClientCert == nil {
+			connection.ClientCert = filepath.Join(certDirectory, "cert.pem")
+		}
+		if args.ClientKey == nil {
+			connection.ClientKey = filepath.Join(certDirectory, "key.pem")
+		}
+	}
+	if (connection.ClientCert == "") != (connection.ClientKey == "") {
+		return ConnectionOptions{}, fmt.Errorf("client_cert and client_key must be specified together")
+	}
+	return connection, nil
+}
+
+func boolFromArgumentOrEnvironment(argument *bool, environment Environment, name string, defaultValue bool) (bool, error) {
+	if argument != nil {
+		return *argument, nil
+	}
+	value, found := environment.LookupEnv(name)
+	if !found {
+		return defaultValue, nil
+	}
+	value = strings.TrimSpace(strings.ToLower(value))
 	switch value {
 	case "1", "t", "true", "y", "yes", "on":
 		return true, nil
@@ -264,13 +344,44 @@ func boolFromEnv(name string) (bool, error) {
 	}
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
+func intFromArgumentOrEnvironment(argument *int, environment Environment, name string, defaultValue int) (int, error) {
+	if argument != nil {
+		return *argument, nil
 	}
-	return ""
+	value, found := environment.LookupEnv(name)
+	if !found {
+		return defaultValue, nil
+	}
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer, got %q", name, value)
+	}
+	return parsed, nil
+}
+
+func stringFromArgumentOrEnvironment(argument *string, environment Environment, name, defaultValue string) string {
+	value, found := stringFromArgumentOrEnvironmentWithPresence(argument, environment, name)
+	if found {
+		return value
+	}
+	return defaultValue
+}
+
+func stringFromArgumentOrEnvironmentWithPresence(argument *string, environment Environment, name string) (string, bool) {
+	if argument != nil {
+		return *argument, true
+	}
+	if value, found := environment.LookupEnv(name); found {
+		return value, true
+	}
+	return "", false
+}
+
+func valueOrDefault[T any](argument *T, defaultValue T) T {
+	if argument != nil {
+		return *argument
+	}
+	return defaultValue
 }
 
 func withoutEnvironmentKeys(environment []string, keys ...string) []string {

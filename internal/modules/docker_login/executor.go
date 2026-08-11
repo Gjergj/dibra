@@ -47,13 +47,18 @@ type DockerAuth struct {
 var configFileMutex sync.Mutex
 
 func Execute(req Request) Response {
-	cli, err := docker.GetClient(req.CommonArgs)
+	return ExecuteWithDependencies(req, docker.Dependencies{})
+}
+
+func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	dependencies = dependencies.Resolve()
+	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to create docker client: %v", err)}
 	}
 	defer cli.Close()
 
-	ctx, cancel := docker.GetContext(req.CommonArgs)
+	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
 	state := req.State
@@ -68,7 +73,7 @@ func Execute(req Request) Response {
 
 	configPath := req.ConfigPath
 	if configPath == "" {
-		home, err := os.UserHomeDir()
+		home, err := dependencies.FileSystem.UserHomeDir()
 		if err != nil {
 			return Response{Failed: true, Msg: fmt.Sprintf("could not find home dir: %v", err)}
 		}
@@ -80,7 +85,7 @@ func Execute(req Request) Response {
 	defer configFileMutex.Unlock()
 
 	// Read existing config (preserve structure)
-	cfg, rawData, err := readConfig(configPath)
+	cfg, rawData, err := readConfig(dependencies.FileSystem, configPath)
 	if err != nil && !os.IsNotExist(err) {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to read config: %v", err)}
 	}
@@ -105,7 +110,7 @@ func Execute(req Request) Response {
 			return Response{Changed: false, Msg: "not logged in", Registry: reg}
 		}
 		delete(cfg.Auths, reg)
-		if err := writeConfig(configPath, cfg, rawData); err != nil {
+		if err := writeConfig(dependencies.FileSystem, configPath, cfg, rawData); err != nil {
 			return Response{Failed: true, Msg: fmt.Sprintf("failed to write config: %v", err)}
 		}
 		return Response{Changed: true, Msg: "logged out", Registry: reg}
@@ -149,7 +154,7 @@ func Execute(req Request) Response {
 				Email: req.Email,
 			}
 
-			if err := writeConfig(configPath, cfg, rawData); err != nil {
+			if err := writeConfig(dependencies.FileSystem, configPath, cfg, rawData); err != nil {
 				return Response{Failed: true, Msg: fmt.Sprintf("failed to write config: %v", err)}
 			}
 
@@ -162,7 +167,7 @@ func Execute(req Request) Response {
 			Email: req.Email,
 		}
 
-		if err := writeConfig(configPath, cfg, rawData); err != nil {
+		if err := writeConfig(dependencies.FileSystem, configPath, cfg, rawData); err != nil {
 			return Response{Failed: true, Msg: fmt.Sprintf("failed to write config: %v", err)}
 		}
 
@@ -174,9 +179,9 @@ func Execute(req Request) Response {
 
 // readConfig reads and parses the docker config.json, also returning raw data
 // for preserving unknown fields
-func readConfig(path string) (DockerConfig, []byte, error) {
+func readConfig(fileSystem docker.FileSystem, path string) (DockerConfig, []byte, error) {
 	cfg := DockerConfig{Auths: make(map[string]DockerAuth)}
-	data, err := os.ReadFile(path)
+	data, err := fileSystem.ReadFile(path)
 	if err != nil {
 		return cfg, nil, err
 	}
@@ -187,9 +192,9 @@ func readConfig(path string) (DockerConfig, []byte, error) {
 }
 
 // writeConfig writes the docker config.json, preserving existing structure
-func writeConfig(path string, cfg DockerConfig, rawData []byte) error {
+func writeConfig(fileSystem docker.FileSystem, path string, cfg DockerConfig, rawData []byte) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := fileSystem.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 
@@ -223,5 +228,5 @@ func writeConfig(path string, cfg DockerConfig, rawData []byte) error {
 	}
 
 	// Write with proper permissions (600 for config files)
-	return os.WriteFile(path, output, 0600)
+	return fileSystem.WriteFile(path, output, 0600)
 }

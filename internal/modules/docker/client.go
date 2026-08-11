@@ -16,7 +16,7 @@ import (
 )
 
 // GetContainerUser returns the user configured for the container
-func GetContainerUser(ctx context.Context, cli *client.Client, containerID string) (string, error) {
+func GetContainerUser(ctx context.Context, cli client.APIClient, containerID string) (string, error) {
 	inspect, err := cli.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
 	if err != nil {
 		return "", err
@@ -29,7 +29,7 @@ func GetContainerUser(ctx context.Context, cli *client.Client, containerID strin
 }
 
 // GetContainerUserIDs returns the numeric UID and GID for a given user in the container
-func GetContainerUserIDs(ctx context.Context, cli *client.Client, containerID string, user string) (uid, gid int, err error) {
+func GetContainerUserIDs(ctx context.Context, cli client.APIClient, containerID string, user string) (uid, gid int, err error) {
 	if user == "" {
 		user = "root"
 	}
@@ -77,7 +77,7 @@ func GetContainerUserIDs(ctx context.Context, cli *client.Client, containerID st
 }
 
 // Ping checks connectivity
-func Ping(ctx context.Context, cli *client.Client) error {
+func Ping(ctx context.Context, cli client.APIClient) error {
 	_, err := cli.Ping(ctx, client.PingOptions{})
 	return err
 }

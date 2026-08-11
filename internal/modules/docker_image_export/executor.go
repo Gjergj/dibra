@@ -3,13 +3,17 @@ package docker_image_export
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
 func Execute(req Request) Response {
+	return ExecuteWithDependencies(req, docker.Dependencies{})
+}
+
+func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	dependencies = dependencies.Resolve()
 	if len(req.Names) == 0 {
 		return Response{Failed: true, Msg: "names is required"}
 	}
@@ -17,13 +21,13 @@ func Execute(req Request) Response {
 		return Response{Failed: true, Msg: "path is required"}
 	}
 
-	cli, err := docker.GetClient(req.CommonArgs)
+	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to create docker client: %v", err)}
 	}
 	defer cli.Close()
 
-	ctx, cancel := docker.GetContext(req.CommonArgs)
+	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
 	// Default tag
@@ -56,7 +60,7 @@ func Execute(req Request) Response {
 
 	// Idempotency check: if file exists and Force is false, skip
 	if !req.Force {
-		if _, err := os.Stat(req.Path); err == nil {
+		if _, err := dependencies.FileSystem.Stat(req.Path); err == nil {
 			// In a more complete implementation, we'd check if the archived image matches
 			// but for now, simple file existence is a start for "not changed"
 			return Response{
@@ -75,7 +79,7 @@ func Execute(req Request) Response {
 	defer readCloser.Close()
 
 	// Create/Overwrite archive file
-	file, err := os.Create(req.Path)
+	file, err := dependencies.FileSystem.Create(req.Path)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("failed to create archive file: %v", err)}
 	}
