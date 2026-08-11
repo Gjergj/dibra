@@ -3,9 +3,11 @@ package builder
 import (
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -64,34 +66,59 @@ func (b *Builder) BuildFor(goos, goarch string) (string, error) {
 func (b *Builder) sourceHash() (string, error) {
 	h := sha256.New()
 
-	agentDir := filepath.Join(b.projectRoot, agentPath)
-	entries, err := os.ReadDir(agentDir)
-	if err != nil {
-		return "", err
-	}
-
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".go" {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(agentDir, e.Name()))
-		if err != nil {
+	// The agent imports execution and version directly in addition to the
+	// module tree. Hash every local source tree that can change its behavior so
+	// a controller never reuses a binary built against stale shared contracts.
+	for _, root := range []string{
+		agentPath,
+		filepath.Join("internal", "execution"),
+		filepath.Join("internal", "modules"),
+		filepath.Join("internal", "version"),
+	} {
+		if err := b.hashGoTree(h, root); err != nil {
 			return "", err
 		}
-		h.Write(data)
 	}
-
-	modulesDir := filepath.Join(b.projectRoot, "internal", "modules")
-	if err := filepath.Walk(modulesDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || filepath.Ext(path) != ".go" {
-			return nil
+	for _, name := range []string{"go.mod", "go.sum"} {
+		if err := b.hashFile(h, name); err != nil {
+			return "", err
 		}
-		data, _ := os.ReadFile(path)
-		h.Write(data)
-		return nil
-	}); err != nil {
-		return "", err
 	}
 
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+
+func (b *Builder) hashGoTree(destination io.Writer, relativeRoot string) error {
+	root := filepath.Join(b.projectRoot, relativeRoot)
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		relativePath, err := filepath.Rel(b.projectRoot, path)
+		if err != nil {
+			return err
+		}
+		return b.hashFile(destination, relativePath)
+	})
+}
+
+func (b *Builder) hashFile(destination io.Writer, relativePath string) error {
+	data, err := os.ReadFile(filepath.Join(b.projectRoot, relativePath))
+	if err != nil {
+		return err
+	}
+	if _, err := io.WriteString(destination, filepath.ToSlash(relativePath)); err != nil {
+		return err
+	}
+	if _, err := destination.Write([]byte{0}); err != nil {
+		return err
+	}
+	if _, err := destination.Write(data); err != nil {
+		return err
+	}
+	_, err = destination.Write([]byte{0})
+	return err
 }

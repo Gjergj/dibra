@@ -275,6 +275,12 @@ The controller resolves the agent binary using a three-mode strategy:
 4. Caches by source hash + target (e.g., `/tmp/dibra-cache/dibra-agent-linux-amd64-<hash>`)
 5. Uploads to remote
 
+The development-agent source hash must cover `cmd/agent`,
+`internal/execution`, `internal/modules`, `internal/version`, `go.mod`, and
+`go.sum`. Changes to any non-test Go source used by the agent must invalidate
+the cached binary; otherwise controller/agent protocol changes can reuse an
+incompatible agent.
+
 **Version mismatch handling**: If `version.Version == "dev"` (local builds without ldflags), auto-download mode fails with an actionable error directing the user to `--agent-build` or `--agent-path`.
 
 ### Key Design Decisions

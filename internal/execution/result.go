@@ -104,6 +104,22 @@ func normalizeDiff(raw any) (map[string]any, bool, error) {
 		return diff, true, nil
 	}
 
+	// Older docker_swarm_service agents returned only a summary list. The
+	// original values cannot be recovered, but preserving the summary under
+	// before/after keeps mixed controller/agent versions interoperable.
+	if len(diff) == 1 {
+		if rawFields, ok := diff["changed_fields"]; ok {
+			fields, valid := stringSlice(rawFields)
+			if !valid {
+				return nil, false, fmt.Errorf("module result diff field %q must be a list of strings", "changed_fields")
+			}
+			return map[string]any{
+				"before": map[string]any{"changed_fields": []string{}},
+				"after":  map[string]any{"changed_fields": fields},
+			}, true, nil
+		}
+	}
+
 	// Accept the original Dibra field-centric shape at the boundary so older
 	// agents remain compatible, but always expose the canonical shape.
 	before := make(map[string]any, len(diff))
@@ -117,4 +133,20 @@ func normalizeDiff(raw any) (map[string]any, bool, error) {
 		after[field] = change["after"]
 	}
 	return map[string]any{"before": before, "after": after}, true, nil
+}
+
+func stringSlice(value any) ([]string, bool) {
+	items, ok := value.([]any)
+	if !ok {
+		return nil, false
+	}
+	result := make([]string, len(items))
+	for index, item := range items {
+		text, ok := item.(string)
+		if !ok {
+			return nil, false
+		}
+		result[index] = text
+	}
+	return result, true
 }
