@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/gjergjiramku/dibra/internal/modules/registry"
 	"gopkg.in/yaml.v3"
 )
 
@@ -129,78 +130,52 @@ func normalizeWhenValue(raw interface{}) (When, error) {
 }
 
 type Task struct {
-	Name                    string                         `json:"name" yaml:"name"`
-	Vars                    map[string]interface{}         `json:"vars,omitempty" yaml:"vars,omitempty"`
-	When                    When                           `json:"when,omitempty" yaml:"when,omitempty"`
-	Loop                    interface{}                    `json:"loop,omitempty" yaml:"loop,omitempty"`
-	WithItems               interface{}                    `json:"with_items,omitempty" yaml:"with_items,omitempty"`
-	WithList                interface{}                    `json:"with_list,omitempty" yaml:"with_list,omitempty"`
-	WithDict                interface{}                    `json:"with_dict,omitempty" yaml:"with_dict,omitempty"`
-	WithSequence            interface{}                    `json:"with_sequence,omitempty" yaml:"with_sequence,omitempty"`
-	LoopControl             *LoopControlParams             `json:"loop_control,omitempty" yaml:"loop_control,omitempty"`
-	ImportTasks             *ImportTasksParams             `json:"import_tasks,omitempty" yaml:"import_tasks,omitempty"`
-	IncludeTasks            *IncludeTasksParams            `json:"include_tasks,omitempty" yaml:"include_tasks,omitempty"`
-	SourceDir               string                         `yaml:"-"`
-	Register                string                         `json:"register,omitempty" yaml:"register,omitempty"`
-	Template                *TemplateParams                `json:"template,omitempty" yaml:"template,omitempty"`
-	Apt                     *AptParams                     `json:"apt,omitempty" yaml:"apt,omitempty"`
-	AptKey                  *AptKeyParams                  `json:"apt_key,omitempty" yaml:"apt_key,omitempty"`
-	AptRepository           *AptRepositoryParams           `json:"apt_repository,omitempty" yaml:"apt_repository,omitempty"`
-	File                    *FileParams                    `json:"file,omitempty" yaml:"file,omitempty"`
-	Copy                    *CopyParams                    `json:"copy,omitempty" yaml:"copy,omitempty"`
-	Fetch                   *FetchParams                   `json:"fetch,omitempty" yaml:"fetch,omitempty"`
-	URI                     *URIParams                     `json:"uri,omitempty" yaml:"uri,omitempty"`
-	Cron                    *CronParams                    `json:"cron,omitempty" yaml:"cron,omitempty"`
-	UFW                     *UFWParams                     `json:"ufw,omitempty" yaml:"ufw,omitempty"`
-	User                    *UserParams                    `json:"user,omitempty" yaml:"user,omitempty"`
-	Group                   *GroupParams                   `json:"group,omitempty" yaml:"group,omitempty"`
-	SystemdService          *SystemdServiceParams          `json:"systemd_service,omitempty" yaml:"systemd_service,omitempty"`
-	Systemd                 *SystemdServiceParams          `json:"systemd,omitempty" yaml:"systemd,omitempty"`
-	Service                 *ServiceParams                 `json:"service,omitempty" yaml:"service,omitempty"`
-	ServiceFacts            *ServiceFactsParams            `json:"service_facts,omitempty" yaml:"service_facts,omitempty"`
-	GatherFacts             *GatherFactsParams             `json:"gather_facts,omitempty" yaml:"gather_facts,omitempty"`
-	Ping                    *PingParams                    `json:"ping,omitempty" yaml:"ping,omitempty"`
-	Slurp                   *SlurpParams                   `json:"slurp,omitempty" yaml:"slurp,omitempty"`
-	Command                 *CommandParams                 `json:"command,omitempty" yaml:"command,omitempty"`
-	Shell                   *ShellParams                   `json:"shell,omitempty" yaml:"shell,omitempty"`
-	Script                  *ScriptParams                  `json:"script,omitempty" yaml:"script,omitempty"`
-	Unarchive               *UnarchiveParams               `json:"unarchive,omitempty" yaml:"unarchive,omitempty"`
-	Git                     *GitParams                     `json:"git,omitempty" yaml:"git,omitempty"`
-	Lineinfile              *LineinfileParams              `json:"lineinfile,omitempty" yaml:"lineinfile,omitempty"`
-	Blockinfile             *BlockinfileParams             `json:"blockinfile,omitempty" yaml:"blockinfile,omitempty"`
-	Replace                 *ReplaceParams                 `json:"replace,omitempty" yaml:"replace,omitempty"`
-	Iptables                *IptablesParams                `json:"iptables,omitempty" yaml:"iptables,omitempty"`
-	IptablesState           *IptablesStateParams           `json:"iptables_state,omitempty" yaml:"iptables_state,omitempty"`
-	Tempfile                *TempfileParams                `json:"tempfile,omitempty" yaml:"tempfile,omitempty"`
-	Find                    *FindParams                    `json:"find,omitempty" yaml:"find,omitempty"`
-	Reboot                  *RebootParams                  `json:"reboot,omitempty" yaml:"reboot,omitempty"`
-	DockerContainer         *DockerContainerParams         `json:"docker_container,omitempty" yaml:"docker_container,omitempty"`
-	DockerImage             *DockerImageParams             `json:"docker_image,omitempty" yaml:"docker_image,omitempty"`
-	DockerNetwork           *DockerNetworkParams           `json:"docker_network,omitempty" yaml:"docker_network,omitempty"`
-	DockerVolume            *DockerVolumeParams            `json:"docker_volume,omitempty" yaml:"docker_volume,omitempty"`
-	DockerPrune             *DockerPruneParams             `json:"docker_prune,omitempty" yaml:"docker_prune,omitempty"`
-	DockerLogin             *DockerLoginParams             `json:"docker_login,omitempty" yaml:"docker_login,omitempty"`
-	DockerSwarm             *DockerSwarmParams             `json:"docker_swarm,omitempty" yaml:"docker_swarm,omitempty"`
-	DockerSwarmService      *DockerSwarmServiceParams      `json:"docker_swarm_service,omitempty" yaml:"docker_swarm_service,omitempty"`
-	DockerNode              *DockerNodeParams              `json:"docker_node,omitempty" yaml:"docker_node,omitempty"`
-	DockerCompose           *DockerComposeParams           `json:"docker_compose,omitempty" yaml:"docker_compose,omitempty"`
-	DockerSecret            *DockerSecretParams            `json:"docker_secret,omitempty" yaml:"docker_secret,omitempty"`
-	DockerConfig            *DockerConfigParams            `json:"docker_config,omitempty" yaml:"docker_config,omitempty"`
-	DockerStack             *DockerStackParams             `json:"docker_stack,omitempty" yaml:"docker_stack,omitempty"`
-	DockerContainerExec     *DockerContainerExecParams     `json:"docker_container_exec,omitempty" yaml:"docker_container_exec,omitempty"`
-	DockerContainerCopyInto *DockerContainerCopyIntoParams `json:"docker_container_copy_into,omitempty" yaml:"docker_container_copy_into,omitempty"`
-	DockerImageBuild        *DockerImageBuildParams        `json:"docker_image_build,omitempty" yaml:"docker_image_build,omitempty"`
-	DockerImageLoad         *DockerImageLoadParams         `json:"docker_image_load,omitempty" yaml:"docker_image_load,omitempty"`
-	DockerImageExport       *DockerImageExportParams       `json:"docker_image_export,omitempty" yaml:"docker_image_export,omitempty"`
-	DockerComposeV2Run      *DockerComposeV2RunParams      `json:"docker_compose_v2_run,omitempty" yaml:"docker_compose_v2_run,omitempty"`
-	DockerContainerInfo     *DockerContainerInfoParams     `json:"docker_container_info,omitempty" yaml:"docker_container_info,omitempty"`
-	DockerImageInfo         *DockerImageInfoParams         `json:"docker_image_info,omitempty" yaml:"docker_image_info,omitempty"`
-	DockerNetworkInfo       *DockerNetworkInfoParams       `json:"docker_network_info,omitempty" yaml:"docker_network_info,omitempty"`
-	DockerVolumeInfo        *DockerVolumeInfoParams        `json:"docker_volume_info,omitempty" yaml:"docker_volume_info,omitempty"`
-	DockerHostInfo          *DockerHostInfoParams          `json:"docker_host_info,omitempty" yaml:"docker_host_info,omitempty"`
-	DockerSwarmInfo         *DockerSwarmInfoParams         `json:"docker_swarm_info,omitempty" yaml:"docker_swarm_info,omitempty"`
-	DockerSwarmServiceInfo  *DockerSwarmServiceInfoParams  `json:"docker_swarm_service_info,omitempty" yaml:"docker_swarm_service_info,omitempty"`
-	DockerNodeInfo          *DockerNodeInfoParams          `json:"docker_node_info,omitempty" yaml:"docker_node_info,omitempty"`
+	Name           string                 `json:"name" yaml:"name"`
+	Vars           map[string]interface{} `json:"vars,omitempty" yaml:"vars,omitempty"`
+	When           When                   `json:"when,omitempty" yaml:"when,omitempty"`
+	Loop           interface{}            `json:"loop,omitempty" yaml:"loop,omitempty"`
+	WithItems      interface{}            `json:"with_items,omitempty" yaml:"with_items,omitempty"`
+	WithList       interface{}            `json:"with_list,omitempty" yaml:"with_list,omitempty"`
+	WithDict       interface{}            `json:"with_dict,omitempty" yaml:"with_dict,omitempty"`
+	WithSequence   interface{}            `json:"with_sequence,omitempty" yaml:"with_sequence,omitempty"`
+	LoopControl    *LoopControlParams     `json:"loop_control,omitempty" yaml:"loop_control,omitempty"`
+	ImportTasks    *ImportTasksParams     `json:"import_tasks,omitempty" yaml:"import_tasks,omitempty"`
+	IncludeTasks   *IncludeTasksParams    `json:"include_tasks,omitempty" yaml:"include_tasks,omitempty"`
+	SourceDir      string                 `yaml:"-"`
+	Register       string                 `json:"register,omitempty" yaml:"register,omitempty"`
+	Template       *TemplateParams        `json:"template,omitempty" yaml:"template,omitempty"`
+	Apt            *AptParams             `json:"apt,omitempty" yaml:"apt,omitempty"`
+	AptKey         *AptKeyParams          `json:"apt_key,omitempty" yaml:"apt_key,omitempty"`
+	AptRepository  *AptRepositoryParams   `json:"apt_repository,omitempty" yaml:"apt_repository,omitempty"`
+	File           *FileParams            `json:"file,omitempty" yaml:"file,omitempty"`
+	Copy           *CopyParams            `json:"copy,omitempty" yaml:"copy,omitempty"`
+	Fetch          *FetchParams           `json:"fetch,omitempty" yaml:"fetch,omitempty"`
+	URI            *URIParams             `json:"uri,omitempty" yaml:"uri,omitempty"`
+	Cron           *CronParams            `json:"cron,omitempty" yaml:"cron,omitempty"`
+	UFW            *UFWParams             `json:"ufw,omitempty" yaml:"ufw,omitempty"`
+	User           *UserParams            `json:"user,omitempty" yaml:"user,omitempty"`
+	Group          *GroupParams           `json:"group,omitempty" yaml:"group,omitempty"`
+	SystemdService *SystemdServiceParams  `json:"systemd_service,omitempty" yaml:"systemd_service,omitempty"`
+	Systemd        *SystemdServiceParams  `json:"systemd,omitempty" yaml:"systemd,omitempty"`
+	Service        *ServiceParams         `json:"service,omitempty" yaml:"service,omitempty"`
+	ServiceFacts   *ServiceFactsParams    `json:"service_facts,omitempty" yaml:"service_facts,omitempty"`
+	GatherFacts    *GatherFactsParams     `json:"gather_facts,omitempty" yaml:"gather_facts,omitempty"`
+	Ping           *PingParams            `json:"ping,omitempty" yaml:"ping,omitempty"`
+	Slurp          *SlurpParams           `json:"slurp,omitempty" yaml:"slurp,omitempty"`
+	Command        *CommandParams         `json:"command,omitempty" yaml:"command,omitempty"`
+	Shell          *ShellParams           `json:"shell,omitempty" yaml:"shell,omitempty"`
+	Script         *ScriptParams          `json:"script,omitempty" yaml:"script,omitempty"`
+	Unarchive      *UnarchiveParams       `json:"unarchive,omitempty" yaml:"unarchive,omitempty"`
+	Git            *GitParams             `json:"git,omitempty" yaml:"git,omitempty"`
+	Lineinfile     *LineinfileParams      `json:"lineinfile,omitempty" yaml:"lineinfile,omitempty"`
+	Blockinfile    *BlockinfileParams     `json:"blockinfile,omitempty" yaml:"blockinfile,omitempty"`
+	Replace        *ReplaceParams         `json:"replace,omitempty" yaml:"replace,omitempty"`
+	Iptables       *IptablesParams        `json:"iptables,omitempty" yaml:"iptables,omitempty"`
+	IptablesState  *IptablesStateParams   `json:"iptables_state,omitempty" yaml:"iptables_state,omitempty"`
+	Tempfile       *TempfileParams        `json:"tempfile,omitempty" yaml:"tempfile,omitempty"`
+	Find           *FindParams            `json:"find,omitempty" yaml:"find,omitempty"`
+	Reboot         *RebootParams          `json:"reboot,omitempty" yaml:"reboot,omitempty"`
+	Module         *registry.Invocation   `json:"-" yaml:"-"`
 }
 
 type LoopControlParams struct {
@@ -231,127 +206,6 @@ type TemplateParams struct {
 	CommentEndString    string `json:"comment_end_string,omitempty" yaml:"comment_end_string,omitempty"`
 	TrimBlocks          *bool  `json:"trim_blocks,omitempty" yaml:"trim_blocks,omitempty"`
 	LstripBlocks        *bool  `json:"lstrip_blocks,omitempty" yaml:"lstrip_blocks,omitempty"`
-}
-
-type DockerSwarmServiceParams struct {
-	Name          string            `json:"name" yaml:"name"`
-	Image         string            `json:"image" yaml:"image"`
-	State         string            `json:"state,omitempty" yaml:"state,omitempty"`
-	Replicas      *uint64           `json:"replicas,omitempty" yaml:"replicas,omitempty"`
-	Args          []string          `json:"args,omitempty" yaml:"args,omitempty"`
-	Command       interface{}       `json:"command,omitempty" yaml:"command,omitempty"`
-	Env           map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
-	Publish       []PortPublish     `json:"publish,omitempty" yaml:"publish,omitempty"`
-	Networks      []string          `json:"networks,omitempty" yaml:"networks,omitempty"`
-	Labels        map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
-	LimitCPU      float64           `json:"limit_cpu,omitempty" yaml:"limit_cpu,omitempty"`
-	LimitMemory   int64             `json:"limit_memory,omitempty" yaml:"limit_memory,omitempty"`
-	Constraint    []string          `json:"constraint,omitempty" yaml:"constraint,omitempty"`
-	RestartPolicy string            `json:"restart_policy,omitempty" yaml:"restart_policy,omitempty"`
-	ForceUpdate   bool              `json:"force_update,omitempty" yaml:"force_update,omitempty"`
-
-	// Phase 6.1: Configs and Secrets
-	Configs []ServiceConfigReference `json:"configs,omitempty" yaml:"configs,omitempty"`
-	Secrets []ServiceSecretReference `json:"secrets,omitempty" yaml:"secrets,omitempty"`
-
-	// Phase 6.2: Update and Rollback Configuration
-	UpdateDelay             string  `json:"update_delay,omitempty" yaml:"update_delay,omitempty"`
-	UpdateParallelism       uint64  `json:"update_parallelism,omitempty" yaml:"update_parallelism,omitempty"`
-	UpdateFailureAction     string  `json:"update_failure_action,omitempty" yaml:"update_failure_action,omitempty"`
-	UpdateOrder             string  `json:"update_order,omitempty" yaml:"update_order,omitempty"`
-	UpdateMonitor           string  `json:"update_monitor,omitempty" yaml:"update_monitor,omitempty"`
-	MaxFailureRatio         float32 `json:"max_failure_ratio,omitempty" yaml:"max_failure_ratio,omitempty"`
-	RollbackDelay           string  `json:"rollback_delay,omitempty" yaml:"rollback_delay,omitempty"`
-	RollbackParallelism     uint64  `json:"rollback_parallelism,omitempty" yaml:"rollback_parallelism,omitempty"`
-	RollbackFailureAction   string  `json:"rollback_failure_action,omitempty" yaml:"rollback_failure_action,omitempty"`
-	RollbackOrder           string  `json:"rollback_order,omitempty" yaml:"rollback_order,omitempty"`
-	RollbackMonitor         string  `json:"rollback_monitor,omitempty" yaml:"rollback_monitor,omitempty"`
-	RollbackMaxFailureRatio float32 `json:"rollback_max_failure_ratio,omitempty" yaml:"rollback_max_failure_ratio,omitempty"`
-
-	// Phase 6.3: Additional Options
-	Healthcheck *ServiceHealthcheckParams `json:"healthcheck,omitempty" yaml:"healthcheck,omitempty"`
-	DNS         []string                  `json:"dns,omitempty" yaml:"dns,omitempty"`
-	DNSSearch   []string                  `json:"dns_search,omitempty" yaml:"dns_search,omitempty"`
-	DNSOptions  []string                  `json:"dns_options,omitempty" yaml:"dns_options,omitempty"`
-	Hosts       []string                  `json:"hosts,omitempty" yaml:"hosts,omitempty"`
-	Mounts      []ServiceMountParams      `json:"mounts,omitempty" yaml:"mounts,omitempty"`
-
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
-type ServiceConfigReference struct {
-	ConfigName string `json:"config_name" yaml:"config_name"`
-	ConfigID   string `json:"config_id,omitempty" yaml:"config_id,omitempty"`
-	FileName   string `json:"filename,omitempty" yaml:"filename,omitempty"`
-	UID        string `json:"uid,omitempty" yaml:"uid,omitempty"`
-	GID        string `json:"gid,omitempty" yaml:"gid,omitempty"`
-	Mode       uint32 `json:"mode,omitempty" yaml:"mode,omitempty"`
-}
-
-type ServiceSecretReference struct {
-	SecretName string `json:"secret_name" yaml:"secret_name"`
-	SecretID   string `json:"secret_id,omitempty" yaml:"secret_id,omitempty"`
-	FileName   string `json:"filename,omitempty" yaml:"filename,omitempty"`
-	UID        string `json:"uid,omitempty" yaml:"uid,omitempty"`
-	GID        string `json:"gid,omitempty" yaml:"gid,omitempty"`
-	Mode       uint32 `json:"mode,omitempty" yaml:"mode,omitempty"`
-}
-
-type ServiceHealthcheckParams struct {
-	Test        []string `json:"test,omitempty" yaml:"test,omitempty"`
-	Interval    string   `json:"interval,omitempty" yaml:"interval,omitempty"`
-	Timeout     string   `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-	StartPeriod string   `json:"start_period,omitempty" yaml:"start_period,omitempty"`
-	Retries     int      `json:"retries,omitempty" yaml:"retries,omitempty"`
-}
-
-type ServiceMountParams struct {
-	Type            string            `json:"type,omitempty" yaml:"type,omitempty"`
-	Source          string            `json:"source,omitempty" yaml:"source,omitempty"`
-	Target          string            `json:"target,omitempty" yaml:"target,omitempty"`
-	ReadOnly        bool              `json:"read_only,omitempty" yaml:"read_only,omitempty"`
-	Consistency     string            `json:"consistency,omitempty" yaml:"consistency,omitempty"`
-	BindPropagation string            `json:"bind_propagation,omitempty" yaml:"bind_propagation,omitempty"`
-	VolumeDriver    string            `json:"volume_driver,omitempty" yaml:"volume_driver,omitempty"`
-	VolumeLabels    map[string]string `json:"volume_labels,omitempty" yaml:"volume_labels,omitempty"`
-	VolumeOptions   map[string]string `json:"volume_options,omitempty" yaml:"volume_options,omitempty"`
-	VolumeNoCopy    bool              `json:"volume_no_copy,omitempty" yaml:"volume_no_copy,omitempty"`
-	TmpfsSize       int64             `json:"tmpfs_size,omitempty" yaml:"tmpfs_size,omitempty"`
-	TmpfsMode       uint32            `json:"tmpfs_mode,omitempty" yaml:"tmpfs_mode,omitempty"`
-}
-
-type PortPublish struct {
-	PublishedPort uint32 `json:"published_port" yaml:"published_port"`
-	TargetPort    uint32 `json:"target_port" yaml:"target_port"`
-	Protocol      string `json:"protocol,omitempty" yaml:"protocol,omitempty"`
-	Mode          string `json:"mode,omitempty" yaml:"mode,omitempty"`
-}
-
-type DockerNodeParams struct {
-	Hostname       string            `json:"hostname,omitempty" yaml:"hostname,omitempty"`
-	Self           bool              `json:"self,omitempty" yaml:"self,omitempty"`
-	Availability   string            `json:"availability,omitempty" yaml:"availability,omitempty"`
-	Role           string            `json:"role,omitempty" yaml:"role,omitempty"`
-	Labels         map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
-	LabelsState    string            `json:"labels_state,omitempty" yaml:"labels_state,omitempty"`
-	LabelsToRemove []string          `json:"labels_to_remove,omitempty" yaml:"labels_to_remove,omitempty"`
-
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
-type DockerSwarmServiceInfoParams struct {
-	Name       string `json:"name" yaml:"name"`
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
-type DockerNodeInfoParams struct {
-	Name       string `json:"name,omitempty" yaml:"name,omitempty"`
-	Self       bool   `json:"self,omitempty" yaml:"self,omitempty"`
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
 }
 
 type ServiceFactsParams struct {
@@ -791,417 +645,6 @@ type IptablesParams struct {
 	Numeric          bool            `json:"numeric,omitempty" yaml:"numeric,omitempty"`
 }
 
-type DockerContainerParams struct {
-	Name           string            `json:"name" yaml:"name"`
-	Image          string            `json:"image,omitempty" yaml:"image,omitempty"`
-	State          string            `json:"state,omitempty" yaml:"state,omitempty"`
-	Command        interface{}       `json:"command,omitempty" yaml:"command,omitempty"`
-	Entrypoint     interface{}       `json:"entrypoint,omitempty" yaml:"entrypoint,omitempty"`
-	Args           []string          `json:"args,omitempty" yaml:"args,omitempty"`
-	Env            map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
-	ExposedPorts   []string          `json:"exposed_ports,omitempty" yaml:"exposed_ports,omitempty"`
-	Ports          []string          `json:"ports,omitempty" yaml:"ports,omitempty"`
-	Volumes        []string          `json:"volumes,omitempty" yaml:"volumes,omitempty"`
-	NetworkMode    string            `json:"network_mode,omitempty" yaml:"network_mode,omitempty"`
-	Networks       []DockerNetwork   `json:"networks,omitempty" yaml:"networks,omitempty"`
-	NetworksAppend bool              `json:"networks_append,omitempty" yaml:"networks_append,omitempty"`
-	RestartPolicy  string            `json:"restart_policy,omitempty" yaml:"restart_policy,omitempty"`
-	AutoRemove     bool              `json:"auto_remove,omitempty" yaml:"auto_remove,omitempty"`
-	Privileged     bool              `json:"privileged,omitempty" yaml:"privileged,omitempty"`
-	User           string            `json:"user,omitempty" yaml:"user,omitempty"`
-	WorkingDir     string            `json:"working_dir,omitempty" yaml:"working_dir,omitempty"`
-	Hostname       string            `json:"hostname,omitempty" yaml:"hostname,omitempty"`
-	Domainname     string            `json:"domainname,omitempty" yaml:"domainname,omitempty"`
-	Labels         map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Links          []string          `json:"links,omitempty" yaml:"links,omitempty"`
-	LogDriver      string            `json:"log_driver,omitempty" yaml:"log_driver,omitempty"`
-	LogOptions     map[string]string `json:"log_options,omitempty" yaml:"log_options,omitempty"`
-
-	// Capabilities (Tier 1)
-	CapAdd  []string `json:"cap_add,omitempty" yaml:"cap_add,omitempty"`
-	CapDrop []string `json:"cap_drop,omitempty" yaml:"cap_drop,omitempty"`
-
-	// Devices (Tier 1)
-	Devices []string `json:"devices,omitempty" yaml:"devices,omitempty"`
-
-	// Healthcheck (Tier 1)
-	Healthcheck *DockerHealthcheck `json:"healthcheck,omitempty" yaml:"healthcheck,omitempty"`
-
-	// Other Tier 1 options
-	Init    bool     `json:"init,omitempty" yaml:"init,omitempty"`
-	Tmpfs   []string `json:"tmpfs,omitempty" yaml:"tmpfs,omitempty"`
-	ShmSize string   `json:"shm_size,omitempty" yaml:"shm_size,omitempty"`
-
-	// Resource limits (Tier 2)
-	Ulimits     []DockerUlimit    `json:"ulimits,omitempty" yaml:"ulimits,omitempty"`
-	Sysctls     map[string]string `json:"sysctls,omitempty" yaml:"sysctls,omitempty"`
-	SecurityOpt []string          `json:"security_opt,omitempty" yaml:"security_opt,omitempty"`
-	CPUs        float64           `json:"cpus,omitempty" yaml:"cpus,omitempty"`
-	Memory      string            `json:"memory,omitempty" yaml:"memory,omitempty"`
-	MemorySwap  string            `json:"memory_swap,omitempty" yaml:"memory_swap,omitempty"`
-	PidsLimit   int64             `json:"pids_limit,omitempty" yaml:"pids_limit,omitempty"`
-
-	// Idempotency control
-	Comparisons map[string]string `json:"comparisons,omitempty" yaml:"comparisons,omitempty"`
-	Recreate    interface{}       `json:"recreate,omitempty" yaml:"recreate,omitempty"` // bool or string (auto/always/never)
-	ForceKill   bool              `json:"force_kill,omitempty" yaml:"force_kill,omitempty"`
-	KeepVolumes bool              `json:"keep_volumes,omitempty" yaml:"keep_volumes,omitempty"`
-
-	// Image pull behavior
-	Pull interface{} `json:"pull,omitempty" yaml:"pull,omitempty"` // bool or string (missing/always/never)
-
-	// Registry authentication
-	RegistryUsername string `json:"registry_username,omitempty" yaml:"registry_username,omitempty"`
-	RegistryPassword string `json:"registry_password,omitempty" yaml:"registry_password,omitempty"`
-
-	// Common options
-	DockerHost    string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS           bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-	ValidateCerts bool   `json:"validate_certs,omitempty" yaml:"validate_certs,omitempty"`
-	CAPath        string `json:"ca_path,omitempty" yaml:"ca_path,omitempty"`
-	ClientCert    string `json:"client_cert,omitempty" yaml:"client_cert,omitempty"`
-	ClientKey     string `json:"client_key,omitempty" yaml:"client_key,omitempty"`
-	APIVersion    string `json:"api_version,omitempty" yaml:"api_version,omitempty"`
-	Timeout       int    `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-	Debug         bool   `json:"debug,omitempty" yaml:"debug,omitempty"`
-}
-
-type DockerHealthcheck struct {
-	Test        []string `json:"test" yaml:"test"`
-	Interval    string   `json:"interval,omitempty" yaml:"interval,omitempty"`
-	Timeout     string   `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-	StartPeriod string   `json:"start_period,omitempty" yaml:"start_period,omitempty"`
-	Retries     int      `json:"retries,omitempty" yaml:"retries,omitempty"`
-}
-
-type DockerUlimit struct {
-	Name string `json:"name" yaml:"name"`
-	Soft int64  `json:"soft" yaml:"soft"`
-	Hard int64  `json:"hard" yaml:"hard"`
-}
-
-type DockerNetwork struct {
-	Name        string   `json:"name" yaml:"name"`
-	IPv4Address string   `json:"ipv4_address,omitempty" yaml:"ipv4_address,omitempty"`
-	IPv6Address string   `json:"ipv6_address,omitempty" yaml:"ipv6_address,omitempty"`
-	Links       []string `json:"links,omitempty" yaml:"links,omitempty"`
-	Aliases     []string `json:"aliases,omitempty" yaml:"aliases,omitempty"`
-}
-
-type DockerImageParams struct {
-	Name        string `json:"name" yaml:"name"`
-	Tag         string `json:"tag,omitempty" yaml:"tag,omitempty"`
-	Repository  string `json:"repository,omitempty" yaml:"repository,omitempty"`
-	State       string `json:"state,omitempty" yaml:"state,omitempty"`
-	Source      string `json:"source,omitempty" yaml:"source,omitempty"`
-	Push        bool   `json:"push,omitempty" yaml:"push,omitempty"`
-	ArchivePath string `json:"archive_path,omitempty" yaml:"archive_path,omitempty"`
-	DockerFile  string `json:"dockerfile,omitempty" yaml:"dockerfile,omitempty"`
-	BuildPath   string `json:"build_path,omitempty" yaml:"build_path,omitempty"`
-	KeepImage   bool   `json:"keep_image,omitempty" yaml:"keep_image,omitempty"`
-
-	// Pull behavior
-	Pull interface{} `json:"pull,omitempty" yaml:"pull,omitempty"` // string (missing/always/never) or bool for backward compat
-
-	// Force flags (separated for clarity)
-	ForcePull   bool `json:"force_pull,omitempty" yaml:"force_pull,omitempty"`     // Force pull even if image exists
-	ForceRemove bool `json:"force_remove,omitempty" yaml:"force_remove,omitempty"` // Force remove (removes containers using the image)
-	ForceTag    bool `json:"force_tag,omitempty" yaml:"force_tag,omitempty"`       // Force tag even if target exists
-	ForceSource bool `json:"force_source,omitempty" yaml:"force_source,omitempty"` // Deprecated: use force_pull or force_remove
-
-	// Registry authentication
-	RegistryUsername string `json:"registry_username,omitempty" yaml:"registry_username,omitempty"`
-	RegistryPassword string `json:"registry_password,omitempty" yaml:"registry_password,omitempty"`
-
-	DockerHost    string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS           bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-	ValidateCerts bool   `json:"validate_certs,omitempty" yaml:"validate_certs,omitempty"`
-	CAPath        string `json:"ca_path,omitempty" yaml:"ca_path,omitempty"`
-	ClientCert    string `json:"client_cert,omitempty" yaml:"client_cert,omitempty"`
-	ClientKey     string `json:"client_key,omitempty" yaml:"client_key,omitempty"`
-	APIVersion    string `json:"api_version,omitempty" yaml:"api_version,omitempty"`
-	Timeout       int    `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-	Debug         bool   `json:"debug,omitempty" yaml:"debug,omitempty"`
-}
-
-type DockerNetworkParams struct {
-	Name       string            `json:"name" yaml:"name"`
-	State      string            `json:"state,omitempty" yaml:"state,omitempty"`
-	Driver     string            `json:"driver,omitempty" yaml:"driver,omitempty"`
-	Options    map[string]string `json:"options,omitempty" yaml:"options,omitempty"`
-	IPAMConfig []IPAMConfig      `json:"ipam_config,omitempty" yaml:"ipam_config,omitempty"`
-	Labels     map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Internal   bool              `json:"internal,omitempty" yaml:"internal,omitempty"`
-	Attachable bool              `json:"attachable,omitempty" yaml:"attachable,omitempty"`
-	Scope      string            `json:"scope,omitempty" yaml:"scope,omitempty"`
-	Force      bool              `json:"force,omitempty" yaml:"force,omitempty"`
-
-	// Phase 4.1: Connected Containers Management
-	Connected []NetworkConnectedContainer `json:"connected,omitempty" yaml:"connected,omitempty"`
-	Appends   bool                        `json:"appends,omitempty" yaml:"appends,omitempty"`
-
-	// Phase 4.2: Additional Options
-	EnableIPv6        bool              `json:"enable_ipv6,omitempty" yaml:"enable_ipv6,omitempty"`
-	ConfigOnly        bool              `json:"config_only,omitempty" yaml:"config_only,omitempty"`
-	ConfigFrom        string            `json:"config_from,omitempty" yaml:"config_from,omitempty"`
-	Ingress           bool              `json:"ingress,omitempty" yaml:"ingress,omitempty"`
-	IPAMDriver        string            `json:"ipam_driver,omitempty" yaml:"ipam_driver,omitempty"`
-	IPAMDriverOptions map[string]string `json:"ipam_driver_options,omitempty" yaml:"ipam_driver_options,omitempty"`
-
-	DockerHost    string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS           bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-	ValidateCerts bool   `json:"validate_certs,omitempty" yaml:"validate_certs,omitempty"`
-	CAPath        string `json:"ca_path,omitempty" yaml:"ca_path,omitempty"`
-	ClientCert    string `json:"client_cert,omitempty" yaml:"client_cert,omitempty"`
-	ClientKey     string `json:"client_key,omitempty" yaml:"client_key,omitempty"`
-	APIVersion    string `json:"api_version,omitempty" yaml:"api_version,omitempty"`
-	Timeout       int    `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-	Debug         bool   `json:"debug,omitempty" yaml:"debug,omitempty"`
-}
-
-type NetworkConnectedContainer struct {
-	Name        string            `json:"name" yaml:"name"`
-	IPv4Address string            `json:"ipv4_address,omitempty" yaml:"ipv4_address,omitempty"`
-	IPv6Address string            `json:"ipv6_address,omitempty" yaml:"ipv6_address,omitempty"`
-	Aliases     []string          `json:"aliases,omitempty" yaml:"aliases,omitempty"`
-	Links       []string          `json:"links,omitempty" yaml:"links,omitempty"`
-	DriverOpts  map[string]string `json:"driver_opts,omitempty" yaml:"driver_opts,omitempty"`
-}
-
-type IPAMConfig struct {
-	Subnet     string            `json:"subnet,omitempty" yaml:"subnet,omitempty"`
-	Gateway    string            `json:"gateway,omitempty" yaml:"gateway,omitempty"`
-	IPRange    string            `json:"ip_range,omitempty" yaml:"ip_range,omitempty"`
-	AuxAddress map[string]string `json:"aux_address,omitempty" yaml:"aux_address,omitempty"`
-}
-
-type DockerVolumeParams struct {
-	Name          string            `json:"name" yaml:"name"`
-	State         string            `json:"state,omitempty" yaml:"state,omitempty"`
-	Driver        string            `json:"driver,omitempty" yaml:"driver,omitempty"`
-	DriverOptions map[string]string `json:"driver_options,omitempty" yaml:"driver_options,omitempty"`
-	Labels        map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Recreate      string            `json:"recreate,omitempty" yaml:"recreate,omitempty"`
-	Force         bool              `json:"force,omitempty" yaml:"force,omitempty"`
-
-	DockerHost    string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS           bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-	ValidateCerts bool   `json:"validate_certs,omitempty" yaml:"validate_certs,omitempty"`
-	CAPath        string `json:"ca_path,omitempty" yaml:"ca_path,omitempty"`
-	ClientCert    string `json:"client_cert,omitempty" yaml:"client_cert,omitempty"`
-	ClientKey     string `json:"client_key,omitempty" yaml:"client_key,omitempty"`
-	APIVersion    string `json:"api_version,omitempty" yaml:"api_version,omitempty"`
-	Timeout       int    `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-	Debug         bool   `json:"debug,omitempty" yaml:"debug,omitempty"`
-}
-
-type DockerPruneParams struct {
-	Containers          bool              `json:"containers,omitempty" yaml:"containers,omitempty"`
-	ContainersFilters   map[string]string `json:"containers_filters,omitempty" yaml:"containers_filters,omitempty"`
-	Images              bool              `json:"images,omitempty" yaml:"images,omitempty"`
-	ImagesFilters       map[string]string `json:"images_filters,omitempty" yaml:"images_filters,omitempty"`
-	Networks            bool              `json:"networks,omitempty" yaml:"networks,omitempty"`
-	NetworksFilters     map[string]string `json:"networks_filters,omitempty" yaml:"networks_filters,omitempty"`
-	Volumes             bool              `json:"volumes,omitempty" yaml:"volumes,omitempty"`
-	VolumesFilters      map[string]string `json:"volumes_filters,omitempty" yaml:"volumes_filters,omitempty"`
-	Builder             bool              `json:"builder,omitempty" yaml:"builder,omitempty"`
-	BuilderCacheAll     bool              `json:"builder_cache_all,omitempty" yaml:"builder_cache_all,omitempty"`
-	BuilderCacheFilters map[string]string `json:"builder_cache_filters,omitempty" yaml:"builder_cache_filters,omitempty"`
-
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
-type DockerLoginParams struct {
-	Username   string `json:"username" yaml:"username"`
-	Password   string `json:"password" yaml:"password"`
-	Registry   string `json:"registry,omitempty" yaml:"registry,omitempty"`
-	Email      string `json:"email,omitempty" yaml:"email,omitempty"`
-	ConfigPath string `json:"config_path,omitempty" yaml:"config_path,omitempty"`
-	State      string `json:"state,omitempty" yaml:"state,omitempty"`
-	Relogin    bool   `json:"relogin,omitempty" yaml:"relogin,omitempty"`
-
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
-type DockerSwarmParams struct {
-	State           string   `json:"state,omitempty" yaml:"state,omitempty"`
-	AdvertiseAddr   string   `json:"advertise_addr,omitempty" yaml:"advertise_addr,omitempty"`
-	ListenAddr      string   `json:"listen_addr,omitempty" yaml:"listen_addr,omitempty"`
-	ForceNewCluster bool     `json:"force_new_cluster,omitempty" yaml:"force_new_cluster,omitempty"`
-	RemoteAddrs     []string `json:"remote_addrs,omitempty" yaml:"remote_addrs,omitempty"`
-	JoinToken       string   `json:"join_token,omitempty" yaml:"join_token,omitempty"`
-	NodeID          string   `json:"node_id,omitempty" yaml:"node_id,omitempty"`
-	Force           bool     `json:"force,omitempty" yaml:"force,omitempty"`
-
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
-type DockerComposeParams struct {
-	ProjectSrc    string            `json:"project_src" yaml:"project_src"`
-	ProjectName   string            `json:"project_name,omitempty" yaml:"project_name,omitempty"`
-	Files         []string          `json:"files,omitempty" yaml:"files,omitempty"`
-	State         string            `json:"state,omitempty" yaml:"state,omitempty"`
-	Services      []string          `json:"services,omitempty" yaml:"services,omitempty"`
-	Scale         map[string]int    `json:"scale,omitempty" yaml:"scale,omitempty"`
-	Build         bool              `json:"build,omitempty" yaml:"build,omitempty"`
-	Pull          bool              `json:"pull,omitempty" yaml:"pull,omitempty"`
-	RemoveOrphans bool              `json:"remove_orphans,omitempty" yaml:"remove_orphans,omitempty"`
-	Env           map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
-	Profiles      []string          `json:"profiles,omitempty" yaml:"profiles,omitempty"`
-
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
-type DockerComposeV2RunParams struct {
-	ProjectSrc      string            `json:"project_src" yaml:"project_src"`
-	ProjectName     string            `json:"project_name,omitempty" yaml:"project_name,omitempty"`
-	Files           []string          `json:"files,omitempty" yaml:"files,omitempty"`
-	Service         string            `json:"service" yaml:"service"`
-	Argv            []string          `json:"argv,omitempty" yaml:"argv,omitempty"`
-	Command         string            `json:"command,omitempty" yaml:"command,omitempty"`
-	Build           bool              `json:"build,omitempty" yaml:"build,omitempty"`
-	CapAdd          []string          `json:"cap_add,omitempty" yaml:"cap_add,omitempty"`
-	CapDrop         []string          `json:"cap_drop,omitempty" yaml:"cap_drop,omitempty"`
-	EntryPoint      string            `json:"entrypoint,omitempty" yaml:"entrypoint,omitempty"`
-	Interactive     *bool             `json:"interactive,omitempty" yaml:"interactive,omitempty"`
-	Labels          []string          `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Name            string            `json:"name,omitempty" yaml:"name,omitempty"`
-	NoDeps          bool              `json:"no_deps,omitempty" yaml:"no_deps,omitempty"`
-	Publish         []string          `json:"publish,omitempty" yaml:"publish,omitempty"`
-	QuietPull       bool              `json:"quiet_pull,omitempty" yaml:"quiet_pull,omitempty"`
-	RemoveOrphans   bool              `json:"remove_orphans,omitempty" yaml:"remove_orphans,omitempty"`
-	Cleanup         bool              `json:"cleanup,omitempty" yaml:"cleanup,omitempty"`
-	ServicePorts    bool              `json:"service_ports,omitempty" yaml:"service_ports,omitempty"`
-	UseAliases      bool              `json:"use_aliases,omitempty" yaml:"use_aliases,omitempty"`
-	Volumes         []string          `json:"volumes,omitempty" yaml:"volumes,omitempty"`
-	Chdir           string            `json:"chdir,omitempty" yaml:"chdir,omitempty"`
-	Detach          bool              `json:"detach,omitempty" yaml:"detach,omitempty"`
-	User            string            `json:"user,omitempty" yaml:"user,omitempty"`
-	Stdin           string            `json:"stdin,omitempty" yaml:"stdin,omitempty"`
-	StdinAddNewline *bool             `json:"stdin_add_newline,omitempty" yaml:"stdin_add_newline,omitempty"`
-	StripEmptyEnds  *bool             `json:"strip_empty_ends,omitempty" yaml:"strip_empty_ends,omitempty"`
-	TTY             *bool             `json:"tty,omitempty" yaml:"tty,omitempty"`
-	Env             map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
-	Profiles        []string          `json:"profiles,omitempty" yaml:"profiles,omitempty"`
-
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
-type DockerSecretParams struct {
-	Name      string            `json:"name" yaml:"name"`
-	Data      string            `json:"data,omitempty" yaml:"data,omitempty"`
-	DataIsB64 bool              `json:"data_is_b64,omitempty" yaml:"data_is_b64,omitempty"`
-	Labels    map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Force     bool              `json:"force,omitempty" yaml:"force,omitempty"`
-	State     string            `json:"state,omitempty" yaml:"state,omitempty"`
-
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
-type DockerConfigParams struct {
-	Name      string            `json:"name" yaml:"name"`
-	Data      string            `json:"data,omitempty" yaml:"data,omitempty"`
-	DataIsB64 bool              `json:"data_is_b64,omitempty" yaml:"data_is_b64,omitempty"`
-	Labels    map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Force     bool              `json:"force,omitempty" yaml:"force,omitempty"`
-	State     string            `json:"state,omitempty" yaml:"state,omitempty"`
-
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
-type DockerStackParams struct {
-	Name             string `json:"name" yaml:"name"`
-	ComposeFile      string `json:"compose_file,omitempty" yaml:"compose_file,omitempty"`
-	State            string `json:"state,omitempty" yaml:"state,omitempty"`
-	WithRegistryAuth bool   `json:"with_registry_auth,omitempty" yaml:"with_registry_auth,omitempty"`
-	Prune            bool   `json:"prune,omitempty" yaml:"prune,omitempty"`
-	ResolveImage     string `json:"resolve_image,omitempty" yaml:"resolve_image,omitempty"`
-
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
-type DockerContainerExecParams struct {
-	Container       string            `json:"container" yaml:"container"`
-	Argv            []string          `json:"argv,omitempty" yaml:"argv,omitempty"`
-	Command         string            `json:"command,omitempty" yaml:"command,omitempty"`
-	Chdir           string            `json:"chdir,omitempty" yaml:"chdir,omitempty"`
-	Detach          bool              `json:"detach,omitempty" yaml:"detach,omitempty"`
-	User            string            `json:"user,omitempty" yaml:"user,omitempty"`
-	Stdin           string            `json:"stdin,omitempty" yaml:"stdin,omitempty"`
-	StdinAddNewline bool              `json:"stdin_add_newline,omitempty" yaml:"stdin_add_newline,omitempty"`
-	StripEmptyEnds  bool              `json:"strip_empty_ends,omitempty" yaml:"strip_empty_ends,omitempty"`
-	TTY             bool              `json:"tty,omitempty" yaml:"tty,omitempty"`
-	Env             map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
-
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
-type DockerContainerCopyIntoParams struct {
-	Container     string `json:"container" yaml:"container"`
-	Path          string `json:"path,omitempty" yaml:"path,omitempty"`
-	Content       string `json:"content,omitempty" yaml:"content,omitempty"`
-	ContentIsB64  bool   `json:"content_is_b64,omitempty" yaml:"content_is_b64,omitempty"`
-	ContainerPath string `json:"container_path" yaml:"container_path"`
-	Follow        bool   `json:"follow,omitempty" yaml:"follow,omitempty"`
-	LocalFollow   bool   `json:"local_follow,omitempty" yaml:"local_follow,omitempty"`
-	OwnerID       *int   `json:"owner_id,omitempty" yaml:"owner_id,omitempty"`
-	GroupID       *int   `json:"group_id,omitempty" yaml:"group_id,omitempty"`
-	Mode          string `json:"mode,omitempty" yaml:"mode,omitempty"`
-	Force         *bool  `json:"force,omitempty" yaml:"force,omitempty"`
-
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
-type DockerImageBuildParams struct {
-	Name       string            `json:"name" yaml:"name"`
-	Tag        string            `json:"tag,omitempty" yaml:"tag,omitempty"`
-	Path       string            `json:"path" yaml:"path"`
-	Dockerfile string            `json:"dockerfile,omitempty" yaml:"dockerfile,omitempty"`
-	CacheFrom  []string          `json:"cache_from,omitempty" yaml:"cache_from,omitempty"`
-	Pull       bool              `json:"pull,omitempty" yaml:"pull,omitempty"`
-	Network    string            `json:"network,omitempty" yaml:"network,omitempty"`
-	NoCache    bool              `json:"nocache,omitempty" yaml:"nocache,omitempty"`
-	EtcHosts   map[string]string `json:"etc_hosts,omitempty" yaml:"etc_hosts,omitempty"`
-	Args       map[string]string `json:"args,omitempty" yaml:"args,omitempty"`
-	Target     string            `json:"target,omitempty" yaml:"target,omitempty"`
-	Platform   []string          `json:"platform,omitempty" yaml:"platform,omitempty"`
-	ShmSize    string            `json:"shm_size,omitempty" yaml:"shm_size,omitempty"`
-	Labels     map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Rebuild    string            `json:"rebuild,omitempty" yaml:"rebuild,omitempty"`
-	Push       bool              `json:"push,omitempty" yaml:"push,omitempty"`
-
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
-type DockerImageLoadParams struct {
-	Path string `json:"path" yaml:"path"`
-
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
-type DockerImageExportParams struct {
-	Names []string `json:"names,omitempty" yaml:"names,omitempty"`
-	Name  string   `json:"name,omitempty" yaml:"name,omitempty"` // Alias
-	Tag   string   `json:"tag,omitempty" yaml:"tag,omitempty"`
-	Path  string   `json:"path" yaml:"path"`
-	Force bool     `json:"force,omitempty" yaml:"force,omitempty"`
-
-	DockerHost string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS        bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-}
-
 func (a *AptParams) GetPackages() []string {
 	if a.Name == nil {
 		return nil
@@ -1244,11 +687,14 @@ func knownYAMLKeys(t reflect.Type) map[string]bool {
 
 // checkUnknownFields validates that all keys in a YAML mapping node are known
 // fields for the given struct type. Returns an error listing unknown fields.
-func checkUnknownFields(node *yaml.Node, t reflect.Type) error {
+func checkUnknownFields(node *yaml.Node, t reflect.Type, additionalKeys ...string) error {
 	if node.Kind != yaml.MappingNode {
 		return nil
 	}
 	known := knownYAMLKeys(t)
+	for _, key := range additionalKeys {
+		known[key] = true
+	}
 	var unknown []string
 	for i := 0; i < len(node.Content); i += 2 {
 		key := node.Content[i].Value
@@ -1264,7 +710,7 @@ func checkUnknownFields(node *yaml.Node, t reflect.Type) error {
 
 func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 	// Check for unknown fields before decoding
-	if err := checkUnknownFields(node, reflect.TypeOf(Task{})); err != nil {
+	if err := checkUnknownFields(node, reflect.TypeOf(Task{}), registry.Names()...); err != nil {
 		return fmt.Errorf("task: %w", err)
 	}
 
@@ -1279,9 +725,21 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 	// Now check for keys that exist but have nil values
 	// These are modules that can be called with no arguments
 	if node.Kind == yaml.MappingNode {
+		var registeredModuleKey string
+		var registeredModuleValue *yaml.Node
+		var otherModuleKey string
 		for i := 0; i < len(node.Content); i += 2 {
 			key := node.Content[i].Value
 			value := node.Content[i+1]
+			if _, registered := registry.Lookup(key); registered {
+				if registeredModuleKey != "" {
+					return fmt.Errorf("task: multiple registered modules %q and %q", registeredModuleKey, key)
+				}
+				registeredModuleKey = key
+				registeredModuleValue = value
+			} else if isTaskModuleKey(key) {
+				otherModuleKey = key
+			}
 
 			// If the key exists and the value is null, initialize empty struct
 			if value.Kind == yaml.ScalarNode && value.Tag == "!!null" {
@@ -1319,99 +777,43 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 				t.IncludeTasks = &IncludeTasksParams{File: value.Value}
 			}
 		}
+
+		if registeredModuleKey != "" {
+			if otherModuleKey != "" {
+				return fmt.Errorf("task: multiple modules %q and %q", registeredModuleKey, otherModuleKey)
+			}
+			invocation, err := decodeRegisteredModuleYAML(registeredModuleKey, registeredModuleValue)
+			if err != nil {
+				return fmt.Errorf("task: %w", err)
+			}
+			t.Module = invocation
+		}
 	}
 
 	return nil
 }
 
-// Docker Info Modules (Phase 5)
-
-type DockerContainerInfoParams struct {
-	Name string `json:"name" yaml:"name"`
-
-	DockerHost    string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS           bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-	ValidateCerts bool   `json:"validate_certs,omitempty" yaml:"validate_certs,omitempty"`
-	CAPath        string `json:"ca_path,omitempty" yaml:"ca_path,omitempty"`
-	ClientCert    string `json:"client_cert,omitempty" yaml:"client_cert,omitempty"`
-	ClientKey     string `json:"client_key,omitempty" yaml:"client_key,omitempty"`
-	APIVersion    string `json:"api_version,omitempty" yaml:"api_version,omitempty"`
-	Timeout       int    `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-	Debug         bool   `json:"debug,omitempty" yaml:"debug,omitempty"`
+func isTaskModuleKey(key string) bool {
+	switch key {
+	case "name", "vars", "when", "loop", "with_items", "with_list", "with_dict", "with_sequence", "loop_control", "register":
+		return false
+	default:
+		return true
+	}
 }
 
-type DockerImageInfoParams struct {
-	Name string `json:"name" yaml:"name"`
-
-	DockerHost    string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS           bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-	ValidateCerts bool   `json:"validate_certs,omitempty" yaml:"validate_certs,omitempty"`
-	CAPath        string `json:"ca_path,omitempty" yaml:"ca_path,omitempty"`
-	ClientCert    string `json:"client_cert,omitempty" yaml:"client_cert,omitempty"`
-	ClientKey     string `json:"client_key,omitempty" yaml:"client_key,omitempty"`
-	APIVersion    string `json:"api_version,omitempty" yaml:"api_version,omitempty"`
-	Timeout       int    `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-	Debug         bool   `json:"debug,omitempty" yaml:"debug,omitempty"`
-}
-
-type DockerNetworkInfoParams struct {
-	Name string `json:"name" yaml:"name"`
-
-	DockerHost    string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS           bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-	ValidateCerts bool   `json:"validate_certs,omitempty" yaml:"validate_certs,omitempty"`
-	CAPath        string `json:"ca_path,omitempty" yaml:"ca_path,omitempty"`
-	ClientCert    string `json:"client_cert,omitempty" yaml:"client_cert,omitempty"`
-	ClientKey     string `json:"client_key,omitempty" yaml:"client_key,omitempty"`
-	APIVersion    string `json:"api_version,omitempty" yaml:"api_version,omitempty"`
-	Timeout       int    `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-	Debug         bool   `json:"debug,omitempty" yaml:"debug,omitempty"`
-}
-
-type DockerVolumeInfoParams struct {
-	Name string `json:"name" yaml:"name"`
-
-	DockerHost    string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS           bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-	ValidateCerts bool   `json:"validate_certs,omitempty" yaml:"validate_certs,omitempty"`
-	CAPath        string `json:"ca_path,omitempty" yaml:"ca_path,omitempty"`
-	ClientCert    string `json:"client_cert,omitempty" yaml:"client_cert,omitempty"`
-	ClientKey     string `json:"client_key,omitempty" yaml:"client_key,omitempty"`
-	APIVersion    string `json:"api_version,omitempty" yaml:"api_version,omitempty"`
-	Timeout       int    `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-	Debug         bool   `json:"debug,omitempty" yaml:"debug,omitempty"`
-}
-
-type DockerHostInfoParams struct {
-	Containers bool `json:"containers,omitempty" yaml:"containers,omitempty"`
-	Images     bool `json:"images,omitempty" yaml:"images,omitempty"`
-	Volumes    bool `json:"volumes,omitempty" yaml:"volumes,omitempty"`
-	DiskUsage  bool `json:"disk_usage,omitempty" yaml:"disk_usage,omitempty"`
-
-	DockerHost    string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS           bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-	ValidateCerts bool   `json:"validate_certs,omitempty" yaml:"validate_certs,omitempty"`
-	CAPath        string `json:"ca_path,omitempty" yaml:"ca_path,omitempty"`
-	ClientCert    string `json:"client_cert,omitempty" yaml:"client_cert,omitempty"`
-	ClientKey     string `json:"client_key,omitempty" yaml:"client_key,omitempty"`
-	APIVersion    string `json:"api_version,omitempty" yaml:"api_version,omitempty"`
-	Timeout       int    `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-	Debug         bool   `json:"debug,omitempty" yaml:"debug,omitempty"`
-}
-
-type DockerSwarmInfoParams struct {
-	Nodes   bool `json:"nodes,omitempty" yaml:"nodes,omitempty"`
-	Verbose bool `json:"verbose,omitempty" yaml:"verbose,omitempty"`
-
-	DockerHost    string `json:"docker_host,omitempty" yaml:"docker_host,omitempty"`
-	TLS           bool   `json:"tls,omitempty" yaml:"tls,omitempty"`
-	ValidateCerts bool   `json:"validate_certs,omitempty" yaml:"validate_certs,omitempty"`
-	CAPath        string `json:"ca_path,omitempty" yaml:"ca_path,omitempty"`
-	ClientCert    string `json:"client_cert,omitempty" yaml:"client_cert,omitempty"`
-	ClientKey     string `json:"client_key,omitempty" yaml:"client_key,omitempty"`
-	APIVersion    string `json:"api_version,omitempty" yaml:"api_version,omitempty"`
-	Timeout       int    `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-	Debug         bool   `json:"debug,omitempty" yaml:"debug,omitempty"`
+func decodeRegisteredModuleYAML(name string, node *yaml.Node) (*registry.Invocation, error) {
+	var raw any = map[string]any{}
+	if node != nil && !(node.Kind == yaml.ScalarNode && node.Tag == "!!null") {
+		if err := node.Decode(&raw); err != nil {
+			return nil, fmt.Errorf("decode %s arguments: %w", name, err)
+		}
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("encode %s arguments: %w", name, err)
+	}
+	return registry.Decode(name, data)
 }
 
 func Load(path string) (*Config, error) {

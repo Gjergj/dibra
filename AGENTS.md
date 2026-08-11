@@ -167,6 +167,18 @@ We chose an **agent-based execution model** (Option 3 from initial design):
 └─────────────────────┘                      └─────────────────────┘
 ```
 
+### Module Registry
+
+The current Docker module family is registered once in
+[`docs/ModuleRegistry.md`](docs/ModuleRegistry.md). The registry owns canonical
+and short names, strict typed decoding, check/diff capability declarations,
+sensitivity metadata, and agent handlers.
+
+When adding a registered Docker module, update the registry and its tests. Do
+not add a Docker-specific field to `config.Task`, a controller argument-mapping
+case, or an agent dispatch case. Builtin modules that have not migrated still
+use their existing explicit paths.
+
 ### Config Loading
 
 The controller supports two configuration formats:
