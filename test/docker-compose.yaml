@@ -17,6 +17,7 @@ services:
       - testnet
     extra_hosts:
       - "httpbin:${HTTPBIN_IP:-172.28.0.10}"
+      - "host.docker.internal:host-gateway"
     dns:
       - 8.8.8.8
       - 8.8.4.4

@@ -79,6 +79,8 @@ test-deploy-integration-only:
 	go test -tags=integration -v -timeout 10m ./test/deploy_integration/...
 
 # Run dibra-deploy in Linux against an API on the Docker host.
+# make run-deploy-docker-host \
+#   DEPLOY_ENDPOINT=http://host.docker.internal:9000/gettasks
 run-deploy-docker-host:
 	DEPLOY_ENDPOINT="$(DEPLOY_ENDPOINT)" DIBRA_VERSION="$(VERSION)" DIBRA_COMMIT="$(COMMIT)" DIBRA_BUILD_DATE="$(DATE)" ./scripts/run-deploy-docker-host.sh
 

@@ -48,6 +48,12 @@ wait_for_container() {
     error "test container did not become ready within 45 seconds"
 }
 
+verify_host_gateway() {
+    if ! compose exec -T testhost getent hosts host.docker.internal >/dev/null 2>&1; then
+        error "host.docker.internal does not resolve inside the test container"
+    fi
+}
+
 container_go_arch() {
     local architecture
 
@@ -108,6 +114,7 @@ main() {
     info "starting the Linux test container"
     compose up -d --build --no-deps testhost
     wait_for_container
+    verify_host_gateway
 
     go_arch=$(container_go_arch)
     info "building Linux/$go_arch binaries"
@@ -124,6 +131,7 @@ main() {
     compose exec testhost /usr/local/bin/dibra-deploy \
         --agent-path /usr/local/bin/dibra-agent \
         --endpoint "$DEPLOY_ENDPOINT" \
+        --force-agent-upload \
         --verbose
 }
 
