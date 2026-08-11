@@ -262,8 +262,19 @@ func TestDiffBuilder(t *testing.T) {
 		db.Add("image", "alpine:3.18", "alpine:3.17")
 
 		diffMap := db.DiffMap()
-		if _, ok := diffMap["image"]; !ok {
-			t.Error("Expected 'image' key in diff map")
+		before, ok := diffMap["before"].(map[string]interface{})
+		if !ok || before["image"] != "alpine:3.17" {
+			t.Fatalf("diff.before = %#v", diffMap["before"])
+		}
+		after, ok := diffMap["after"].(map[string]interface{})
+		if !ok || after["image"] != "alpine:3.18" {
+			t.Fatalf("diff.after = %#v", diffMap["after"])
+		}
+	})
+
+	t.Run("empty diff omitted", func(t *testing.T) {
+		if diff := NewDiffBuilder().DiffMap(); diff != nil {
+			t.Fatalf("empty diff = %#v, want nil", diff)
 		}
 	})
 }

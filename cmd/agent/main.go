@@ -341,11 +341,7 @@ func main() {
 }
 
 func writeError(msg string) {
-	resp := map[string]interface{}{
-		"failed": true,
-		"msg":    msg,
-	}
-	writeJSON(resp)
+	writeJSON(execution.Failure(msg))
 }
 
 func writeJSON(v interface{}) {

@@ -114,11 +114,11 @@ func TestCheckModeSkipsModuleWithoutImplementedSupport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	skipped, ok := response.(execution.SkippedResult)
+	skipped, ok := response.(map[string]any)
 	if !ok {
-		t.Fatalf("response type = %T, want execution.SkippedResult", response)
+		t.Fatalf("response type = %T, want map[string]any", response)
 	}
-	if !skipped.Skipped || skipped.Changed || skipped.Failed {
+	if skipped["skipped"] != true || skipped["changed"] != false || skipped["failed"] != false || skipped["msg"] == "" {
 		t.Fatalf("response = %#v", skipped)
 	}
 }
@@ -217,12 +217,16 @@ func TestDockerImageBuildPathCompatibilityAliasIsNormalized(t *testing.T) {
 
 func TestSensitiveArgumentsAreDeclared(t *testing.T) {
 	tests := map[string][]string{
-		"docker_container": {"registry_password"},
-		"docker_image":     {"registry_password"},
-		"docker_login":     {"password"},
-		"docker_secret":    {"data"},
-		"docker_config":    {"data"},
-		"docker_swarm":     {"join_token"},
+		"docker_container":           {"registry_password"},
+		"docker_image":               {"registry_password"},
+		"docker_login":               {"password"},
+		"docker_secret":              {"data"},
+		"docker_config":              {"data"},
+		"docker_swarm":               {"join_token"},
+		"docker_container_exec":      {"stdin"},
+		"docker_compose_v2_run":      {"stdin"},
+		"docker_container_copy_into": {"content"},
+		"docker_image_build":         {"args"},
 	}
 	for moduleName, fields := range tests {
 		definition, ok := Lookup(moduleName)
@@ -234,6 +238,106 @@ func TestSensitiveArgumentsAreDeclared(t *testing.T) {
 				t.Errorf("%s does not mark %q sensitive: %#v", moduleName, field, definition.Sensitivity.Arguments)
 			}
 		}
+	}
+}
+
+func TestSensitiveResultsAreDeclared(t *testing.T) {
+	tests := map[string][]string{
+		"docker_login":      {"token"},
+		"docker_swarm":      {"join_tokens"},
+		"docker_swarm_info": {"swarm_info.join_tokens"},
+	}
+	for moduleName, fields := range tests {
+		definition, ok := Lookup(moduleName)
+		if !ok {
+			t.Fatalf("Lookup(%q) failed", moduleName)
+		}
+		for _, field := range fields {
+			if !contains(definition.Sensitivity.Results, field) {
+				t.Errorf("%s does not mark result %q sensitive: %#v", moduleName, field, definition.Sensitivity.Results)
+			}
+		}
+	}
+}
+
+func TestRedactArgumentsHidesDeclaredValuesAndEchoes(t *testing.T) {
+	arguments := map[string]any{
+		"username":   "deploy",
+		"password":   "registry-password",
+		"client_key": "private-key-material",
+		"note":       "registry-password private-key-material",
+	}
+	redacted, err := RedactArguments("docker_login", arguments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := redacted.(map[string]any)
+	if fields["username"] != "deploy" {
+		t.Fatalf("non-sensitive username was changed: %#v", fields)
+	}
+	for _, field := range []string{"password", "client_key"} {
+		if fields[field] != execution.RedactedValue {
+			t.Fatalf("%s = %#v", field, fields[field])
+		}
+	}
+	if strings.Contains(fields["note"].(string), "registry-password") || strings.Contains(fields["note"].(string), "private-key-material") {
+		t.Fatalf("echoed sensitive values were not scrubbed: %#v", fields)
+	}
+	if arguments["password"] != "registry-password" {
+		t.Fatalf("original arguments were modified: %#v", arguments)
+	}
+}
+
+func TestRedactResultHidesSensitiveReturnPathsAndEchoes(t *testing.T) {
+	result := map[string]any{
+		"changed":  false,
+		"failed":   true,
+		"msg":      "login failed for registry-password with registry-token",
+		"stderr":   "registry-token",
+		"token":    "registry-token",
+		"registry": "registry.example.test",
+	}
+	redacted, err := RedactResult(
+		"docker_login",
+		map[string]any{"password": "registry-password"},
+		result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if redacted["token"] != execution.RedactedValue {
+		t.Fatalf("token = %#v", redacted["token"])
+	}
+	for _, field := range []string{"msg", "stderr"} {
+		text := redacted[field].(string)
+		if strings.Contains(text, "registry-password") || strings.Contains(text, "registry-token") {
+			t.Fatalf("%s was not scrubbed: %q", field, text)
+		}
+	}
+	if result["token"] != "registry-token" {
+		t.Fatalf("original result was modified: %#v", result)
+	}
+}
+
+func TestRedactNestedSwarmJoinTokens(t *testing.T) {
+	result := map[string]any{
+		"changed": false,
+		"failed":  false,
+		"msg":     "worker-token",
+		"swarm_info": map[string]any{
+			"join_tokens": map[string]any{"worker": "worker-token", "manager": "manager-token"},
+		},
+	}
+	redacted, err := RedactResult("docker_swarm_info", map[string]any{}, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	swarmInfo := redacted["swarm_info"].(map[string]any)
+	if swarmInfo["join_tokens"] != execution.RedactedValue {
+		t.Fatalf("join tokens = %#v", swarmInfo["join_tokens"])
+	}
+	if strings.Contains(redacted["msg"].(string), "worker-token") {
+		t.Fatalf("join token echo was not scrubbed: %#v", redacted)
 	}
 }
 

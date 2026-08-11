@@ -340,14 +340,12 @@ func Execute(req Request) Response {
 		// Update or Create
 		if exists {
 			// Idempotency: Deep comparison
-			needsUpdate := false
-			var diffs []string // Track what changed
+			diffBuilder := docker.NewDiffBuilder()
 
 			// Check replicas
 			if spec.Mode.Replicated != nil && existing.Spec.Mode.Replicated != nil {
 				if *existing.Spec.Mode.Replicated.Replicas != *spec.Mode.Replicated.Replicas {
-					diffs = append(diffs, "replicas")
-					needsUpdate = true
+					diffBuilder.Add("replicas", *spec.Mode.Replicated.Replicas, *existing.Spec.Mode.Replicated.Replicas)
 				}
 			}
 
@@ -359,36 +357,30 @@ func Execute(req Request) Response {
 				existingImage = strings.Split(existingImage, "@")[0]
 			}
 			if existingImage != desiredImage {
-				diffs = append(diffs, "image")
-				needsUpdate = true
+				diffBuilder.Add("image", desiredImage, existingImage)
 			}
 
 			// Check command
 			if !docker.CompareStringSlicesOrdered(containerSpec.Command, existing.Spec.TaskTemplate.ContainerSpec.Command) {
-				diffs = append(diffs, "command")
-				needsUpdate = true
+				diffBuilder.Add("command", containerSpec.Command, existing.Spec.TaskTemplate.ContainerSpec.Command)
 			}
 
 			// Check args
 			if !docker.CompareStringSlicesOrdered(containerSpec.Args, existing.Spec.TaskTemplate.ContainerSpec.Args) {
-				diffs = append(diffs, "args")
-				needsUpdate = true
+				diffBuilder.Add("args", containerSpec.Args, existing.Spec.TaskTemplate.ContainerSpec.Args)
 			}
 
 			// Check environment (order-independent)
 			if !docker.CompareStringSlices(containerSpec.Env, existing.Spec.TaskTemplate.ContainerSpec.Env) {
-				diffs = append(diffs, "env")
-				needsUpdate = true
+				diffBuilder.Add("env", containerSpec.Env, existing.Spec.TaskTemplate.ContainerSpec.Env)
 			}
 
 			// Check labels
 			if !docker.CompareMaps(containerSpec.Labels, existing.Spec.TaskTemplate.ContainerSpec.Labels) {
-				diffs = append(diffs, "container_labels")
-				needsUpdate = true
+				diffBuilder.Add("container_labels", containerSpec.Labels, existing.Spec.TaskTemplate.ContainerSpec.Labels)
 			}
 			if !docker.CompareMaps(spec.Annotations.Labels, existing.Spec.Annotations.Labels) {
-				diffs = append(diffs, "service_labels")
-				needsUpdate = true
+				diffBuilder.Add("service_labels", spec.Annotations.Labels, existing.Spec.Annotations.Labels)
 			}
 
 			// Check networks (simplified comparison)
@@ -401,20 +393,17 @@ func Execute(req Request) Response {
 				desiredNetworks = append(desiredNetworks, n.Target)
 			}
 			if !docker.CompareStringSlices(existingNetworks, desiredNetworks) {
-				diffs = append(diffs, "networks")
-				needsUpdate = true
+				diffBuilder.Add("networks", desiredNetworks, existingNetworks)
 			}
 
 			// Check ports (simplified)
 			if len(spec.EndpointSpec.Ports) != len(existing.Spec.EndpointSpec.Ports) {
-				diffs = append(diffs, "ports")
-				needsUpdate = true
+				diffBuilder.Add("ports", spec.EndpointSpec.Ports, existing.Spec.EndpointSpec.Ports)
 			} else {
 				for i, p := range spec.EndpointSpec.Ports {
 					ep := existing.Spec.EndpointSpec.Ports[i]
 					if p.TargetPort != ep.TargetPort || p.PublishedPort != ep.PublishedPort || p.Protocol != ep.Protocol {
-						diffs = append(diffs, "ports")
-						needsUpdate = true
+						diffBuilder.Add("ports", spec.EndpointSpec.Ports, existing.Spec.EndpointSpec.Ports)
 						break
 					}
 				}
@@ -422,12 +411,10 @@ func Execute(req Request) Response {
 
 			// Force update if requested
 			if req.ForceUpdate {
-				diffs = append(diffs, "force_update")
-				needsUpdate = true
-				spec.TaskTemplate.ForceUpdate = uint64(time.Now().UnixNano())
+				diffBuilder.Add("force_update", existing.Spec.TaskTemplate.ForceUpdate+1, existing.Spec.TaskTemplate.ForceUpdate)
 			}
 
-			if !needsUpdate {
+			if !diffBuilder.HasDiffs() {
 				return Response{Changed: false, Msg: "service already present", ServiceID: existing.ID}
 			}
 
@@ -445,10 +432,7 @@ func Execute(req Request) Response {
 			// Warnings?
 			_ = resp
 
-			// Build diff map for response
-			diffMap := make(map[string]interface{})
-			diffMap["changed_fields"] = diffs
-			return Response{Changed: true, Msg: "service updated", ServiceID: existing.ID, Diff: diffMap}
+			return Response{Changed: true, Msg: "service updated", ServiceID: existing.ID, Diff: diffBuilder.DiffMap()}
 		}
 
 		// Create

@@ -207,6 +207,116 @@ func TestRunCarriesResolvedCheckAndDiffStateAndWarnsForComposeAlias(t *testing.T
 	}
 }
 
+func TestRunRedactsRegisteredDockerArgumentsResultsAndDiffOutput(t *testing.T) {
+	t.Parallel()
+	temporary := t.TempDir()
+	capturedPath := filepath.Join(temporary, "request.json")
+	agentPath := filepath.Join(temporary, "agent")
+	agentScript := fmt.Sprintf(`#!/bin/sh
+request=$(cat)
+printf '%%s\n' "$request" > %q
+printf '%%s\n' '{"token":"registry-token-value","msg":"registry-password-value private-key-value registry-token-value","stderr":"registry-token-value","registry":"registry.example.test","diff":{"registry":{"before":"old","after":"new"}}}'
+`, capturedPath)
+	if err := os.WriteFile(agentPath, []byte(agentScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	playbookPath := filepath.Join(temporary, "playbook.yaml")
+	playbook := `tasks:
+  - name: sensitive registry login
+    docker_login:
+      username: deploy
+      password: registry-password-value
+      client_key: private-key-value
+      registry: registry.example.test
+`
+	if err := os.WriteFile(playbookPath, []byte(playbook), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	result, err := Run(context.Background(), RunOptions{
+		ConfigPath:     playbookPath,
+		Local:          true,
+		LocalAgentPath: agentPath,
+		WorkingDir:     temporary,
+		Verbose:        true,
+		DiffMode:       true,
+		Stdout:         &stdout,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Failed {
+		t.Fatalf("Run() result = %#v\n%s", result, stdout.String())
+	}
+	output := stdout.String()
+	for _, secret := range []string{"registry-password-value", "private-key-value", "registry-token-value"} {
+		if strings.Contains(output, secret) {
+			t.Fatalf("controller output leaked %q:\n%s", secret, output)
+		}
+	}
+	for _, want := range []string{execution.RedactedValue, "Diff:", `"before"`, `"after"`} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("controller output does not contain %q:\n%s", want, output)
+		}
+	}
+
+	captured, err := os.ReadFile(capturedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"registry-password-value", "private-key-value"} {
+		if !strings.Contains(string(captured), value) {
+			t.Fatalf("agent request lost executable value %q: %s", value, captured)
+		}
+	}
+}
+
+func TestRunSuppressesMalformedRegisteredModuleOutput(t *testing.T) {
+	t.Parallel()
+	temporary := t.TempDir()
+	agentPath := filepath.Join(temporary, "agent")
+	if err := os.WriteFile(agentPath, []byte("#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' 'invalid registry-token-from-malformed-result'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	playbookPath := filepath.Join(temporary, "playbook.yaml")
+	playbook := `tasks:
+  - name: malformed registry login response
+    docker_login:
+      username: deploy
+      password: registry-password-value
+`
+	if err := os.WriteFile(playbookPath, []byte(playbook), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	result, err := Run(context.Background(), RunOptions{
+		ConfigPath:     playbookPath,
+		Local:          true,
+		LocalAgentPath: agentPath,
+		WorkingDir:     temporary,
+		Verbose:        true,
+		Stdout:         &stdout,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Failed {
+		t.Fatalf("Run() result = %#v, want failure", result)
+	}
+	output := stdout.String()
+	for _, secret := range []string{"registry-password-value", "registry-token-from-malformed-result"} {
+		if strings.Contains(output, secret) {
+			t.Fatalf("controller output leaked %q:\n%s", secret, output)
+		}
+	}
+	if !strings.Contains(output, "Raw output: "+execution.RedactedValue) {
+		t.Fatalf("malformed output was not suppressed:\n%s", output)
+	}
+}
+
 func TestRunCheckModeSkipsLegacyModuleBeforeControllerSideEffects(t *testing.T) {
 	t.Parallel()
 	temporary := t.TempDir()

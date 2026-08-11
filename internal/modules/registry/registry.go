@@ -109,7 +109,7 @@ var definitions = []Definition{
 	module("docker_swarm_service", Capabilities{SupportFull, SupportFull}, sensitivity(), docker_swarm_service.Execute),
 	module("docker_node", Capabilities{SupportFull, SupportNone}, sensitivity(), docker_node.Execute),
 	moduleWithDeprecatedAlias("docker_compose_v2", "docker_compose", Capabilities{SupportFull, SupportNone}, sensitivity(), docker_compose.Execute),
-	module("docker_compose_v2_run", Capabilities{SupportNone, SupportNone}, sensitivity(), docker_compose_v2_run.Execute),
+	module("docker_compose_v2_run", Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), docker_compose_v2_run.Execute),
 	module("docker_secret", Capabilities{SupportFull, SupportNone}, sensitivity("data"), docker_secret.Execute),
 	module("docker_config", Capabilities{SupportFull, SupportNone}, sensitivity("data"), docker_config.Execute),
 	module("docker_stack", Capabilities{SupportNone, SupportNone}, sensitivity(), docker_stack.Execute),
@@ -123,7 +123,7 @@ var definitions = []Definition{
 	readOnlyModule("docker_network_info", sensitivity(), docker_network_info.Execute),
 	readOnlyModule("docker_volume_info", sensitivity(), docker_volume_info.Execute),
 	readOnlyModule("docker_host_info", sensitivity(), docker_host_info.Execute),
-	readOnlyModule("docker_swarm_info", sensitivityWithResults(nil, []string{"swarm_info.JoinTokens"}), docker_swarm_info.Execute),
+	readOnlyModule("docker_swarm_info", sensitivityWithResults(nil, []string{"swarm_info.join_tokens"}), docker_swarm_info.Execute),
 	readOnlyModule("docker_swarm_service_info", sensitivity(), docker_swarm_service_info.Execute),
 	readOnlyModule("docker_node_info", sensitivity(), docker_node_info.Execute),
 }
@@ -375,7 +375,15 @@ func Execute(name string, data json.RawMessage, state execution.State) (any, err
 	if !ok {
 		return nil, fmt.Errorf("unknown registered module %q", name)
 	}
-	return executeDefinition(definition, data, state)
+	response, err := executeDefinition(definition, data, state)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %s", definition.CanonicalName, RedactText(name, data, err.Error()))
+	}
+	result, err := execution.NormalizeResult(response)
+	if err != nil {
+		return nil, fmt.Errorf("%s returned an invalid result: %w", definition.CanonicalName, err)
+	}
+	return result, nil
 }
 
 func executeDefinition(definition Definition, data json.RawMessage, state execution.State) (any, error) {

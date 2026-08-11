@@ -2578,17 +2578,33 @@ func executeTaskOnce(task config.Task, flattened map[string]interface{}, host co
 
 	modReq.State = taskExecutionState
 	reqData, _ := json.Marshal(modReq)
+	_, registeredModule := registry.Lookup(modReq.Module)
 	if verbose {
-		printf("    Request: %s\n", string(reqData))
+		requestForLog := modReq
+		if registeredModule {
+			redactedArgs, redactErr := registry.RedactArguments(modReq.Module, modReq.Args)
+			if redactErr != nil {
+				requestForLog.Args = execution.RedactedValue
+			} else {
+				requestForLog.Args = redactedArgs
+			}
+		}
+		redactedRequest, _ := json.Marshal(requestForLog)
+		printf("    Request: %s\n", string(redactedRequest))
 	}
 
 	output, err := client.ExecuteAgent(remoteAgentPath, reqData)
 	if err != nil {
-		printf("    ✗ Execution failed: %v\n", err)
+		message := fmt.Sprintf("Execution failed: %v", err)
+		if registeredModule {
+			message = registry.RedactText(modReq.Module, modReq.Args, message)
+		}
+		printf("    ✗ %s\n", message)
 		return map[string]interface{}{
+			"changed":     false,
 			"unreachable": true,
 			"failed":      true,
-			"msg":         fmt.Sprintf("Execution failed: %v", err),
+			"msg":         message,
 		}, true
 	}
 
@@ -2596,13 +2612,52 @@ func executeTaskOnce(task config.Task, flattened map[string]interface{}, host co
 	lines := strings.Split(outputStr, "\n")
 	jsonOutput := lines[len(lines)-1]
 
-	var resp GenericResponse
-	if err := json.Unmarshal([]byte(jsonOutput), &resp); err != nil {
+	var fullResult map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonOutput), &fullResult); err != nil {
+		rawOutput := outputStr
+		if registeredModule {
+			// A malformed response cannot be traversed safely using the
+			// definition's sensitive result paths, so fail closed.
+			rawOutput = execution.RedactedValue
+		}
 		printf("    ✗ Failed to parse response: %v\n", err)
-		printf("    Raw output: %s\n", outputStr)
+		printf("    Raw output: %s\n", rawOutput)
 		return map[string]interface{}{
-			"failed": true,
-			"msg":    fmt.Sprintf("Failed to parse response: %v", err),
+			"changed": false,
+			"failed":  true,
+			"msg":     fmt.Sprintf("Failed to parse response: %v", err),
+		}, true
+	}
+	fullResult, err = execution.NormalizeResult(fullResult)
+	if err != nil {
+		printf("    ✗ Invalid module result: %v\n", err)
+		return map[string]interface{}{
+			"changed": false,
+			"failed":  true,
+			"msg":     fmt.Sprintf("Invalid module result: %v", err),
+		}, true
+	}
+
+	displayResult := fullResult
+	if registeredModule {
+		displayResult, err = registry.RedactResult(modReq.Module, modReq.Args, fullResult)
+		if err != nil {
+			printf("    ✗ Failed to redact module result: %v\n", err)
+			return map[string]interface{}{
+				"changed": false,
+				"failed":  true,
+				"msg":     "Failed to redact module result",
+			}, true
+		}
+	}
+	displayJSON, _ := json.Marshal(displayResult)
+	var resp GenericResponse
+	if err := json.Unmarshal(displayJSON, &resp); err != nil {
+		printf("    ✗ Invalid common module result fields: %v\n", err)
+		return map[string]interface{}{
+			"changed": false,
+			"failed":  true,
+			"msg":     fmt.Sprintf("Invalid common module result fields: %v", err),
 		}, true
 	}
 
@@ -2643,10 +2698,12 @@ func executeTaskOnce(task config.Task, flattened map[string]interface{}, host co
 	if verbose && resp.Stdout != "" {
 		printf("    Stdout: %s\n", truncate(resp.Stdout, 500))
 	}
-
-	var fullResult map[string]interface{}
-	if err := json.Unmarshal([]byte(jsonOutput), &fullResult); err != nil {
-		fullResult = genericResponseToMap(resp)
+	if taskExecutionState.DiffMode {
+		if diff, ok := displayResult["diff"]; ok {
+			if data, marshalErr := json.MarshalIndent(diff, "      ", "  "); marshalErr == nil {
+				printf("    Diff: %s\n", data)
+			}
+		}
 	}
 	return fullResult, true
 }

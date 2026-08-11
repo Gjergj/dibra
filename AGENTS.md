@@ -210,6 +210,26 @@ the pinned upstream `Capabilities` contract from Dibra's
 module before execution unless its Dibra implementation has explicitly opted
 in. The read-only Docker `*_info` modules are the initial safe implementations.
 
+### Module Results and Redaction
+
+Registered Docker handlers may return module-specific fields, but the registry
+normalizes every response to include boolean `changed` and `failed` fields plus
+a string `msg`. Diffs use the shared top-level shape
+`{"diff":{"before":...,"after":...}}`; do not introduce field-centric diff
+objects such as `{"image":{"before":...,"after":...}}`. Empty diffs are
+omitted. The controller preserves module-specific return fields for `register`
+and shows structured diffs only when effective diff mode is enabled.
+
+Every registered module must declare sensitive argument and result JSON paths
+in `registry.Definition.Sensitivity`. The controller uses those paths to redact
+verbose requests, result fields, echoed values in `msg`/`stdout`/`stderr`, and
+malformed-response diagnostics with
+`VALUE_SPECIFIED_IN_NO_LOG_PARAMETER`. All Docker definitions implicitly mark
+`client_key` as sensitive. Explicitly add passwords, registry and Swarm tokens,
+secret/config data, stdin or copied content, build arguments, and any new TLS
+private material. Redaction is applied to display copies; never mutate the
+executable request while preparing logs.
+
 ### Config Loading
 
 The controller supports two configuration formats:

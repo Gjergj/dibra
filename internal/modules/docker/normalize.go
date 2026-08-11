@@ -231,14 +231,16 @@ func (b *DiffBuilder) Diffs() []Diff {
 	return b.diffs
 }
 
-// DiffMap returns the differences as a map for JSON serialization.
+// DiffMap returns the stable Ansible-shaped diff.before/diff.after object.
 func (b *DiffBuilder) DiffMap() map[string]interface{} {
-	result := make(map[string]interface{})
-	for _, d := range b.diffs {
-		result[d.Field] = map[string]interface{}{
-			"before": d.Current,
-			"after":  d.Desired,
-		}
+	if len(b.diffs) == 0 {
+		return nil
 	}
-	return result
+	before := make(map[string]interface{}, len(b.diffs))
+	after := make(map[string]interface{}, len(b.diffs))
+	for _, d := range b.diffs {
+		before[d.Field] = d.Current
+		after[d.Field] = d.Desired
+	}
+	return map[string]interface{}{"before": before, "after": after}
 }
