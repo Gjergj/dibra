@@ -143,6 +143,8 @@ type Task struct {
 	IncludeTasks   *IncludeTasksParams    `json:"include_tasks,omitempty" yaml:"include_tasks,omitempty"`
 	SourceDir      string                 `yaml:"-"`
 	Register       string                 `json:"register,omitempty" yaml:"register,omitempty"`
+	CheckMode      *bool                  `json:"check_mode,omitempty" yaml:"check_mode,omitempty"`
+	Diff           *bool                  `json:"diff,omitempty" yaml:"diff,omitempty"`
 	Template       *TemplateParams        `json:"template,omitempty" yaml:"template,omitempty"`
 	Apt            *AptParams             `json:"apt,omitempty" yaml:"apt,omitempty"`
 	AptKey         *AptKeyParams          `json:"apt_key,omitempty" yaml:"apt_key,omitempty"`
@@ -795,7 +797,7 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 
 func isTaskModuleKey(key string) bool {
 	switch key {
-	case "name", "vars", "when", "loop", "with_items", "with_list", "with_dict", "with_sequence", "loop_control", "register":
+	case "name", "vars", "when", "loop", "with_items", "with_list", "with_dict", "with_sequence", "loop_control", "register", "check_mode", "diff":
 		return false
 	default:
 		return true

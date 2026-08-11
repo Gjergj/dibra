@@ -145,6 +145,38 @@ tasks:
 	}
 }
 
+func TestLoad_TaskCheckAndDiffOverrides(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "playbook.yaml")
+	data := []byte(`
+hosts: []
+tasks:
+  - name: inspect without global check mode
+    check_mode: false
+    diff: true
+    docker_container_info:
+      name: web
+`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := cfg.Tasks[0]
+	if task.CheckMode == nil || *task.CheckMode {
+		t.Fatalf("check_mode = %#v", task.CheckMode)
+	}
+	if task.Diff == nil || !*task.Diff {
+		t.Fatalf("diff = %#v", task.Diff)
+	}
+	if task.Module == nil {
+		t.Fatal("registered module was not decoded")
+	}
+}
+
 func TestLoad_RegisteredDockerModuleRejectsUnknownArgument(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "playbook.yaml")

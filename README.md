@@ -61,8 +61,9 @@ The [Ansible parity and upstream tracking program](docs/ansible-parity-program.m
 defines how we track Ansible and collection changes and port them to Dibra.
 
 The [module registry guide](docs/ModuleRegistry.md) documents canonical Docker
-module names, typed decoding and dispatch, capability and sensitivity metadata,
-and the process for registering additional modules.
+module names, typed decoding and dispatch, capability, sensitivity and
+deprecation metadata, the check/diff invocation state, and the process for
+registering additional modules.
 
 ## Development
 

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/gjergjiramku/dibra/internal/execution"
 	"github.com/gjergjiramku/dibra/internal/version"
 
 	"github.com/gjergjiramku/dibra/internal/modules/apt"
@@ -16,33 +17,6 @@ import (
 	"github.com/gjergjiramku/dibra/internal/modules/command"
 	"github.com/gjergjiramku/dibra/internal/modules/copy"
 	"github.com/gjergjiramku/dibra/internal/modules/cron"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_compose"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_compose_v2_run"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_config"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_container"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_container_copy_into"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_container_exec"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_container_info"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_host_info"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_image"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_image_build"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_image_export"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_image_info"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_image_load"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_login"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_network"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_network_info"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_node"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_node_info"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_prune"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_secret"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_stack"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_swarm"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_swarm_info"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_swarm_service"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_swarm_service_info"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_volume"
-	"github.com/gjergjiramku/dibra/internal/modules/docker_volume_info"
 	"github.com/gjergjiramku/dibra/internal/modules/file"
 	"github.com/gjergjiramku/dibra/internal/modules/find"
 	"github.com/gjergjiramku/dibra/internal/modules/gather_facts"
@@ -53,6 +27,7 @@ import (
 	"github.com/gjergjiramku/dibra/internal/modules/lineinfile"
 	"github.com/gjergjiramku/dibra/internal/modules/ping"
 	"github.com/gjergjiramku/dibra/internal/modules/reboot"
+	"github.com/gjergjiramku/dibra/internal/modules/registry"
 	"github.com/gjergjiramku/dibra/internal/modules/replace"
 	"github.com/gjergjiramku/dibra/internal/modules/script"
 	"github.com/gjergjiramku/dibra/internal/modules/service"
@@ -69,10 +44,7 @@ import (
 	"github.com/gjergjiramku/dibra/internal/modules/user"
 )
 
-type ModuleRequest struct {
-	Module string          `json:"module"`
-	Args   json.RawMessage `json:"args"`
-}
+type ModuleRequest = execution.ModuleRequest[json.RawMessage]
 
 func main() {
 	// Check for --version flag
@@ -97,6 +69,16 @@ func main() {
 	var modReq ModuleRequest
 	if err := json.Unmarshal(input, &modReq); err != nil {
 		writeError(fmt.Sprintf("failed to parse module request: %v", err))
+		return
+	}
+
+	if _, registered := registry.Lookup(modReq.Module); registered {
+		response, err := registry.Execute(modReq.Module, modReq.Args, modReq.State)
+		if err != nil {
+			writeError(err.Error())
+			return
+		}
+		writeJSON(response)
 		return
 	}
 
@@ -340,222 +322,6 @@ func main() {
 			return
 		}
 		writeJSON(tempfile.Execute(req))
-
-	case "docker_container":
-		var req docker_container.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_container request: %v", err))
-			return
-		}
-		writeJSON(docker_container.Execute(req))
-
-	case "docker_image":
-		var req docker_image.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_image request: %v", err))
-			return
-		}
-		writeJSON(docker_image.Execute(req))
-
-	case "docker_network":
-		var req docker_network.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_network request: %v", err))
-			return
-		}
-		writeJSON(docker_network.Execute(req))
-
-	case "docker_volume":
-		var req docker_volume.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_volume request: %v", err))
-			return
-		}
-		writeJSON(docker_volume.Execute(req))
-
-	case "docker_prune":
-		var req docker_prune.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_prune request: %v", err))
-			return
-		}
-		writeJSON(docker_prune.Execute(req))
-
-	case "docker_login":
-		var req docker_login.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_login request: %v", err))
-			return
-		}
-		writeJSON(docker_login.Execute(req))
-
-	case "docker_swarm":
-		var req docker_swarm.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_swarm request: %v", err))
-			return
-		}
-		writeJSON(docker_swarm.Execute(req))
-
-	case "docker_swarm_service":
-		var req docker_swarm_service.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_swarm_service request: %v", err))
-			return
-		}
-		writeJSON(docker_swarm_service.Execute(req))
-
-	case "docker_node":
-		var req docker_node.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_node request: %v", err))
-			return
-		}
-		writeJSON(docker_node.Execute(req))
-
-	case "docker_compose":
-		var req docker_compose.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_compose request: %v", err))
-			return
-		}
-		writeJSON(docker_compose.Execute(req))
-
-	case "docker_compose_v2_run":
-		var req docker_compose_v2_run.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_compose_v2_run request: %v", err))
-			return
-		}
-		writeJSON(docker_compose_v2_run.Execute(req))
-
-	case "docker_secret":
-		var req docker_secret.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_secret request: %v", err))
-			return
-		}
-		writeJSON(docker_secret.Execute(req))
-
-	case "docker_config":
-		var req docker_config.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_config request: %v", err))
-			return
-		}
-		writeJSON(docker_config.Execute(req))
-
-	case "docker_stack":
-		var req docker_stack.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_stack request: %v", err))
-			return
-		}
-		writeJSON(docker_stack.Execute(req))
-
-	case "docker_container_exec":
-		var req docker_container_exec.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_container_exec request: %v", err))
-			return
-		}
-		writeJSON(docker_container_exec.Execute(req))
-
-	case "docker_container_copy_into":
-		var req docker_container_copy_into.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_container_copy_into request: %v", err))
-			return
-		}
-		writeJSON(docker_container_copy_into.Execute(req))
-
-	case "docker_image_build":
-		var req docker_image_build.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_image_build request: %v", err))
-			return
-		}
-		writeJSON(docker_image_build.Execute(req))
-
-	case "docker_image_load":
-		var req docker_image_load.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_image_load request: %v", err))
-			return
-		}
-		writeJSON(docker_image_load.Execute(req))
-
-	case "docker_image_export":
-		var req docker_image_export.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_image_export request: %v", err))
-			return
-		}
-		writeJSON(docker_image_export.Execute(req))
-
-	case "docker_container_info":
-		var req docker_container_info.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_container_info request: %v", err))
-			return
-		}
-		writeJSON(docker_container_info.Execute(req))
-
-	case "docker_image_info":
-		var req docker_image_info.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_image_info request: %v", err))
-			return
-		}
-		writeJSON(docker_image_info.Execute(req))
-
-	case "docker_network_info":
-		var req docker_network_info.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_network_info request: %v", err))
-			return
-		}
-		writeJSON(docker_network_info.Execute(req))
-
-	case "docker_volume_info":
-		var req docker_volume_info.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_volume_info request: %v", err))
-			return
-		}
-		writeJSON(docker_volume_info.Execute(req))
-
-	case "docker_host_info":
-		var req docker_host_info.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_host_info request: %v", err))
-			return
-		}
-		writeJSON(docker_host_info.Execute(req))
-
-	case "docker_swarm_info":
-		var req docker_swarm_info.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_swarm_info request: %v", err))
-			return
-		}
-		writeJSON(docker_swarm_info.Execute(req))
-
-	case "docker_swarm_service_info":
-		var req docker_swarm_service_info.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_swarm_service_info request: %v", err))
-			return
-		}
-		writeJSON(docker_swarm_service_info.Execute(req))
-
-	case "docker_node_info":
-		var req docker_node_info.Request
-		if err := json.Unmarshal(modReq.Args, &req); err != nil {
-			writeError(fmt.Sprintf("failed to parse docker_node_info request: %v", err))
-			return
-		}
-		writeJSON(docker_node_info.Execute(req))
 
 	case "find":
 		var req find.Request

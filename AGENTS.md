@@ -172,12 +172,33 @@ We chose an **agent-based execution model** (Option 3 from initial design):
 The current Docker module family is registered once in
 [`docs/ModuleRegistry.md`](docs/ModuleRegistry.md). The registry owns canonical
 and short names, strict typed decoding, check/diff capability declarations,
-sensitivity metadata, and agent handlers.
+sensitivity and deprecation metadata, and agent handlers.
 
 When adding a registered Docker module, update the registry and its tests. Do
 not add a Docker-specific field to `config.Task`, a controller argument-mapping
 case, or an agent dispatch case. Builtin modules that have not migrated still
 use their existing explicit paths.
+
+### Module Invocation State
+
+Every controller-to-agent module request uses the shared envelope in
+`internal/execution/request.go`:
+
+```json
+{"module":"community.docker.docker_container_info","args":{"name":"web"},"check_mode":true,"diff":false}
+```
+
+`controller.RunOptions.CheckMode` and `DiffMode` hold global state. A task can
+set `check_mode` or `diff`; these nullable task values override the
+corresponding global value independently, including an explicit `false`. The
+controller resolves the effective state before sending the request, and the
+agent passes it to registered handlers separately from module arguments. Do
+not add `check_mode` or `diff` fields to individual Docker request structs.
+
+The envelope is transport plumbing, not a claim that every executor already
+honors check or diff mode. Consult registry capability metadata before
+implementing module behavior. Controller `--check` and `--diff` CLI flags are
+separate work and must also be added to every supported shell completion.
 
 ### Config Loading
 
@@ -815,13 +836,17 @@ Manage Swarm Nodes.
     role: manager
 ```
 
-### docker_compose
+### docker_compose_v2
 
 Manage Docker Compose projects.
 
+`docker_compose` remains accepted for compatibility, but it is deprecated and
+emits a warning. New playbooks must use `docker_compose_v2` or
+`community.docker.docker_compose_v2`.
+
 ```yaml
 - name: Deploy Stack
-  docker_compose:
+  docker_compose_v2:
     project_src: /opt/my-project
     state: present
     build: true
@@ -830,13 +855,13 @@ Manage Docker Compose projects.
       DB_PASSWORD: secret
 
 - name: Scale Service
-  docker_compose:
+  docker_compose_v2:
     project_src: /opt/my-project
     scale:
       web: 3
 
 - name: Remove Stack
-  docker_compose:
+  docker_compose_v2:
     project_src: /opt/my-project
     state: absent
 ```

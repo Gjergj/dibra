@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gjergjiramku/dibra/internal/execution"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_container"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_image"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_image_export"
@@ -80,6 +81,26 @@ func TestDecodeRejectsUnknownArguments(t *testing.T) {
 	}
 }
 
+func TestExecuteDefinitionPassesExecutionStateToHandler(t *testing.T) {
+	want := execution.State{CheckMode: true, DiffMode: true}
+	var received execution.State
+	definition := Definition{
+		Decoder: func(data json.RawMessage) (any, error) {
+			return string(data), nil
+		},
+		Handler: func(arguments any, state execution.State) (any, error) {
+			received = state
+			return arguments, nil
+		},
+	}
+	if _, err := executeDefinition(definition, json.RawMessage(`{}`), want); err != nil {
+		t.Fatal(err)
+	}
+	if received != want {
+		t.Fatalf("handler state = %#v, want %#v", received, want)
+	}
+}
+
 func TestCompatibilityAliasesResolveToCanonicalModules(t *testing.T) {
 	for _, name := range []string{
 		"docker_compose_v2",
@@ -92,6 +113,35 @@ func TestCompatibilityAliasesResolveToCanonicalModules(t *testing.T) {
 		}
 		if definition.CanonicalName != "community.docker.docker_compose_v2" {
 			t.Fatalf("Lookup(%q) canonical name = %q", name, definition.CanonicalName)
+		}
+	}
+
+	definition, _ := Lookup("docker_compose")
+	deprecation, ok := definition.Deprecations["docker_compose"]
+	if !ok {
+		t.Fatal("docker_compose alias does not carry deprecation metadata")
+	}
+	if deprecation.Replacement != "docker_compose_v2" || !strings.Contains(deprecation.Message, "deprecated") {
+		t.Fatalf("docker_compose deprecation = %#v", deprecation)
+	}
+}
+
+func TestDecodeWarnsOnlyForDeprecatedComposeAlias(t *testing.T) {
+	legacy, err := Decode("docker_compose", json.RawMessage(`{"project_src":"/srv/app"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(legacy.DeprecationWarning, `"docker_compose" is deprecated`) {
+		t.Fatalf("legacy deprecation warning = %q", legacy.DeprecationWarning)
+	}
+
+	for _, name := range []string{"docker_compose_v2", "community.docker.docker_compose_v2"} {
+		invocation, err := Decode(name, json.RawMessage(`{"project_src":"/srv/app"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if invocation.DeprecationWarning != "" {
+			t.Errorf("Decode(%q) warning = %q", name, invocation.DeprecationWarning)
 		}
 	}
 }

@@ -43,6 +43,9 @@ services:
 	if strings.Contains(output1, "FAILED") {
 		t.Fatalf("Compose Up failed: %s", output1)
 	}
+	if !strings.Contains(output1, `module alias "docker_compose" is deprecated`) {
+		t.Errorf("Expected docker_compose deprecation warning: %s", output1)
+	}
 	// Note: 'docker compose up' stdout/stderr handling determines if we detect change.
 	// We expect "Started" or "Created" in output.
 	if !strings.Contains(output1, "CHANGED") {

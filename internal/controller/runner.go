@@ -20,6 +20,7 @@ import (
 
 	"github.com/gjergjiramku/dibra/internal/agent"
 	"github.com/gjergjiramku/dibra/internal/config"
+	"github.com/gjergjiramku/dibra/internal/execution"
 	"github.com/gjergjiramku/dibra/internal/inventory"
 	"github.com/gjergjiramku/dibra/internal/modules/registry"
 	"github.com/gjergjiramku/dibra/internal/secrets"
@@ -36,10 +37,7 @@ const (
 	remoteAgentName = ".dibra-agent"
 )
 
-type ModuleRequest struct {
-	Module string      `json:"module"`
-	Args   interface{} `json:"args"`
-}
+type ModuleRequest = execution.ModuleRequest[interface{}]
 
 type GenericResponse struct {
 	Changed  bool     `json:"changed"`
@@ -74,6 +72,8 @@ type RunOptions struct {
 	Validate         bool
 	ForceAgentUpload bool
 	Verbose          bool
+	CheckMode        bool
+	DiffMode         bool
 	AgentMode        agent.Mode
 	AgentPath        string
 	Version          string
@@ -289,6 +289,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 	if err != nil {
 		return runResult, fmt.Errorf("Failed to expand import_tasks: %v", err)
 	}
+	globalExecutionState := execution.State{CheckMode: opts.CheckMode, DiffMode: opts.DiffMode}
 
 	var groupsMap map[string][]string
 	if inv != nil {
@@ -440,6 +441,9 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 			}
 			task := taskQueue[taskIdx]
 			printf("  Task: %s\n", task.Name)
+			if task.Module != nil && task.Module.DeprecationWarning != "" {
+				printf("    ⚠ DEPRECATION: %s\n", task.Module.DeprecationWarning)
+			}
 
 			if task.Register != "" {
 				if err := validateVarName(task.Register); err != nil {
@@ -561,7 +565,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 					iterationTask.LoopControl = nil
 					iterationTask.Vars = mergeTaskVars(task.Vars, loopVars)
 
-					result, hasResult := executeTaskOnce(iterationTask, iterationContext, host, client, agentExecutionPath, baseDir, &taskQueue, taskIdx, renderImportPath, opts.Verbose, false)
+					result, hasResult := executeTaskOnce(iterationTask, iterationContext, host, client, agentExecutionPath, baseDir, &taskQueue, taskIdx, renderImportPath, opts.Verbose, false, globalExecutionState)
 					if hasResult {
 						if iterationTask.GatherFacts != nil {
 							applyGatheredFacts(hostRuntimeVars, host.Name, result)
@@ -606,7 +610,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 			}
 
 			allowReboot := opts.Local && opts.AllowReboot && taskIdx == len(taskQueue)-1
-			result, hasResult := executeTaskOnce(task, flattened, host, client, agentExecutionPath, baseDir, &taskQueue, taskIdx, renderImportPath, opts.Verbose, allowReboot)
+			result, hasResult := executeTaskOnce(task, flattened, host, client, agentExecutionPath, baseDir, &taskQueue, taskIdx, renderImportPath, opts.Verbose, allowReboot, globalExecutionState)
 			if hasResult && task.GatherFacts != nil {
 				applyGatheredFacts(hostRuntimeVars, host.Name, result)
 			}
@@ -1483,7 +1487,7 @@ func buildHostvarsForTask(hostInfos []vars.HostInfo, resolver vars.Resolver, inv
 	}
 	return hostvars, nil
 }
-func executeTaskOnce(task config.Task, flattened map[string]interface{}, host config.Host, client ExecutionClient, remoteAgentPath string, baseDir string, taskQueue *[]config.Task, taskIdx int, renderImportPath func(string) (string, error), verbose bool, allowReboot bool) (map[string]interface{}, bool) {
+func executeTaskOnce(task config.Task, flattened map[string]interface{}, host config.Host, client ExecutionClient, remoteAgentPath string, baseDir string, taskQueue *[]config.Task, taskIdx int, renderImportPath func(string) (string, error), verbose bool, allowReboot bool, globalExecutionState execution.State) (map[string]interface{}, bool) {
 	if len(task.When) > 0 {
 		shouldRun, err := template.EvaluateWhen(task.When, flattened)
 		if err != nil {
@@ -1503,6 +1507,7 @@ func executeTaskOnce(task config.Task, flattened map[string]interface{}, host co
 		}
 	}
 
+	taskExecutionState := execution.ResolveState(globalExecutionState, task.CheckMode, task.Diff)
 	var modReq ModuleRequest
 
 	switch {
@@ -1606,7 +1611,7 @@ func executeTaskOnce(task config.Task, flattened map[string]interface{}, host co
 			printf("    ✗ Failed to render fetch params: %v\n", err)
 			return nil, false
 		}
-		resp := executeFetch(client, remoteAgentPath, host.Name, renderedFetch, verbose)
+		resp := executeFetch(client, remoteAgentPath, host.Name, renderedFetch, verbose, taskExecutionState)
 		printResponse(resp, verbose)
 		result := genericResponseToMap(resp)
 		localDest := computeFetchDest(renderedFetch, host.Name)
@@ -2105,7 +2110,7 @@ func executeTaskOnce(task config.Task, flattened map[string]interface{}, host co
 			printf("    ✗ Failed to render script params: %v\n", err)
 			return nil, false
 		}
-		resp, rawJSON := executeScript(client, remoteAgentPath, renderedScript, verbose)
+		resp, rawJSON := executeScript(client, remoteAgentPath, renderedScript, verbose, taskExecutionState)
 		printResponse(resp, verbose)
 		var fullResult map[string]interface{}
 		if rawJSON != "" {
@@ -2464,7 +2469,7 @@ func executeTaskOnce(task config.Task, flattened map[string]interface{}, host co
 			printf("    ✗ Failed to render reboot params: %v\n", err)
 			return nil, false
 		}
-		resp := executeReboot(client, remoteAgentPath, host, renderedReboot, verbose)
+		resp := executeReboot(client, remoteAgentPath, host, renderedReboot, verbose, taskExecutionState)
 		printResponse(resp, verbose)
 		result := genericResponseToMap(resp)
 		result["rebooted"] = !resp.Failed
@@ -2561,6 +2566,7 @@ func executeTaskOnce(task config.Task, flattened map[string]interface{}, host co
 		return nil, false
 	}
 
+	modReq.State = taskExecutionState
 	reqData, _ := json.Marshal(modReq)
 	if verbose {
 		printf("    Request: %s\n", string(reqData))
@@ -2647,7 +2653,7 @@ func renderRegisteredModule(invocation *registry.Invocation, context map[string]
 	return ModuleRequest{Module: invocation.CanonicalName, Args: renderedArgs}, nil
 }
 
-func executeFetch(client ExecutionClient, agentPath, hostName string, params *config.FetchParams, verbose bool) GenericResponse {
+func executeFetch(client ExecutionClient, agentPath, hostName string, params *config.FetchParams, verbose bool, state execution.State) GenericResponse {
 	failOnMissing := true
 	if params.FailOnMissing != nil {
 		failOnMissing = *params.FailOnMissing
@@ -2663,6 +2669,7 @@ func executeFetch(client ExecutionClient, agentPath, hostName string, params *co
 			"path":   params.Src,
 			"follow": true,
 		},
+		State: state,
 	}
 	reqData, _ := json.Marshal(statReq)
 	if verbose {
@@ -2781,7 +2788,7 @@ func printResponse(resp GenericResponse, verbose bool) {
 	}
 }
 
-func executeScript(client ExecutionClient, agentPath string, params *config.ScriptParams, verbose bool) (GenericResponse, string) {
+func executeScript(client ExecutionClient, agentPath string, params *config.ScriptParams, verbose bool, state execution.State) (GenericResponse, string) {
 	if params.Cmd == "" {
 		return GenericResponse{Failed: true, Msg: "no script path specified (cmd parameter required)"}, ""
 	}
@@ -2832,6 +2839,7 @@ func executeScript(client ExecutionClient, agentPath string, params *config.Scri
 			"executable":       params.Executable,
 			"strip_empty_ends": stripEmptyEnds,
 		},
+		State: state,
 	}
 	reqData, _ := json.Marshal(scriptReq)
 	if verbose {
@@ -2887,7 +2895,7 @@ func cleanupScript(client ExecutionClient, remotePath string) {
 	_, _, _ = client.Run(fmt.Sprintf("rm -f %s", remotePath))
 }
 
-func executeReboot(client ExecutionClient, agentPath string, host config.Host, params *config.RebootParams, verbose bool) GenericResponse {
+func executeReboot(client ExecutionClient, agentPath string, host config.Host, params *config.RebootParams, verbose bool, state execution.State) GenericResponse {
 	if client.IsLocal() {
 		rebootReq := ModuleRequest{
 			Module: "reboot",
@@ -2902,6 +2910,7 @@ func executeReboot(client ExecutionClient, agentPath string, host config.Host, p
 				"boot_time_command": params.BootTimeCommand,
 				"reboot_command":    params.RebootCommand,
 			},
+			State: state,
 		}
 		reqData, _ := json.Marshal(rebootReq)
 		if verbose {
@@ -2949,6 +2958,7 @@ func executeReboot(client ExecutionClient, agentPath string, host config.Host, p
 		Args: map[string]interface{}{
 			"cmd": bootTimeCommand,
 		},
+		State: state,
 	}
 	reqData, _ := json.Marshal(bootTimeReq)
 	if verbose {
@@ -2997,6 +3007,7 @@ func executeReboot(client ExecutionClient, agentPath string, host config.Host, p
 				Args: map[string]interface{}{
 					"cmd": fmt.Sprintf("test -x %s/shutdown && echo found", path),
 				},
+				State: state,
 			}
 			reqData, _ := json.Marshal(checkReq)
 			output, err := client.ExecuteAgent(agentPath, reqData)
@@ -3021,6 +3032,7 @@ func executeReboot(client ExecutionClient, agentPath string, host config.Host, p
 					Args: map[string]interface{}{
 						"cmd": fmt.Sprintf("test -x %s/reboot && echo found", path),
 					},
+					State: state,
 				}
 				reqData, _ := json.Marshal(checkReq)
 				output, err := client.ExecuteAgent(agentPath, reqData)
@@ -3053,6 +3065,7 @@ func executeReboot(client ExecutionClient, agentPath string, host config.Host, p
 		Args: map[string]interface{}{
 			"cmd": rebootCmd,
 		},
+		State: state,
 	}
 	reqData, _ = json.Marshal(rebootReq)
 
@@ -3091,6 +3104,7 @@ func executeReboot(client ExecutionClient, agentPath string, host config.Host, p
 			Args: map[string]interface{}{
 				"cmd": bootTimeCommand,
 			},
+			State: state,
 		}
 		reqData, _ := json.Marshal(bootTimeReq)
 		output, err := newClient.ExecuteAgent(agentPath, reqData)
@@ -3130,6 +3144,7 @@ func executeReboot(client ExecutionClient, agentPath string, host config.Host, p
 			Args: map[string]interface{}{
 				"cmd": testCommand,
 			},
+			State: state,
 		}
 		reqData, _ = json.Marshal(testReq)
 		output, err = newClient.ExecuteAgent(agentPath, reqData)

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gjergjiramku/dibra/internal/execution"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_compose"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_compose_v2_run"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_config"
@@ -65,14 +66,22 @@ type Sensitivity struct {
 // Decoder strictly decodes a JSON argument object into a module's request type.
 type Decoder func(json.RawMessage) (any, error)
 
-// Handler invokes a module using the concrete request returned by its Decoder.
-type Handler func(any) (any, error)
+// Handler invokes a module using the concrete request returned by its Decoder
+// and the effective controller execution state.
+type Handler func(any, execution.State) (any, error)
+
+// Deprecation describes an accepted alias that should no longer be used.
+type Deprecation struct {
+	Replacement string
+	Message     string
+}
 
 // Definition is all registration, decoding, capability, sensitivity, and
 // dispatch information for one canonical module.
 type Definition struct {
 	CanonicalName string
 	ShortAliases  []string
+	Deprecations  map[string]Deprecation
 	Capabilities  Capabilities
 	Sensitivity   Sensitivity
 	Decoder       Decoder
@@ -81,8 +90,9 @@ type Definition struct {
 
 // Invocation is a decoded playbook module ready for rendering by the controller.
 type Invocation struct {
-	CanonicalName string
-	Arguments     any
+	CanonicalName      string
+	Arguments          any
+	DeprecationWarning string
 }
 
 type argumentNormalizer func(map[string]json.RawMessage) error
@@ -97,7 +107,7 @@ var definitions = []Definition{
 	module("docker_swarm", Capabilities{SupportFull, SupportFull}, sensitivityWithResults([]string{"join_token"}, []string{"join_tokens"}), docker_swarm.Execute),
 	module("docker_swarm_service", Capabilities{SupportFull, SupportFull}, sensitivity(), docker_swarm_service.Execute),
 	module("docker_node", Capabilities{SupportFull, SupportNone}, sensitivity(), docker_node.Execute),
-	moduleWithAliases("docker_compose_v2", []string{"docker_compose_v2", "docker_compose"}, Capabilities{SupportFull, SupportNone}, sensitivity(), nil, docker_compose.Execute),
+	moduleWithDeprecatedAlias("docker_compose_v2", "docker_compose", Capabilities{SupportFull, SupportNone}, sensitivity(), docker_compose.Execute),
 	module("docker_compose_v2_run", Capabilities{SupportNone, SupportNone}, sensitivity(), docker_compose_v2_run.Execute),
 	module("docker_secret", Capabilities{SupportFull, SupportNone}, sensitivity("data"), docker_secret.Execute),
 	module("docker_config", Capabilities{SupportFull, SupportNone}, sensitivity("data"), docker_config.Execute),
@@ -137,7 +147,7 @@ func moduleWithAliases[Request, Response any](shortName string, aliases []string
 			}
 			return request, nil
 		},
-		Handler: func(decoded any) (any, error) {
+		Handler: func(decoded any, _ execution.State) (any, error) {
 			request, ok := decoded.(Request)
 			if !ok {
 				return nil, fmt.Errorf("handler for %s received %T, want its registered request type", canonicalName, decoded)
@@ -145,6 +155,22 @@ func moduleWithAliases[Request, Response any](shortName string, aliases []string
 			return handler(request), nil
 		},
 	}
+}
+
+func moduleWithDeprecatedAlias[Request, Response any](shortName, deprecatedAlias string, capabilities Capabilities, sensitive Sensitivity, handler func(Request) Response) Definition {
+	definition := moduleWithAliases(shortName, []string{shortName, deprecatedAlias}, capabilities, sensitive, nil, handler)
+	definition.Deprecations = map[string]Deprecation{
+		deprecatedAlias: {
+			Replacement: shortName,
+			Message: fmt.Sprintf(
+				"module alias %q is deprecated and will be removed in a future release; use %q or %q instead",
+				deprecatedAlias,
+				shortName,
+				definition.CanonicalName,
+			),
+		},
+	}
+	return definition
 }
 
 func sensitivity(arguments ...string) Sensitivity {
@@ -170,6 +196,18 @@ func mustIndex(entries []Definition) map[string]int {
 			panic("module registry contains an incomplete definition")
 		}
 		names := append([]string{entry.CanonicalName}, entry.ShortAliases...)
+		aliases := make(map[string]bool, len(entry.ShortAliases))
+		for _, alias := range entry.ShortAliases {
+			aliases[alias] = true
+		}
+		for alias, deprecation := range entry.Deprecations {
+			if !aliases[alias] {
+				panic(fmt.Sprintf("module registry deprecation %q is not a short alias of %q", alias, entry.CanonicalName))
+			}
+			if deprecation.Replacement == "" || deprecation.Message == "" {
+				panic(fmt.Sprintf("module registry deprecation %q for %q is incomplete", alias, entry.CanonicalName))
+			}
+		}
 		for _, name := range names {
 			if name == "" {
 				panic("module registry contains an empty name")
@@ -284,20 +322,28 @@ func Decode(name string, data json.RawMessage) (*Invocation, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Invocation{CanonicalName: definition.CanonicalName, Arguments: arguments}, nil
+	invocation := &Invocation{CanonicalName: definition.CanonicalName, Arguments: arguments}
+	if deprecation, deprecated := definition.Deprecations[name]; deprecated {
+		invocation.DeprecationWarning = deprecation.Message
+	}
+	return invocation, nil
 }
 
 // Execute decodes and dispatches one module invocation.
-func Execute(name string, data json.RawMessage) (any, error) {
+func Execute(name string, data json.RawMessage, state execution.State) (any, error) {
 	definition, ok := Lookup(name)
 	if !ok {
 		return nil, fmt.Errorf("unknown registered module %q", name)
 	}
+	return executeDefinition(definition, data, state)
+}
+
+func executeDefinition(definition Definition, data json.RawMessage, state execution.State) (any, error) {
 	arguments, err := definition.Decoder(data)
 	if err != nil {
 		return nil, err
 	}
-	return definition.Handler(arguments)
+	return definition.Handler(arguments, state)
 }
 
 // ArgumentsMap converts typed decoded arguments to the controller's renderable map.
@@ -322,6 +368,11 @@ func ArgumentsMap(invocation *Invocation) (map[string]any, error) {
 
 func cloneDefinition(definition Definition) Definition {
 	definition.ShortAliases = append([]string(nil), definition.ShortAliases...)
+	deprecations := make(map[string]Deprecation, len(definition.Deprecations))
+	for alias, deprecation := range definition.Deprecations {
+		deprecations[alias] = deprecation
+	}
+	definition.Deprecations = deprecations
 	definition.Sensitivity.Arguments = append([]string(nil), definition.Sensitivity.Arguments...)
 	definition.Sensitivity.Results = append([]string(nil), definition.Sensitivity.Results...)
 	return definition

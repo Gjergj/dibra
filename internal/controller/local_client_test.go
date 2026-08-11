@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/gjergjiramku/dibra/internal/agent"
+	"github.com/gjergjiramku/dibra/internal/execution"
 )
 
 func TestRunLocalUsesStandaloneAgentAndIgnoresInventory(t *testing.T) {
@@ -131,6 +134,76 @@ func TestLocalClientExecutesAgentProtocol(t *testing.T) {
 	}
 	if !strings.Contains(string(output), `"ping":"pong"`) {
 		t.Fatalf("ExecuteAgent() output = %q", output)
+	}
+}
+
+func TestRunCarriesResolvedCheckAndDiffStateAndWarnsForComposeAlias(t *testing.T) {
+	t.Parallel()
+	temporary := t.TempDir()
+	capturedPath := filepath.Join(temporary, "requests.jsonl")
+	agentPath := filepath.Join(temporary, "agent")
+	agentScript := fmt.Sprintf("#!/bin/sh\nrequest=$(cat)\nprintf '%%s\\n' \"$request\" >> %q\nprintf '%%s\\n' '{\"changed\":false,\"failed\":false}'\n", capturedPath)
+	if err := os.WriteFile(agentPath, []byte(agentScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	playbookPath := filepath.Join(temporary, "playbook.yaml")
+	playbook := `tasks:
+  - name: deprecated alias inherits global state
+    docker_compose:
+      project_src: /tmp
+  - name: task overrides both modes
+    check_mode: false
+    diff: true
+    docker_container_info:
+      name: web
+`
+	if err := os.WriteFile(playbookPath, []byte(playbook), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	result, err := Run(context.Background(), RunOptions{
+		ConfigPath:     playbookPath,
+		Local:          true,
+		LocalAgentPath: agentPath,
+		WorkingDir:     temporary,
+		CheckMode:      true,
+		Stdout:         &stdout,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Failed {
+		t.Fatalf("Run() result = %#v", result)
+	}
+	if !strings.Contains(stdout.String(), `module alias "docker_compose" is deprecated`) {
+		t.Fatalf("Run() output does not contain compose deprecation warning:\n%s", stdout.String())
+	}
+
+	data, err := os.ReadFile(capturedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("captured %d requests, want 2: %s", len(lines), data)
+	}
+	want := []struct {
+		module string
+		state  execution.State
+	}{
+		{module: "community.docker.docker_compose_v2", state: execution.State{CheckMode: true}},
+		{module: "community.docker.docker_container_info", state: execution.State{DiffMode: true}},
+	}
+	for index, line := range lines {
+		var request execution.ModuleRequest[json.RawMessage]
+		if err := json.Unmarshal([]byte(line), &request); err != nil {
+			t.Fatalf("decode request %d: %v (%s)", index, err, line)
+		}
+		if request.Module != want[index].module || request.State != want[index].state {
+			t.Errorf("request %d = module %q state %#v, want module %q state %#v", index, request.Module, request.State, want[index].module, want[index].state)
+		}
 	}
 }
 
