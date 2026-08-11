@@ -50,3 +50,13 @@ func TestModuleRequestAlwaysCarriesExecutionState(t *testing.T) {
 		}
 	}
 }
+
+func TestUnsupportedCheckModeIsAnUnchangedSkip(t *testing.T) {
+	result := UnsupportedCheckMode("example.module")
+	if result.Changed || result.Failed || !result.Skipped {
+		t.Fatalf("UnsupportedCheckMode() = %#v", result)
+	}
+	if result.Msg != "example.module does not yet implement check mode in Dibra" {
+		t.Fatalf("message = %q", result.Msg)
+	}
+}

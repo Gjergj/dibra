@@ -81,6 +81,10 @@ func main() {
 		writeJSON(response)
 		return
 	}
+	if modReq.CheckMode {
+		writeJSON(execution.UnsupportedCheckMode(modReq.Module))
+		return
+	}
 
 	switch modReq.Module {
 	case "apt":

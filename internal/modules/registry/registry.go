@@ -79,13 +79,14 @@ type Deprecation struct {
 // Definition is all registration, decoding, capability, sensitivity, and
 // dispatch information for one canonical module.
 type Definition struct {
-	CanonicalName string
-	ShortAliases  []string
-	Deprecations  map[string]Deprecation
-	Capabilities  Capabilities
-	Sensitivity   Sensitivity
-	Decoder       Decoder
-	Handler       Handler
+	CanonicalName           string
+	ShortAliases            []string
+	Deprecations            map[string]Deprecation
+	Capabilities            Capabilities
+	ImplementedCapabilities Capabilities
+	Sensitivity             Sensitivity
+	Decoder                 Decoder
+	Handler                 Handler
 }
 
 // Invocation is a decoded playbook module ready for rendering by the controller.
@@ -117,14 +118,14 @@ var definitions = []Definition{
 	module("docker_image_build", Capabilities{SupportFull, SupportNone}, sensitivity("args"), docker_image_build.Execute),
 	module("docker_image_load", Capabilities{SupportNone, SupportNone}, sensitivity(), docker_image_load.Execute),
 	moduleWithAliases("docker_image_export", []string{"docker_image_export"}, Capabilities{SupportFull, SupportNone}, sensitivity(), normalizeImageExportArguments, docker_image_export.Execute),
-	module("docker_container_info", Capabilities{SupportFull, SupportNA}, sensitivity(), docker_container_info.Execute),
-	module("docker_image_info", Capabilities{SupportFull, SupportNA}, sensitivity(), docker_image_info.Execute),
-	module("docker_network_info", Capabilities{SupportFull, SupportNA}, sensitivity(), docker_network_info.Execute),
-	module("docker_volume_info", Capabilities{SupportFull, SupportNA}, sensitivity(), docker_volume_info.Execute),
-	module("docker_host_info", Capabilities{SupportFull, SupportNA}, sensitivity(), docker_host_info.Execute),
-	module("docker_swarm_info", Capabilities{SupportFull, SupportNA}, sensitivityWithResults(nil, []string{"swarm_info.JoinTokens"}), docker_swarm_info.Execute),
-	module("docker_swarm_service_info", Capabilities{SupportFull, SupportNA}, sensitivity(), docker_swarm_service_info.Execute),
-	module("docker_node_info", Capabilities{SupportFull, SupportNA}, sensitivity(), docker_node_info.Execute),
+	readOnlyModule("docker_container_info", sensitivity(), docker_container_info.Execute),
+	readOnlyModule("docker_image_info", sensitivity(), docker_image_info.Execute),
+	readOnlyModule("docker_network_info", sensitivity(), docker_network_info.Execute),
+	readOnlyModule("docker_volume_info", sensitivity(), docker_volume_info.Execute),
+	readOnlyModule("docker_host_info", sensitivity(), docker_host_info.Execute),
+	readOnlyModule("docker_swarm_info", sensitivityWithResults(nil, []string{"swarm_info.JoinTokens"}), docker_swarm_info.Execute),
+	readOnlyModule("docker_swarm_service_info", sensitivity(), docker_swarm_service_info.Execute),
+	readOnlyModule("docker_node_info", sensitivity(), docker_node_info.Execute),
 }
 
 var definitionsByName = mustIndex(definitions)
@@ -133,13 +134,21 @@ func module[Request, Response any](shortName string, capabilities Capabilities, 
 	return moduleWithAliases(shortName, []string{shortName}, capabilities, sensitive, nil, handler)
 }
 
+func readOnlyModule[Request, Response any](shortName string, sensitive Sensitivity, handler func(Request) Response) Definition {
+	capabilities := Capabilities{SupportFull, SupportNA}
+	definition := module(shortName, capabilities, sensitive, handler)
+	definition.ImplementedCapabilities = capabilities
+	return definition
+}
+
 func moduleWithAliases[Request, Response any](shortName string, aliases []string, capabilities Capabilities, sensitive Sensitivity, normalizer argumentNormalizer, handler func(Request) Response) Definition {
 	canonicalName := "community.docker." + shortName
 	return Definition{
-		CanonicalName: canonicalName,
-		ShortAliases:  aliases,
-		Capabilities:  capabilities,
-		Sensitivity:   sensitive,
+		CanonicalName:           canonicalName,
+		ShortAliases:            aliases,
+		Capabilities:            capabilities,
+		ImplementedCapabilities: Capabilities{SupportNone, SupportNone},
+		Sensitivity:             sensitive,
 		Decoder: func(data json.RawMessage) (any, error) {
 			var request Request
 			if err := decodeStrict(data, &request, normalizer); err != nil {
@@ -191,9 +200,20 @@ func sensitivityWithResults(arguments, results []string) Sensitivity {
 
 func mustIndex(entries []Definition) map[string]int {
 	byName := make(map[string]int)
+	validSupport := map[Support]bool{
+		SupportNone: true, SupportPartial: true, SupportFull: true, SupportNA: true,
+	}
 	for index, entry := range entries {
 		if entry.CanonicalName == "" || entry.Decoder == nil || entry.Handler == nil {
 			panic("module registry contains an incomplete definition")
+		}
+		if !validSupport[entry.Capabilities.CheckMode] || !validSupport[entry.Capabilities.DiffMode] ||
+			!validSupport[entry.ImplementedCapabilities.CheckMode] || !validSupport[entry.ImplementedCapabilities.DiffMode] {
+			panic(fmt.Sprintf("module registry contains invalid capabilities for %q", entry.CanonicalName))
+		}
+		if !implementationFitsContract(entry.Capabilities.CheckMode, entry.ImplementedCapabilities.CheckMode) ||
+			!implementationFitsContract(entry.Capabilities.DiffMode, entry.ImplementedCapabilities.DiffMode) {
+			panic(fmt.Sprintf("module registry implementation capabilities exceed the upstream contract for %q", entry.CanonicalName))
 		}
 		names := append([]string{entry.CanonicalName}, entry.ShortAliases...)
 		aliases := make(map[string]bool, len(entry.ShortAliases))
@@ -219,6 +239,26 @@ func mustIndex(entries []Definition) map[string]int {
 		}
 	}
 	return byName
+}
+
+func implementationFitsContract(contract, implemented Support) bool {
+	switch implemented {
+	case SupportNone:
+		return true
+	case SupportPartial:
+		return contract == SupportPartial || contract == SupportFull
+	case SupportFull, SupportNA:
+		return implemented == contract
+	default:
+		return false
+	}
+}
+
+// ImplementsCheckMode reports whether Dibra can execute this definition
+// without changing the target while check mode is active.
+func (definition Definition) ImplementsCheckMode() bool {
+	return definition.ImplementedCapabilities.CheckMode == SupportPartial ||
+		definition.ImplementedCapabilities.CheckMode == SupportFull
 }
 
 func decodeStrict(data json.RawMessage, destination any, normalizer argumentNormalizer) error {
@@ -342,6 +382,9 @@ func executeDefinition(definition Definition, data json.RawMessage, state execut
 	arguments, err := definition.Decoder(data)
 	if err != nil {
 		return nil, err
+	}
+	if state.CheckMode && !definition.ImplementsCheckMode() {
+		return execution.UnsupportedCheckMode(definition.CanonicalName), nil
 	}
 	return definition.Handler(arguments, state)
 }

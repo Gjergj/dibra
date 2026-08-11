@@ -62,9 +62,12 @@ tasks:
     docker_container_info:
       name: info-test-container
 `
-		output := runPlaybook(t, playbook)
+		output := runPlaybookWithArgs(t, playbook, "--check")
 		if strings.Contains(output, "FAILED") {
 			t.Errorf("Expected success, got failure: %s", output)
+		}
+		if strings.Contains(output, "SKIPPED") {
+			t.Errorf("Read-only info module should execute in check mode: %s", output)
 		}
 		// Info modules return OK for successful inspection
 		if !strings.Contains(output, "OK") {

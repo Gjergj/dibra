@@ -66,13 +66,19 @@ func getClient(t *testing.T) *ssh.Client {
 }
 
 func runPlaybook(t *testing.T, playbook string) string {
+	return runPlaybookWithArgs(t, playbook)
+}
+
+func runPlaybookWithArgs(t *testing.T, playbook string, args ...string) string {
 	tmpFile := filepath.Join(t.TempDir(), "playbook.yaml")
 	if err := os.WriteFile(tmpFile, []byte(playbook), 0644); err != nil {
 		t.Fatalf("Failed to write playbook: %v", err)
 	}
 
 	projectRoot := getProjectRoot()
-	cmd := exec.Command("go", "run", "./cmd/controller", "-config", tmpFile, "-v", "-force-agent-upload", "-agent-build")
+	commandArgs := []string{"run", "./cmd/controller", "-config", tmpFile, "-v", "-force-agent-upload", "-agent-build"}
+	commandArgs = append(commandArgs, args...)
+	cmd := exec.Command("go", commandArgs...)
 	cmd.Dir = projectRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {

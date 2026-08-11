@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gjergjiramku/dibra/internal/agent"
+	"github.com/gjergjiramku/dibra/internal/execution"
 )
 
 func TestNewPreparesAgentAndRemovesStaleJobs(t *testing.T) {
@@ -142,6 +144,15 @@ func TestExecuteProjectRunsPlaybooksInOrderAndStopsOnFailure(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(string(requests)), "\n")
 	if len(lines) != 2 || !strings.Contains(lines[0], "first") || !strings.Contains(lines[1], "crash") {
 		t.Fatalf("agent requests = %#v", lines)
+	}
+	for index, line := range lines {
+		var request execution.ModuleRequest[json.RawMessage]
+		if err := json.Unmarshal([]byte(line), &request); err != nil {
+			t.Fatalf("decode agent request %d: %v", index, err)
+		}
+		if request.State != (execution.State{}) {
+			t.Fatalf("deploy agent request %d state = %#v, want default state", index, request.State)
+		}
 	}
 }
 

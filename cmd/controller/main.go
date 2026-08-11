@@ -14,61 +14,70 @@ import (
 )
 
 func main() {
-	validateCommand := false
-	if len(os.Args) > 1 && os.Args[1] == "validate" {
-		validateCommand = true
-		os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
+	options := controllerFlags{}
+	flags := newControllerFlagSet(&options, flag.ExitOnError, os.Stderr)
+	args := os.Args[1:]
+	if isCompletionRequest(args) {
+		if err := runCompletionRequest(args, flags, os.Stdout, os.Stderr); err != nil {
+			fatal("completion failed: %v", err)
+		}
+		return
+	}
+	if len(args) > 0 && args[0] == "completion" {
+		if err := runCompletion(args[1:], flags, os.Stdout); err != nil {
+			fatal("completion failed: %v", err)
+		}
+		return
 	}
 
-	configPath := flag.String("config", "playbook.yaml", "Path to playbook config file (YAML)")
-	forceUpload := flag.Bool("force-agent-upload", false, "Force upload of agent binary")
-	verbose := flag.Bool("v", false, "Verbose output")
-	showVersion := flag.Bool("version", false, "Print version and exit")
-	agentPath := flag.String("agent-path", "", "Path to a pre-built agent binary")
-	agentBuild := flag.Bool("agent-build", false, "Build agent from source (requires Go)")
-	inventoryPath := flag.String("i", "", "Path to YAML inventory file")
-	inventoryPathLong := flag.String("inventory", "", "Path to YAML inventory file")
-	extraVars := flag.String("e", "", "Extra variables (key=value or @file.yaml)")
-	extraVarsLong := flag.String("extra-vars", "", "Extra variables (key=value or @file.yaml)")
-	validateFlag := flag.Bool("validate", false, "Validate config and exit (no execution)")
-	flag.Parse()
-	validate := validateCommand || *validateFlag
+	validateCommand := false
+	if len(args) > 0 && args[0] == "validate" {
+		validateCommand = true
+		args = args[1:]
+	}
 
-	if *showVersion {
+	if err := flags.Parse(args); err != nil {
+		fatal("%v", err)
+	}
+	validate := validateCommand || options.Validate
+
+	if options.ShowVersion {
 		fmt.Printf("dibra %s (commit: %s, built: %s)\n", version.Version, version.Commit, version.Date)
 		return
 	}
-	if *agentPath != "" && *agentBuild {
+	if options.AgentPath != "" && options.AgentBuild {
 		fatal("--agent-path and --agent-build are mutually exclusive")
 	}
-	if validateCommand && (*agentPath != "" || *agentBuild || *forceUpload) {
+	if validateCommand && (options.AgentPath != "" || options.AgentBuild || options.ForceUpload) {
 		fatal("validate mode does not allow agent flags")
 	}
 
-	resolvedInventoryPath := *inventoryPath
+	resolvedInventoryPath := options.InventoryPath
 	if resolvedInventoryPath == "" {
-		resolvedInventoryPath = *inventoryPathLong
+		resolvedInventoryPath = options.InventoryPathLong
 	}
-	resolvedExtraVars := *extraVars
+	resolvedExtraVars := options.ExtraVars
 	if resolvedExtraVars == "" {
-		resolvedExtraVars = *extraVarsLong
+		resolvedExtraVars = options.ExtraVarsLong
 	}
 	resolverMode := agent.ModeAuto
-	if *agentPath != "" {
+	if options.AgentPath != "" {
 		resolverMode = agent.ModePath
-	} else if *agentBuild {
+	} else if options.AgentBuild {
 		resolverMode = agent.ModeBuild
 	}
 
 	_, err := controller.Run(context.Background(), controller.RunOptions{
-		ConfigPath:       *configPath,
+		ConfigPath:       options.ConfigPath,
 		InventoryPath:    resolvedInventoryPath,
 		ExtraVars:        resolvedExtraVars,
 		Validate:         validate,
-		ForceAgentUpload: *forceUpload,
-		Verbose:          *verbose,
+		ForceAgentUpload: options.ForceUpload,
+		Verbose:          options.Verbose,
+		CheckMode:        options.CheckMode,
+		DiffMode:         options.DiffMode,
 		AgentMode:        resolverMode,
-		AgentPath:        *agentPath,
+		AgentPath:        options.AgentPath,
 		Version:          version.Version,
 		ProjectRoot:      findProjectRoot(),
 	})

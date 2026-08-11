@@ -29,6 +29,24 @@ services:
 	remoteExec(t, client, "docker compose -f "+projectDir+"/docker-compose.yml down || true")
 	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
+	// Check mode must not invoke the mutating Compose executor until Dibra's
+	// implementation explicitly opts into the registry capability.
+	t.Log("Step 0: Compose check-mode safety gate")
+	playbookCheck := playbookHeader + `
+  - name: Compose check mode
+    docker_compose_v2:
+      project_src: ` + projectDir + `
+      state: present
+`
+	checkOutput := runPlaybookWithArgs(t, playbookCheck, "--check")
+	if strings.Contains(checkOutput, "FAILED") || !strings.Contains(checkOutput, "SKIPPED") {
+		t.Fatalf("Compose check mode was not safely skipped: %s", checkOutput)
+	}
+	psCheck := remoteExec(t, client, "cd "+projectDir+" && docker compose ps -q")
+	if strings.TrimSpace(psCheck) != "" {
+		t.Fatalf("Check mode created containers: %s", psCheck)
+	}
+
 	// 1. Up (Present)
 	t.Log("Step 1: Compose Up")
 	playbookUp := playbookHeader + `

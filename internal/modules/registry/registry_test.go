@@ -31,6 +31,9 @@ func TestDefinitionsAreCompleteAndResolvable(t *testing.T) {
 			if !validSupport[entry.Capabilities.CheckMode] || !validSupport[entry.Capabilities.DiffMode] {
 				t.Fatalf("invalid capabilities: %#v", entry.Capabilities)
 			}
+			if !validSupport[entry.ImplementedCapabilities.CheckMode] || !validSupport[entry.ImplementedCapabilities.DiffMode] {
+				t.Fatalf("invalid implemented capabilities: %#v", entry.ImplementedCapabilities)
+			}
 			if !contains(entry.Sensitivity.Arguments, "client_key") {
 				t.Fatalf("TLS client-key sensitivity is missing: %#v", entry.Sensitivity)
 			}
@@ -85,6 +88,7 @@ func TestExecuteDefinitionPassesExecutionStateToHandler(t *testing.T) {
 	want := execution.State{CheckMode: true, DiffMode: true}
 	var received execution.State
 	definition := Definition{
+		ImplementedCapabilities: Capabilities{CheckMode: SupportFull, DiffMode: SupportNone},
 		Decoder: func(data json.RawMessage) (any, error) {
 			return string(data), nil
 		},
@@ -98,6 +102,43 @@ func TestExecuteDefinitionPassesExecutionStateToHandler(t *testing.T) {
 	}
 	if received != want {
 		t.Fatalf("handler state = %#v, want %#v", received, want)
+	}
+}
+
+func TestCheckModeSkipsModuleWithoutImplementedSupport(t *testing.T) {
+	response, err := Execute(
+		"docker_compose_v2",
+		json.RawMessage(`{"project_src":"/path/that/must/not/be-accessed"}`),
+		execution.State{CheckMode: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	skipped, ok := response.(execution.SkippedResult)
+	if !ok {
+		t.Fatalf("response type = %T, want execution.SkippedResult", response)
+	}
+	if !skipped.Skipped || skipped.Changed || skipped.Failed {
+		t.Fatalf("response = %#v", skipped)
+	}
+}
+
+func TestOnlyReadOnlyModulesInitiallyImplementCheckMode(t *testing.T) {
+	implemented := map[string]bool{
+		"docker_container_info":     true,
+		"docker_image_info":         true,
+		"docker_network_info":       true,
+		"docker_volume_info":        true,
+		"docker_host_info":          true,
+		"docker_swarm_info":         true,
+		"docker_swarm_service_info": true,
+		"docker_node_info":          true,
+	}
+	for _, definition := range Definitions() {
+		want := implemented[definition.ShortName()]
+		if got := definition.ImplementsCheckMode(); got != want {
+			t.Errorf("%s ImplementsCheckMode() = %v, want %v", definition.ShortName(), got, want)
+		}
 	}
 }
 

@@ -149,14 +149,14 @@ func TestRunCarriesResolvedCheckAndDiffStateAndWarnsForComposeAlias(t *testing.T
 
 	playbookPath := filepath.Join(temporary, "playbook.yaml")
 	playbook := `tasks:
-  - name: deprecated alias inherits global state
-    docker_compose:
-      project_src: /tmp
-  - name: task overrides both modes
-    check_mode: false
-    diff: true
+  - name: read-only module inherits global state
     docker_container_info:
       name: web
+  - name: deprecated alias overrides both modes
+    check_mode: false
+    diff: true
+    docker_compose:
+      project_src: /tmp
 `
 	if err := os.WriteFile(playbookPath, []byte(playbook), 0o600); err != nil {
 		t.Fatal(err)
@@ -193,8 +193,8 @@ func TestRunCarriesResolvedCheckAndDiffStateAndWarnsForComposeAlias(t *testing.T
 		module string
 		state  execution.State
 	}{
-		{module: "community.docker.docker_compose_v2", state: execution.State{CheckMode: true}},
-		{module: "community.docker.docker_container_info", state: execution.State{DiffMode: true}},
+		{module: "community.docker.docker_container_info", state: execution.State{CheckMode: true}},
+		{module: "community.docker.docker_compose_v2", state: execution.State{DiffMode: true}},
 	}
 	for index, line := range lines {
 		var request execution.ModuleRequest[json.RawMessage]
@@ -204,6 +204,40 @@ func TestRunCarriesResolvedCheckAndDiffStateAndWarnsForComposeAlias(t *testing.T
 		if request.Module != want[index].module || request.State != want[index].state {
 			t.Errorf("request %d = module %q state %#v, want module %q state %#v", index, request.Module, request.State, want[index].module, want[index].state)
 		}
+	}
+}
+
+func TestRunCheckModeSkipsLegacyModuleBeforeControllerSideEffects(t *testing.T) {
+	t.Parallel()
+	temporary := t.TempDir()
+	playbookPath := filepath.Join(temporary, "playbook.yaml")
+	playbook := `tasks:
+  - name: copy a missing source
+    copy:
+      src: does-not-exist
+      dest: /tmp/must-not-be-written
+`
+	if err := os.WriteFile(playbookPath, []byte(playbook), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	result, err := Run(context.Background(), RunOptions{
+		ConfigPath:     playbookPath,
+		Local:          true,
+		LocalAgentPath: filepath.Join(temporary, "agent-that-must-not-run"),
+		WorkingDir:     temporary,
+		CheckMode:      true,
+		Stdout:         &stdout,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Failed {
+		t.Fatalf("Run() result = %#v", result)
+	}
+	if !strings.Contains(stdout.String(), "SKIPPED") || !strings.Contains(stdout.String(), "does not yet implement check mode") {
+		t.Fatalf("Run() output does not report a safe check-mode skip:\n%s", stdout.String())
 	}
 }
 

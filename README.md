@@ -84,7 +84,13 @@ Generate shell completions:
 dibra completion bash > /usr/local/etc/bash_completion.d/dibra
 dibra completion zsh > /usr/local/share/zsh/site-functions/_dibra
 dibra completion fish > ~/.config/fish/completions/dibra.fish
+dibra completion powershell > dibra.ps1
 ```
+
+Use `dibra -config playbook.yaml --check` for a non-mutating check-mode run and
+`--diff` to request structured differences from modules that implement them.
+Modules that have not implemented Dibra check mode are safely skipped rather
+than executed.
 
 For pull-based local execution, `dibra-deploy` periodically fetches a ZIP
 project from a local task server and applies it without SSH.

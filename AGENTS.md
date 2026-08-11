@@ -29,6 +29,12 @@ dibra -config playbook.yaml --agent-path /path/to/dibra-agent
 # Verbose output
 dibra -config playbook.yaml -v
 
+# Check mode (unsupported mutating modules are safely skipped)
+dibra -config playbook.yaml --check
+
+# Request structured diffs from modules that implement them
+dibra -config playbook.yaml --diff
+
 # Force re-upload agent (even if versions match)
 dibra -config playbook.yaml --force-agent-upload
 
@@ -195,10 +201,14 @@ controller resolves the effective state before sending the request, and the
 agent passes it to registered handlers separately from module arguments. Do
 not add `check_mode` or `diff` fields to individual Docker request structs.
 
-The envelope is transport plumbing, not a claim that every executor already
-honors check or diff mode. Consult registry capability metadata before
-implementing module behavior. Controller `--check` and `--diff` CLI flags are
-separate work and must also be added to every supported shell completion.
+The controller exposes global `--check` and `--diff` flags, and `dibra
+completion` generates bash, zsh, fish, and PowerShell completions from the
+registered flag set. The envelope is transport plumbing, not a claim that
+every executor already honors check or diff mode. The registry distinguishes
+the pinned upstream `Capabilities` contract from Dibra's
+`ImplementedCapabilities`. In check mode, the controller and agent skip a
+module before execution unless its Dibra implementation has explicitly opted
+in. The read-only Docker `*_info` modules are the initial safe implementations.
 
 ### Config Loading
 

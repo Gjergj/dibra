@@ -1508,6 +1508,16 @@ func executeTaskOnce(task config.Task, flattened map[string]interface{}, host co
 	}
 
 	taskExecutionState := execution.ResolveState(globalExecutionState, task.CheckMode, task.Diff)
+	if taskExecutionState.CheckMode {
+		if task.Module != nil {
+			definition, registered := registry.Lookup(task.Module.CanonicalName)
+			if !registered || !definition.ImplementsCheckMode() {
+				return skipUnsupportedCheckMode(task.Module.CanonicalName, verbose)
+			}
+		} else if task.IncludeTasks == nil {
+			return skipUnsupportedCheckMode(fmt.Sprintf("task %q (legacy module)", task.Name), verbose)
+		}
+	}
 	var modReq ModuleRequest
 
 	switch {
@@ -2653,6 +2663,17 @@ func renderRegisteredModule(invocation *registry.Invocation, context map[string]
 	return ModuleRequest{Module: invocation.CanonicalName, Args: renderedArgs}, nil
 }
 
+func skipUnsupportedCheckMode(module string, verbose bool) (map[string]interface{}, bool) {
+	skipped := execution.UnsupportedCheckMode(module)
+	printResponse(GenericResponse{Changed: skipped.Changed, Failed: skipped.Failed, Skipped: skipped.Skipped, Msg: skipped.Msg}, verbose)
+	return map[string]interface{}{
+		"changed": skipped.Changed,
+		"failed":  skipped.Failed,
+		"skipped": skipped.Skipped,
+		"msg":     skipped.Msg,
+	}, true
+}
+
 func executeFetch(client ExecutionClient, agentPath, hostName string, params *config.FetchParams, verbose bool, state execution.State) GenericResponse {
 	failOnMissing := true
 	if params.FailOnMissing != nil {
@@ -2768,7 +2789,13 @@ func isDir(path string) bool {
 }
 
 func printResponse(resp GenericResponse, verbose bool) {
-	if resp.Failed {
+	if resp.Skipped {
+		printf("    ↷ SKIPPED")
+		if resp.Msg != "" {
+			printf(" - %s", resp.Msg)
+		}
+		println()
+	} else if resp.Failed {
 		printf("    ✗ FAILED: %s\n", resp.Msg)
 		if verbose && resp.Stderr != "" {
 			printf("    Stderr: %s\n", resp.Stderr)
