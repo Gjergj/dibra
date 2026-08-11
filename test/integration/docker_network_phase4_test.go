@@ -46,6 +46,28 @@ func TestPlaybook_DockerNetworkEnableIPv6(t *testing.T) {
 	if !strings.Contains(inspect, "true") {
 		t.Errorf("Expected EnableIPv6=true, got: %s", inspect)
 	}
+
+	t.Log("Step 2: Use an equivalent expanded IPv6 CIDR - should be idempotent")
+	equivalentPlaybook := playbookHeader + `
+  - name: Confirm normalized IPv6 network
+    community.docker.docker_network:
+      name: ` + netName + `
+      state: present
+      driver: bridge
+      enable_ipv6: true
+      ipam_config:
+        - subnet: "10.128.0.0/16"
+          gateway: "10.128.0.1"
+        - subnet: "fd12:3456:789a:0000:0000:0000:0000:0000/64"
+          gateway: "fd12:3456:789a:0000:0000:0000:0000:0001"
+`
+	output = runPlaybook(t, equivalentPlaybook)
+	if strings.Contains(output, "FAILED") {
+		t.Fatalf("Equivalent IPv6 spelling failed: %s", output)
+	}
+	if strings.Contains(output, "CHANGED") {
+		t.Fatalf("Equivalent IPv6 spelling was not idempotent: %s", output)
+	}
 }
 
 // TestPlaybook_DockerNetworkConnectedContainers tests container connection management (Phase 4.1)

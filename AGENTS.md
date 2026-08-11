@@ -247,6 +247,59 @@ in table-driven unit tests; the integration lane also invokes the agent with a
 controlled remote environment to prove fallback and explicit-argument
 precedence against a real daemon.
 
+### Shared Docker Compatibility Helpers
+
+Docker modules must use the shared helpers under `internal/modules/docker` for
+image references, registry authentication, JSON streams, image archives, port
+ranges, and IP/CIDR comparisons. Do not reimplement these behaviors in an
+executor.
+
+- `ParseImageReference`, `NormalizeImageReference`, and `JoinImageNameTag` own
+  registry/path/tag/digest parsing and Docker Hub normalization.
+- `EncodeRegistryAuthForImage` and `RegistryAuthFromConfig` own Engine auth
+  headers and registry aliases. Credential-helper execution remains the Docker
+  CLI's responsibility.
+- `DecodeJSONStream` and the specialized pull/build/load parsers must surface
+  embedded `errorDetail` failures even when Docker omits the top-level `error`.
+- `ReadImageArchiveManifest` owns safe, non-extracting `manifest.json` parsing.
+  Export idempotency compares image IDs and requested tags, not file existence.
+- `BuildPortBindings` expands matching ranges into individual Engine port keys;
+  mismatched ranges fail validation and a host range for one container port is
+  preserved as Docker's random-available range.
+- `NormalizeIPAddress`, `NormalizeIPNetwork`, and
+  `NormalizeEndpointAddress` own canonical IPv4/IPv6 and CIDR comparisons.
+
+Compose support is intentionally pinned to current Compose 5 behavior rather
+than upstream's historical Compose 2 matrix. Compose executors call
+`CheckComposeVersion`, require the exact pinned 5.4.0 version, request JSON
+progress, and use `ParseComposeJSONEvents`. Compose 5.4.0 emits both the new
+`Working`/`Done` image events and older JSON text/status arrangements, so both
+shapes remain required fixtures. Every Compose version change requires an
+explicit baseline review and update.
+
+### Docker Parity Inventory
+
+`docs/community-docker-parity.yaml` is the authoritative feature-level source
+for the pinned `community.docker` baseline. It contains all 38 task modules,
+top-level and nested options (including shared API/CLI/Compose fragments),
+return fields, and check/diff/idempotency/error contracts. Status is recorded
+per feature; module presence never implies parity.
+
+After changing a Docker contract, update the relevant feature rows and run:
+
+```bash
+go run ./cmd/parity-report
+go run ./cmd/parity-report -check
+```
+
+The first command validates the manifest and regenerates
+`docs/community-docker-parity.md`; `-check` fails on stale output, invalid local
+paths, duplicate IDs, missing upstream provenance, invalid statuses,
+unsupported recorded status transitions, and any `verified` feature without a
+Dibra implementation and test. The `-bootstrap-upstream` flag is only for an
+explicit baseline rebuild from the exact pinned upstream checkout; do not use
+it for normal feature updates because it resets audited statuses.
+
 ### Module Invocation State
 
 Every controller-to-agent module request uses the shared envelope in

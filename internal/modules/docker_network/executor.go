@@ -231,13 +231,17 @@ func compareIPAMConfig(requested []IPAMConfig, existing network.IPAM) bool {
 	// Sort for comparison
 	reqSorted := make([]string, len(requested))
 	for i, cfg := range requested {
-		reqSorted[i] = fmt.Sprintf("%s|%s|%s", cfg.Subnet, cfg.Gateway, cfg.IPRange)
+		reqSorted[i] = normalizedIPAMKey(cfg.Subnet, cfg.Gateway, cfg.IPRange, cfg.AuxAddress)
 	}
 	sort.Strings(reqSorted)
 
 	existSorted := make([]string, len(existing.Config))
 	for i, cfg := range existing.Config {
-		existSorted[i] = fmt.Sprintf("%s|%s|%s", cfg.Subnet, cfg.Gateway, cfg.IPRange)
+		auxAddresses := make(map[string]string, len(cfg.AuxAddress))
+		for name, address := range cfg.AuxAddress {
+			auxAddresses[name] = addrString(address)
+		}
+		existSorted[i] = normalizedIPAMKey(prefixString(cfg.Subnet), addrString(cfg.Gateway), prefixString(cfg.IPRange), auxAddresses)
 	}
 	sort.Strings(existSorted)
 
@@ -248,6 +252,24 @@ func compareIPAMConfig(requested []IPAMConfig, existing network.IPAM) bool {
 	}
 
 	return true
+}
+
+func normalizedIPAMKey(subnet, gateway, ipRange string, auxAddresses map[string]string) string {
+	auxKeys := make([]string, 0, len(auxAddresses))
+	for name := range auxAddresses {
+		auxKeys = append(auxKeys, name)
+	}
+	sort.Strings(auxKeys)
+	aux := make([]string, 0, len(auxKeys))
+	for _, name := range auxKeys {
+		aux = append(aux, name+"="+docker.NormalizeIPAddress(auxAddresses[name]))
+	}
+	return fmt.Sprintf("%s|%s|%s|%v",
+		docker.NormalizeIPNetwork(subnet),
+		docker.NormalizeIPAddress(gateway),
+		docker.NormalizeIPNetwork(ipRange),
+		aux,
+	)
 }
 
 // formatExistingIPAM formats existing IPAM config for diff output
@@ -443,12 +465,12 @@ func reconcileConnectedContainers(cli client.APIClient, ctx context.Context, net
 func needsEndpointUpdate(desired ConnectedContainer, current network.EndpointResource) bool {
 	// Check IP addresses
 	if desired.IPv4Address != "" {
-		if !current.IPv4Address.IsValid() || current.IPv4Address.Addr().String() != desired.IPv4Address {
+		if !current.IPv4Address.IsValid() || docker.NormalizeEndpointAddress(current.IPv4Address.String()) != docker.NormalizeEndpointAddress(desired.IPv4Address) {
 			return true
 		}
 	}
 	if desired.IPv6Address != "" {
-		if !current.IPv6Address.IsValid() || current.IPv6Address.Addr().String() != desired.IPv6Address {
+		if !current.IPv6Address.IsValid() || docker.NormalizeEndpointAddress(current.IPv6Address.String()) != docker.NormalizeEndpointAddress(desired.IPv6Address) {
 			return true
 		}
 	}

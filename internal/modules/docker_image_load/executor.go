@@ -2,7 +2,6 @@ package docker_image_load
 
 import (
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
@@ -47,34 +46,18 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 	}
 	defer resp.Close()
 
-	// Read output
-	output, err := io.ReadAll(resp)
-	if err != nil {
-		return Response{Failed: true, Msg: fmt.Sprintf("failed to read response: %v", err)}
+	result := docker.ParseLoadStream(resp)
+	if result.Error != nil {
+		return Response{Failed: true, Msg: fmt.Sprintf("failed to load images: %v", result.Error)}
 	}
-
-	outputStr := string(output)
-
-	// Parse loaded image names from output
-	var imageNames []string
-	for _, line := range strings.Split(outputStr, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "Loaded image:") {
-			name := strings.TrimSpace(strings.TrimPrefix(line, "Loaded image:"))
-			if name != "" {
-				imageNames = append(imageNames, name)
-			}
-		} else if strings.HasPrefix(line, "Loaded image ID:") {
-			name := strings.TrimSpace(strings.TrimPrefix(line, "Loaded image ID:"))
-			if name != "" {
-				imageNames = append(imageNames, name)
-			}
-		}
+	if len(result.Images) == 0 {
+		return Response{Failed: true, Msg: "detected no loaded images; archive may be corrupt", Stdout: strings.Join(result.Logs, "\n")}
 	}
+	outputStr := strings.Join(result.Logs, "\n")
 
 	return Response{
 		Changed:    true,
-		ImageNames: imageNames,
+		ImageNames: result.Images,
 		Stdout:     outputStr,
 		Msg:        "images loaded successfully",
 	}

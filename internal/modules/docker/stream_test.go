@@ -1,6 +1,8 @@
 package docker
 
 import (
+	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 )
@@ -54,6 +56,16 @@ func TestParsePullPushStream(t *testing.T) {
 			input: `{"status":"Pulling from library/private"}
 {"errorDetail":{"message":"unauthorized: authentication required"}}
 `,
+			expectedError: true,
+		},
+		{
+			name:          "error detail without top-level error",
+			input:         `{"errorDetail":{"code":401,"message":"denied by registry"}}`,
+			expectedError: true,
+		},
+		{
+			name:          "malformed trailing object",
+			input:         `{"status":"Pulling"}{"status":`,
 			expectedError: true,
 		},
 		{
@@ -190,6 +202,12 @@ func TestParseLoadStream(t *testing.T) {
 			minLogs:        2,
 		},
 		{
+			name:           "plain text response",
+			input:          "Loaded image: busybox:latest\n",
+			expectedImages: []string{"busybox:latest"},
+			minLogs:        1,
+		},
+		{
 			name:           "empty stream",
 			input:          "",
 			expectedImages: []string{},
@@ -217,6 +235,21 @@ func TestParseLoadStream(t *testing.T) {
 				t.Errorf("Expected at least %d logs, got %d", tt.minLogs, len(result.Logs))
 			}
 		})
+	}
+}
+
+func TestDecodeJSONStreamHandlesArbitraryChunking(t *testing.T) {
+	reader := io.MultiReader(
+		strings.NewReader(`{"one":`),
+		strings.NewReader(`1}{"two":2}`),
+	)
+	var count int
+	err := DecodeJSONStream(reader, func(raw json.RawMessage) error {
+		count++
+		return nil
+	})
+	if err != nil || count != 2 {
+		t.Fatalf("DecodeJSONStream() count = %d, error = %v", count, err)
 	}
 }
 

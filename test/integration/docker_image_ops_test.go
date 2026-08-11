@@ -117,6 +117,14 @@ func TestPlaybook_DockerImageExport(t *testing.T) {
 		t.Error("Expected CHANGED on image export")
 	}
 
+	output = runPlaybook(t, playbook)
+	if strings.Contains(output, "FAILED") {
+		t.Fatalf("Second export failed: %s", output)
+	}
+	if strings.Contains(output, "CHANGED") {
+		t.Error("Expected existing matching image archive to be idempotent")
+	}
+
 	// Verify file exists and is a tar (at least exists)
 	if !remoteFileExists(t, client, exportPath) {
 		t.Errorf("Exported file not found: %s", exportPath)

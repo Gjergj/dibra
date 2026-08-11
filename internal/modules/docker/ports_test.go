@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/docker/go-connections/nat"
@@ -8,10 +9,10 @@ import (
 
 func TestParsePortBinding(t *testing.T) {
 	tests := []struct {
-		name        string
-		input       string
-		expected    PortBinding
-		expectError bool
+		name          string
+		input         string
+		expected      PortBinding
+		expectError   bool
 		errorContains string
 	}{
 		{
@@ -248,6 +249,43 @@ func TestToNatPortMap(t *testing.T) {
 	}
 }
 
+func TestToNatPortMapExpandsRanges(t *testing.T) {
+	bindings := []PortBinding{{
+		HostIP:        "127.0.0.1",
+		HostPort:      "1000-1001",
+		ContainerPort: "2000-2001",
+		Protocol:      "udp",
+	}}
+
+	portMap, exposed, err := ToNatPortMap(bindings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(portMap) != 2 || len(exposed) != 2 {
+		t.Fatalf("expanded maps have %d bindings and %d exposed ports", len(portMap), len(exposed))
+	}
+	if got := portMap[nat.Port("2001/udp")]; len(got) != 1 || got[0].HostPort != "1001" || got[0].HostIP != "127.0.0.1" {
+		t.Fatalf("expanded 2001/udp binding = %#v", got)
+	}
+}
+
+func TestExpandPortBindingRejectsMismatchedRanges(t *testing.T) {
+	_, err := ExpandPortBinding(PortBinding{HostPort: "1000-1001", ContainerPort: "2000-2002"})
+	if err == nil || !strings.Contains(err.Error(), "do not match") {
+		t.Fatalf("ExpandPortBinding() error = %v", err)
+	}
+}
+
+func TestExpandPortBindingPreservesRandomHostRange(t *testing.T) {
+	got, err := ExpandPortBinding(PortBinding{HostPort: "1000-1001", ContainerPort: "2000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].HostPort != "1000-1001" {
+		t.Fatalf("ExpandPortBinding() = %#v", got)
+	}
+}
+
 func TestComparePortBindings(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -302,9 +340,19 @@ func TestComparePortBindings(t *testing.T) {
 			expected: true, // Empty desired means any port is OK
 		},
 		{
+			name: "duplicate bindings normalize before sorting",
+			desired: nat.PortMap{
+				"80/tcp": []nat.PortBinding{{HostIP: "", HostPort: "8080"}, {HostIP: "2001:0db8::1", HostPort: "8081"}},
+			},
+			current: nat.PortMap{
+				"80/tcp": []nat.PortBinding{{HostIP: "2001:db8::1", HostPort: "8081"}, {HostIP: "0.0.0.0", HostPort: "8080"}},
+			},
+			expected: true,
+		},
+		{
 			name: "missing port in current",
 			desired: nat.PortMap{
-				"80/tcp": []nat.PortBinding{{HostPort: "8080"}},
+				"80/tcp":  []nat.PortBinding{{HostPort: "8080"}},
 				"443/tcp": []nat.PortBinding{{HostPort: "8443"}},
 			},
 			current: nat.PortMap{

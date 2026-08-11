@@ -23,8 +23,10 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
-	// Normalize Name and Tag
-	ref := normalizeImageRef(req.Name, req.Tag)
+	ref, err := docker.JoinImageNameTag(req.Name, req.Tag)
+	if err != nil {
+		return Response{Failed: true, Msg: fmt.Sprintf("invalid image name %q: %v", req.Name, err)}
+	}
 
 	state := req.State
 	if state == "" {
@@ -39,13 +41,6 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 	default:
 		return Response{Failed: true, Msg: fmt.Sprintf("unknown state: %s", state)}
 	}
-}
-
-func normalizeImageRef(name, tag string) string {
-	if tag != "" {
-		return fmt.Sprintf("%s:%s", name, tag)
-	}
-	return name
 }
 
 // handleAbsent removes an image
@@ -144,7 +139,10 @@ func handlePull(ctx context.Context, cli client.APIClient, ref string, req Reque
 // pullImage performs the actual image pull (3.1, 3.2)
 func pullImage(ctx context.Context, cli client.APIClient, image, existingID, username, password string) (changed bool, imageID, digest string, err error) {
 	// Encode registry auth (3.1.3)
-	registryAuth := docker.EncodeRegistryAuth(username, password)
+	registryAuth, authErr := docker.EncodeRegistryAuthForImage(image, username, password)
+	if authErr != nil {
+		return false, "", "", docker.WrapError("resolve registry authentication", image, authErr)
+	}
 
 	pullOpts := client.ImagePullOptions{}
 	if registryAuth != "" {
@@ -194,7 +192,10 @@ func handleLocal(ctx context.Context, cli client.APIClient, ref string, req Requ
 	}
 
 	// Tag the image (3.3)
-	targetRef := normalizeImageRef(req.Repository, req.Tag)
+	targetRef, err := docker.JoinImageNameTag(req.Repository, req.Tag)
+	if err != nil {
+		return Response{Failed: true, Msg: fmt.Sprintf("invalid repository %q: %v", req.Repository, err)}
+	}
 	changed, err := tagImage(ctx, cli, ref, targetRef, inspect.ID, req.ForceTag)
 	if err != nil {
 		return Response{Failed: true, Msg: err.Error()}
@@ -242,7 +243,10 @@ func tagImage(ctx context.Context, cli client.APIClient, sourceRef, targetRef, s
 // pushImage pushes an image to registry (3.4)
 func pushImage(ctx context.Context, cli client.APIClient, ref, username, password string) (digest string, err error) {
 	// Encode registry auth (3.4.3)
-	registryAuth := docker.EncodeRegistryAuth(username, password)
+	registryAuth, authErr := docker.EncodeRegistryAuthForImage(ref, username, password)
+	if authErr != nil {
+		return "", docker.WrapError("resolve registry authentication", ref, authErr)
+	}
 
 	pushOpts := client.ImagePushOptions{}
 	if registryAuth != "" {

@@ -24,17 +24,22 @@ type composeFileSystem struct{ docker.FileSystem }
 func (composeFileSystem) Stat(string) (fs.FileInfo, error) { return directoryInfo{}, nil }
 
 type recordingCLIRunner struct {
-	command docker.CLICommand
-	result  docker.CLIResult
+	commands []docker.CLICommand
+	results  []docker.CLIResult
 }
 
 func (runner *recordingCLIRunner) Run(_ context.Context, command docker.CLICommand) (docker.CLIResult, error) {
-	runner.command = command
-	return runner.result, nil
+	runner.commands = append(runner.commands, command)
+	result := runner.results[0]
+	runner.results = runner.results[1:]
+	return result, nil
 }
 
 func TestExecuteWithDependenciesUsesInjectedFilesystemEnvironmentAndCLI(t *testing.T) {
-	runner := &recordingCLIRunner{result: docker.CLIResult{Output: []byte("Container web Created\n")}}
+	runner := &recordingCLIRunner{results: []docker.CLIResult{
+		{Output: []byte(`{"version":"v5.4.0"}`)},
+		{Output: []byte("{\"id\":\"Container web\",\"status\":\"Working\",\"text\":\"Creating\"}\n")},
+	}}
 	response := ExecuteWithDependencies(Request{
 		ComposeCommonArgs: docker.ComposeCommonArgs{ProjectSrc: "/project", ProjectName: "demo"},
 	}, docker.Dependencies{
@@ -46,11 +51,15 @@ func TestExecuteWithDependenciesUsesInjectedFilesystemEnvironmentAndCLI(t *testi
 	if response.Failed || !response.Changed {
 		t.Fatalf("ExecuteWithDependencies() = %#v", response)
 	}
-	if runner.command.Name != "docker" || runner.command.Dir != "/project" {
-		t.Errorf("command = %#v", runner.command)
+	if len(runner.commands) != 2 {
+		t.Fatalf("commands = %#v", runner.commands)
 	}
-	wantArgs := []string{"--host", "unix:///tmp/docker.sock", "compose", "--project-name", "demo", "--ansi", "never", "up", "-d"}
-	if !reflect.DeepEqual(runner.command.Args, wantArgs) {
-		t.Errorf("args = %#v, want %#v", runner.command.Args, wantArgs)
+	command := runner.commands[1]
+	if command.Name != "docker" || command.Dir != "/project" {
+		t.Errorf("command = %#v", command)
+	}
+	wantArgs := []string{"--host", "unix:///tmp/docker.sock", "compose", "--project-name", "demo", "--ansi", "never", "--progress", "json", "up", "-d"}
+	if !reflect.DeepEqual(command.Args, wantArgs) {
+		t.Errorf("args = %#v, want %#v", command.Args, wantArgs)
 	}
 }

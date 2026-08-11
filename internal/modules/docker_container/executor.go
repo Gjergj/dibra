@@ -21,6 +21,9 @@ func Execute(req Request) Response {
 }
 
 func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	if _, _, err := docker.BuildPortBindings(req.Ports); err != nil {
+		return Response{Failed: true, Msg: fmt.Sprintf("invalid published port: %v", err)}
+	}
 	dependencies = dependencies.Resolve()
 	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
@@ -77,7 +80,10 @@ func handlePresentOrStarted(ctx context.Context, cli client.APIClient, req Reque
 	}
 
 	if req.Image != "" {
-		registryAuth := docker.EncodeRegistryAuth(req.RegistryUsername, req.RegistryPassword)
+		registryAuth, authErr := docker.EncodeRegistryAuthForImage(req.Image, req.RegistryUsername, req.RegistryPassword)
+		if authErr != nil {
+			return Response{Failed: true, Msg: docker.WrapError("resolve registry authentication", req.Image, authErr).Error()}
+		}
 		pulled, pullErr := handleImagePull(ctx, cli, req.Image, pullPolicy, exists, registryAuth)
 		if pullErr != nil {
 			return Response{Failed: true, Msg: pullErr.Error()}
@@ -262,7 +268,7 @@ func compareContainer(ctx context.Context, cli client.APIClient, req Request, ex
 	}
 
 	if len(req.Ports) > 0 {
-		desiredPorts, _ := buildPortBindings(req.Ports)
+		desiredPorts, _, _ := docker.BuildPortBindings(req.Ports)
 		if !docker.ComparePortBindings(desiredPorts, toNatPortMap(existing.HostConfig.PortBindings)) {
 			diff.Add("ports", req.Ports, existing.HostConfig.PortBindings)
 			needsRecreate = true
@@ -579,7 +585,10 @@ func buildContainerConfig(req Request) (*container.Config, *container.HostConfig
 		config.Entrypoint = parseCommand(req.Entrypoint)
 	}
 
-	portBindings, exposedPorts := buildPortBindings(req.Ports)
+	portBindings, exposedPorts, err := docker.BuildPortBindings(req.Ports)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid published port: %w", err)
+	}
 	for _, p := range req.ExposedPorts {
 		port := nat.Port(p)
 		exposedPorts[port] = struct{}{}
@@ -680,23 +689,6 @@ func buildContainerConfig(req Request) (*container.Config, *container.HostConfig
 	}
 
 	return config, hostConfig, nil
-}
-
-func buildPortBindings(ports []string) (nat.PortMap, nat.PortSet) {
-	portMap := make(nat.PortMap)
-	exposedPorts := make(nat.PortSet)
-
-	for _, p := range ports {
-		binding, err := docker.ParsePortBinding(p)
-		if err != nil {
-			continue
-		}
-		key := binding.ContainerPortKey()
-		exposedPorts[key] = struct{}{}
-		portMap[key] = append(portMap[key], binding.NatPortBinding())
-	}
-
-	return portMap, exposedPorts
 }
 
 func toNetworkPortMap(input nat.PortMap) network.PortMap {

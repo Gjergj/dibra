@@ -67,7 +67,7 @@ services:
 	// Note: 'docker compose up' stdout/stderr handling determines if we detect change.
 	// We expect "Started" or "Created" in output.
 	if !strings.Contains(output1, "CHANGED") {
-		t.Error("Expected CHANGED on connect/up")
+		t.Errorf("Expected CHANGED on connect/up: %s", output1)
 	}
 
 	// Verify
@@ -84,7 +84,7 @@ services:
 		// docker compose might say "Container ... Running" which we might interpret as changed if not careful?
 		// Our executor checks for "created", "started", "recreated". "Running" is not in our list.
 		// So it should be idempotent.
-		t.Error("Expected no changes on second up")
+		t.Errorf("Expected no changes on second up: %s", output2)
 	}
 
 	// 3. Down (Absent)
@@ -100,7 +100,7 @@ services:
 		t.Fatalf("Compose Down failed: %s", output3)
 	}
 	if !strings.Contains(output3, "CHANGED") {
-		t.Error("Expected CHANGED on down")
+		t.Errorf("Expected CHANGED on down: %s", output3)
 	}
 
 	// Verify Gone

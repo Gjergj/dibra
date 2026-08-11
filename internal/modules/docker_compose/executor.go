@@ -4,24 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
-	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
-
-// Action keywords used to detect changes in compose output
-var actionPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)\b(creat(ed|ing))\b`),
-	regexp.MustCompile(`(?i)\b(start(ed|ing))\b`),
-	regexp.MustCompile(`(?i)\b(recreat(ed|ing))\b`),
-	regexp.MustCompile(`(?i)\b(remov(ed|ing))\b`),
-	regexp.MustCompile(`(?i)\b(stopp(ed|ing))\b`),
-	regexp.MustCompile(`(?i)\b(kill(ed|ing))\b`),
-	regexp.MustCompile(`(?i)\b(pull(ed|ing))\b`),
-	regexp.MustCompile(`(?i)\b(build(ing)?)\b`),
-	regexp.MustCompile(`(?i)\b(restart(ed|ing))\b`),
-}
 
 func Execute(req Request) Response {
 	return ExecuteWithDependencies(req, docker.Dependencies{})
@@ -32,6 +17,9 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 	// Check if directory exists
 	if _, err := dependencies.FileSystem.Stat(req.ProjectSrc); os.IsNotExist(err) {
 		return Response{Failed: true, Msg: fmt.Sprintf("project_src does not exist: %s", req.ProjectSrc)}
+	}
+	if _, err := docker.CheckComposeVersion(context.Background(), dependencies.CLIRunner, req.CommonArgs, dependencies.Environment); err != nil {
+		return Response{Failed: true, Msg: err.Error()}
 	}
 
 	state := req.State
@@ -45,12 +33,12 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
 	}
 
-	// Base args with --ansi never for stable output parsing
+	// Compose 5.4 provides stable machine-readable progress events.
 	args, err := docker.GetComposeBaseArgsWithEnvironment(req.ComposeCommonArgs, req.CommonArgs, dependencies.Environment)
 	if err != nil {
 		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
 	}
-	args = append(args, "--ansi", "never")
+	args = append(args, "--ansi", "never", "--progress", "json")
 
 	// Use cmd.Dir for project directory context
 	runDir := req.ProjectSrc
@@ -140,8 +128,9 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 		}
 	}
 
-	// Detect changes using improved heuristics
-	changed, actions := detectChanges(outputStr)
+	events := docker.ParseComposeJSONEvents(result.Output)
+	changed := docker.ComposeEventsChanged(events.Events)
+	actions := docker.ComposeEventActions(events.Events)
 
 	return Response{
 		Changed: changed,
@@ -149,34 +138,4 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 		Stdout:  outputStr,
 		Actions: actions,
 	}
-}
-
-// detectChanges analyzes compose output to determine if changes were made
-func detectChanges(output string) (bool, []string) {
-	var actions []string
-	actionSet := make(map[string]bool)
-
-	for _, pattern := range actionPatterns {
-		matches := pattern.FindAllString(output, -1)
-		for _, match := range matches {
-			action := strings.ToLower(match)
-			if !actionSet[action] {
-				actionSet[action] = true
-				actions = append(actions, action)
-			}
-		}
-	}
-
-	// Additional heuristics: check for "Container ... Running" (no change)
-	// vs "Container ... Created" (change)
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		lower := strings.ToLower(line)
-		// Skip "Running" status lines (indicates no change for that container)
-		if strings.Contains(lower, "running") && !strings.Contains(lower, "creat") && !strings.Contains(lower, "start") {
-			continue
-		}
-	}
-
-	return len(actions) > 0, actions
 }

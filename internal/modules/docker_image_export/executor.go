@@ -3,7 +3,6 @@ package docker_image_export
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
@@ -39,10 +38,11 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 	// Prepare list of images to export and verify they exist
 	var images []map[string]interface{}
 	var exportNames []string
+	desiredArchive := make(map[string]string, len(req.Names))
 	for _, name := range req.Names {
-		fullImageName := name
-		if !strings.Contains(name, ":") && !strings.Contains(name, "@") {
-			fullImageName = fmt.Sprintf("%s:%s", name, tag)
+		fullImageName, err := docker.JoinImageNameTag(name, tag)
+		if err != nil {
+			return Response{Failed: true, Msg: fmt.Sprintf("invalid image name %q: %v", name, err)}
 		}
 
 		inspect, err := cli.ImageInspect(ctx, fullImageName)
@@ -56,17 +56,24 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 		}
 		images = append(images, imageInfo)
 		exportNames = append(exportNames, fullImageName)
+		desiredArchive[fullImageName] = inspect.ID
 	}
 
-	// Idempotency check: if file exists and Force is false, skip
+	// Idempotency check: compare the archive manifest rather than assuming any
+	// existing file contains the requested images.
 	if !req.Force {
 		if _, err := dependencies.FileSystem.Stat(req.Path); err == nil {
-			// In a more complete implementation, we'd check if the archived image matches
-			// but for now, simple file existence is a start for "not changed"
-			return Response{
-				Changed: false,
-				Msg:     "archive already exists",
-				Images:  images,
+			archive, openErr := dependencies.FileSystem.Open(req.Path)
+			if openErr == nil {
+				manifest, manifestErr := docker.ReadImageArchiveManifest(archive)
+				_ = archive.Close()
+				if manifestErr == nil && docker.ImageArchiveMatches(manifest, desiredArchive) {
+					return Response{
+						Changed: false,
+						Msg:     "archive already contains the requested images",
+						Images:  images,
+					}
+				}
 			}
 		}
 	}

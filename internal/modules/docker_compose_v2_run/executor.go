@@ -20,6 +20,9 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 	if _, err := dependencies.FileSystem.Stat(req.ProjectSrc); os.IsNotExist(err) {
 		return Response{Failed: true, Msg: fmt.Sprintf("project_src does not exist: %s", req.ProjectSrc)}
 	}
+	if _, err := docker.CheckComposeVersion(context.Background(), dependencies.CLIRunner, req.CommonArgs, dependencies.Environment); err != nil {
+		return Response{Failed: true, Msg: err.Error()}
+	}
 
 	cmdEnv, err := docker.GetComposeEnvWithEnvironment(req.ComposeCommonArgs, req.CommonArgs, dependencies.Environment)
 	if err != nil {

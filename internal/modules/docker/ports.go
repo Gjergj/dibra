@@ -196,16 +196,66 @@ func ToNatPortMap(bindings []PortBinding) (nat.PortMap, nat.PortSet, error) {
 	exposedPorts := make(nat.PortSet)
 
 	for _, b := range bindings {
-		key := b.ContainerPortKey()
-		exposedPorts[key] = struct{}{}
-
-		if portMap[key] == nil {
-			portMap[key] = []nat.PortBinding{}
+		expanded, err := ExpandPortBinding(b)
+		if err != nil {
+			return nil, nil, err
 		}
-		portMap[key] = append(portMap[key], b.NatPortBinding())
+		for _, item := range expanded {
+			key := item.ContainerPortKey()
+			exposedPorts[key] = struct{}{}
+
+			if portMap[key] == nil {
+				portMap[key] = []nat.PortBinding{}
+			}
+			portMap[key] = append(portMap[key], item.NatPortBinding())
+		}
 	}
 
 	return portMap, exposedPorts, nil
+}
+
+// BuildPortBindings parses and expands a collection of Docker port
+// specifications into the Engine API representation.
+func BuildPortBindings(specs []string) (nat.PortMap, nat.PortSet, error) {
+	bindings, err := ParsePortBindings(specs)
+	if err != nil {
+		return nil, nil, err
+	}
+	return ToNatPortMap(bindings)
+}
+
+// ExpandPortBinding expands matching container and host ranges. A host range
+// paired with one container port is preserved because Docker treats it as a
+// range from which it may select an available host port.
+func ExpandPortBinding(binding PortBinding) ([]PortBinding, error) {
+	containerPorts, err := ExpandPortRange(binding.ContainerPort)
+	if err != nil {
+		return nil, fmt.Errorf("invalid container port range %q: %w", binding.ContainerPort, err)
+	}
+
+	var hostPorts []string
+	if binding.HostPort != "" {
+		hostPorts, err = ExpandPortRange(binding.HostPort)
+		if err != nil {
+			return nil, fmt.Errorf("invalid host port range %q: %w", binding.HostPort, err)
+		}
+		if len(containerPorts) == 1 && len(hostPorts) > 1 {
+			hostPorts = []string{binding.HostPort}
+		} else if len(hostPorts) != len(containerPorts) {
+			return nil, fmt.Errorf("port ranges do not match in length")
+		}
+	}
+
+	result := make([]PortBinding, 0, len(containerPorts))
+	for index, containerPort := range containerPorts {
+		item := binding
+		item.ContainerPort = containerPort
+		if len(hostPorts) > 0 {
+			item.HostPort = hostPorts[index]
+		}
+		result = append(result, item)
+	}
+	return result, nil
 }
 
 // PortMapKey is a sortable key for port map entries.
@@ -229,6 +279,9 @@ func NormalizePortBindings(pm nat.PortMap) nat.PortMap {
 		// Sort bindings by IP:Port
 		sortedBindings := make([]nat.PortBinding, len(bindings))
 		copy(sortedBindings, bindings)
+		for index := range sortedBindings {
+			sortedBindings[index].HostIP = normalizeBindingIP(sortedBindings[index].HostIP)
+		}
 		sort.Slice(sortedBindings, func(i, j int) bool {
 			if sortedBindings[i].HostIP != sortedBindings[j].HostIP {
 				return sortedBindings[i].HostIP < sortedBindings[j].HostIP
@@ -289,13 +342,14 @@ func ComparePortBindings(desired, current nat.PortMap) bool {
 // compareHostIP compares two host IPs for equivalence.
 // Empty string and "0.0.0.0" are considered equivalent.
 func compareHostIP(a, b string) bool {
-	normalizeIP := func(ip string) string {
-		if ip == "" || ip == "0.0.0.0" {
-			return ""
-		}
-		return ip
+	return normalizeBindingIP(a) == normalizeBindingIP(b)
+}
+
+func normalizeBindingIP(ip string) string {
+	if ip == "" || ip == "0.0.0.0" {
+		return ""
 	}
-	return normalizeIP(a) == normalizeIP(b)
+	return NormalizeEndpointAddress(ip)
 }
 
 // ExpandPortRange expands a port range into individual ports.
@@ -311,12 +365,12 @@ func ExpandPortRange(portRange string) ([]string, error) {
 	}
 
 	start, err := strconv.Atoi(parts[0])
-	if err != nil {
+	if err != nil || start < 1 || start > 65535 {
 		return nil, fmt.Errorf("invalid start port: %s", parts[0])
 	}
 
 	end, err := strconv.Atoi(parts[1])
-	if err != nil {
+	if err != nil || end < 1 || end > 65535 {
 		return nil, fmt.Errorf("invalid end port: %s", parts[1])
 	}
 

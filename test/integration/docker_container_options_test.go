@@ -755,3 +755,44 @@ func TestPlaybook_DockerContainerPullPolicy(t *testing.T) {
 		t.Fatalf("Pull true (backward compat) failed: %s", output4)
 	}
 }
+
+// Mirrors community.docker's matching host/container range scenarios and
+// proves that Docker receives individual exposed-port keys (required by
+// current Engine versions).
+func TestPlaybook_DockerContainerPortRangeExpansion(t *testing.T) {
+	client := getClient(t)
+	defer client.Close()
+
+	containerName := "test-port-range-container"
+	remoteExec(t, client, "docker rm -f "+containerName+" 2>/dev/null || true")
+	defer remoteExec(t, client, "docker rm -f "+containerName+" 2>/dev/null || true")
+
+	playbook := playbookHeader + `
+  - name: Publish matching port ranges
+    community.docker.docker_container:
+      name: ` + containerName + `
+      image: alpine:latest
+      state: started
+      command: ["sleep", "60"]
+      ports:
+        - "127.0.0.1:48100-48101:80-81/tcp"
+`
+	output := runPlaybook(t, playbook)
+	if strings.Contains(output, "FAILED") {
+		t.Fatalf("Port-range create failed: %s", output)
+	}
+	bindings := remoteExec(t, client, "docker inspect --format '{{json .HostConfig.PortBindings}}' "+containerName)
+	for _, expected := range []string{"80/tcp", "81/tcp", "48100", "48101"} {
+		if !strings.Contains(bindings, expected) {
+			t.Errorf("Port bindings %s do not contain %q", bindings, expected)
+		}
+	}
+
+	output = runPlaybook(t, playbook)
+	if strings.Contains(output, "FAILED") {
+		t.Fatalf("Port-range idempotency run failed: %s", output)
+	}
+	if strings.Contains(output, "CHANGED") {
+		t.Fatalf("Port-range idempotency run changed: %s", output)
+	}
+}

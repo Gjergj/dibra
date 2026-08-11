@@ -17,7 +17,7 @@ type PullPushProgress struct {
 		Current int64 `json:"current"`
 		Total   int64 `json:"total"`
 	} `json:"progressDetail"`
-	Error   string `json:"error"`
+	Error       string `json:"error"`
 	ErrorDetail struct {
 		Message string `json:"message"`
 	} `json:"errorDetail"`
@@ -56,25 +56,14 @@ func ParsePullPushStream(reader io.Reader) PullResult {
 		Logs: make([]string, 0),
 	}
 
-	decoder := json.NewDecoder(reader)
-	for {
+	parseErr := DecodeJSONStream(reader, func(raw json.RawMessage) error {
 		var progress PullPushProgress
-		if err := decoder.Decode(&progress); err != nil {
-			if err == io.EOF {
-				break
-			}
-			// Try to continue parsing even if one line fails
-			continue
+		if err := json.Unmarshal(raw, &progress); err != nil {
+			return fmt.Errorf("invalid pull/push stream object: %w", err)
 		}
 
-		// Check for error in stream
-		if progress.Error != "" {
-			result.Error = fmt.Errorf("%s", progress.Error)
-			return result
-		}
-		if progress.ErrorDetail.Message != "" {
-			result.Error = fmt.Errorf("%s", progress.ErrorDetail.Message)
-			return result
+		if err := streamEnvelopeError(raw); err != nil {
+			return err
 		}
 
 		// Capture digest/tag from aux field
@@ -108,6 +97,10 @@ func ParsePullPushStream(reader io.Reader) PullResult {
 				}
 			}
 		}
+		return nil
+	})
+	if parseErr != nil {
+		result.Error = parseErr
 	}
 
 	return result
@@ -127,26 +120,14 @@ func ParseBuildStream(reader io.Reader) BuildResult {
 		Logs: make([]string, 0),
 	}
 
-	decoder := json.NewDecoder(reader)
-	for {
+	parseErr := DecodeJSONStream(reader, func(raw json.RawMessage) error {
 		var progress BuildProgress
-		if err := decoder.Decode(&progress); err != nil {
-			if err == io.EOF {
-				break
-			}
-			// Try to continue parsing even if one line fails
-			continue
+		if err := json.Unmarshal(raw, &progress); err != nil {
+			return fmt.Errorf("invalid build stream object: %w", err)
 		}
 
-		// Check for error in stream
-		if progress.Error != "" {
-			result.Error = fmt.Errorf("%s", progress.Error)
-			return result
-		}
-		if progress.ErrorDetail.Message != "" {
-			result.Error = fmt.Errorf("build failed with code %d: %s",
-				progress.ErrorDetail.Code, progress.ErrorDetail.Message)
-			return result
+		if err := streamEnvelopeError(raw); err != nil {
+			return err
 		}
 
 		// Capture image ID from aux field
@@ -171,6 +152,10 @@ func ParseBuildStream(reader io.Reader) BuildResult {
 				}
 			}
 		}
+		return nil
+	})
+	if parseErr != nil {
+		result.Error = parseErr
 	}
 
 	return result
@@ -191,41 +176,56 @@ func ParseLoadStream(reader io.Reader) LoadResult {
 		Logs:   make([]string, 0),
 	}
 
-	// Try JSON decoding first
-	decoder := json.NewDecoder(reader)
-	jsonParsed := false
+	data, readErr := io.ReadAll(reader)
+	if readErr != nil {
+		result.Error = readErr
+		return result
+	}
 
-	for {
+	jsonParsed := false
+	parseErr := DecodeJSONStream(strings.NewReader(string(data)), func(raw json.RawMessage) error {
 		var msg struct {
 			Stream string `json:"stream"`
+			Status string `json:"status"`
 		}
-		if err := decoder.Decode(&msg); err != nil {
-			if err == io.EOF {
-				break
-			}
-			// If JSON parsing fails, fall back to line-by-line
-			break
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			return err
 		}
 		jsonParsed = true
+		if err := streamEnvelopeError(raw); err != nil {
+			return err
+		}
 
-		if msg.Stream != "" {
-			line := strings.TrimSpace(msg.Stream)
+		text := msg.Stream
+		if text == "" {
+			text = msg.Status
+		}
+		for _, outputLine := range strings.Split(text, "\n") {
+			line := strings.TrimSpace(outputLine)
 			if line != "" {
 				result.Logs = append(result.Logs, line)
 				extractLoadedImage(&result, line)
 			}
 		}
+		return nil
+	})
+	if parseErr != nil && jsonParsed {
+		result.Error = parseErr
+		return result
 	}
 
 	// If JSON parsing didn't work, try plain text
 	if !jsonParsed {
-		scanner := bufio.NewScanner(reader)
+		scanner := bufio.NewScanner(strings.NewReader(string(data)))
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
 			if line != "" {
 				result.Logs = append(result.Logs, line)
 				extractLoadedImage(&result, line)
 			}
+		}
+		if err := scanner.Err(); err != nil {
+			result.Error = err
 		}
 	}
 
