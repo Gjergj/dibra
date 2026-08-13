@@ -3,6 +3,8 @@ package docker
 import (
 	"encoding/base64"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/moby/moby/api/types/registry"
@@ -43,5 +45,42 @@ func TestRegistryAuthFromConfigIdentityToken(t *testing.T) {
 	auth, found, err := RegistryAuthFromConfig(config, "registry.example.test/team/app")
 	if err != nil || !found || auth.IdentityToken != "token" {
 		t.Fatalf("RegistryAuthFromConfig() = %#v, %t, %v", auth, found, err)
+	}
+}
+
+func TestResolveRegistryAuthForImageUsesInjectedDockerConfigAndAnonymousFallback(t *testing.T) {
+	directory := t.TempDir()
+	credentials := base64.StdEncoding.EncodeToString([]byte("config-user:config-pass"))
+	if err := os.WriteFile(filepath.Join(directory, "config.json"), []byte(
+		`{"auths":{"registry.example.test:5000":{"auth":"`+credentials+`"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dependencies := Dependencies{
+		Environment: StaticEnvironment{"DOCKER_CONFIG": directory},
+		FileSystem:  OSFileSystem{},
+	}
+	encoded, err := ResolveRegistryAuthForImage("registry.example.test:5000/team/app", dependencies, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := base64.URLEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var auth registry.AuthConfig
+	if err := json.Unmarshal(raw, &auth); err != nil {
+		t.Fatal(err)
+	}
+	if auth.Username != "config-user" || auth.Password != "config-pass" {
+		t.Fatalf("resolved auth = %#v", auth)
+	}
+
+	anonymous, err := ResolveRegistryAuthForImage("other.example.test/team/app", dependencies, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err = base64.URLEncoding.DecodeString(anonymous)
+	if err != nil || string(raw) != "{}" {
+		t.Fatalf("anonymous auth = %q, %v", raw, err)
 	}
 }

@@ -11,9 +11,11 @@ type Request struct {
 }
 
 type Response struct {
-	Changed    bool     `json:"changed"`
-	Failed     bool     `json:"failed"`
-	Msg        string   `json:"msg,omitempty"`
-	ImageNames []string `json:"image_names,omitempty"`
-	Stdout     string   `json:"stdout,omitempty"`
+	Changed    bool             `json:"changed"`
+	Failed     bool             `json:"failed"`
+	Msg        string           `json:"msg,omitempty"`
+	ImageNames []string         `json:"image_names"`
+	Images     []map[string]any `json:"images"`
+	Stdout     string           `json:"stdout,omitempty"`
+	Warnings   []string         `json:"warnings,omitempty"`
 }

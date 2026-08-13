@@ -1,7 +1,10 @@
 package docker_image_load
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
@@ -14,51 +17,103 @@ func Execute(req Request) Response {
 
 func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
 	dependencies = dependencies.Resolve()
+	result := Response{ImageNames: []string{}, Images: []map[string]any{}}
 	if req.Path == "" {
-		return Response{Failed: true, Msg: "path is required"}
+		result.Failed = true
+		result.Msg = "path is required"
+		return result
 	}
 
-	// Check archive exists
-	if _, err := dependencies.FileSystem.Stat(req.Path); err != nil {
-		return Response{Failed: true, Msg: fmt.Sprintf("archive not found: %s", req.Path)}
-	}
-
-	cli, err := dependencies.NewClient(req.CommonArgs)
+	apiClient, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
-		return Response{Failed: true, Msg: fmt.Sprintf("failed to create docker client: %v", err)}
+		result.Failed = true
+		result.Msg = fmt.Sprintf("failed to create docker client: %v", err)
+		return result
 	}
-	defer cli.Close()
+	defer apiClient.Close()
 
 	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
-	// Open archive file
-	file, err := dependencies.FileSystem.Open(req.Path)
+	archive, err := dependencies.FileSystem.Open(req.Path)
 	if err != nil {
-		return Response{Failed: true, Msg: fmt.Sprintf("failed to open archive: %v", err)}
+		result.Failed = true
+		if errors.Is(err, fs.ErrNotExist) {
+			result.Msg = fmt.Sprintf("Error opening archive %s - %v", req.Path, err)
+		} else {
+			result.Msg = fmt.Sprintf("Error loading archive %s - %v", req.Path, err)
+		}
+		return result
 	}
-	defer file.Close()
+	defer archive.Close()
 
-	// Load images from tar
-	resp, err := cli.ImageLoad(ctx, file, client.ImageLoadWithQuiet(true))
+	response, err := apiClient.ImageLoad(ctx, archive)
 	if err != nil {
-		return Response{Failed: true, Msg: fmt.Sprintf("failed to load images: %v", err)}
+		result.Failed = true
+		result.Msg = fmt.Sprintf("Error loading archive %s - %v", req.Path, err)
+		return result
 	}
-	defer resp.Close()
+	defer response.Close()
 
-	result := docker.ParseLoadStream(resp)
-	if result.Error != nil {
-		return Response{Failed: true, Msg: fmt.Sprintf("failed to load images: %v", result.Error)}
+	stream := docker.ParseLoadStream(response)
+	result.Stdout = strings.Join(stream.Logs, "\n")
+	if stream.Error != nil {
+		result.Failed = true
+		result.Msg = fmt.Sprintf("Error loading archive %s - %v", req.Path, stream.Error)
+		return result
 	}
-	if len(result.Images) == 0 {
-		return Response{Failed: true, Msg: "detected no loaded images; archive may be corrupt", Stdout: strings.Join(result.Logs, "\n")}
+	if len(stream.Images) == 0 {
+		result.Failed = true
+		result.Msg = "Detected no loaded images. Archive potentially corrupt?"
+		return result
 	}
-	outputStr := strings.Join(result.Logs, "\n")
 
-	return Response{
-		Changed:    true,
-		ImageNames: result.Images,
-		Stdout:     outputStr,
-		Msg:        "images loaded successfully",
+	result.ImageNames = append(result.ImageNames, stream.Images...)
+	for _, imageName := range stream.Images {
+		if !isImageID(imageName) && !strings.Contains(imageName, ":") {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("Image name %q is neither ID nor has a tag", imageName))
+			continue
+		}
+		inspection, inspectErr := apiClient.ImageInspect(ctx, imageName)
+		if inspectErr != nil {
+			result.Failed = true
+			result.Msg = fmt.Sprintf("Error inspecting loaded image %s - %v", imageName, inspectErr)
+			return result
+		}
+		image, conversionErr := inspectionMap(inspection)
+		if conversionErr != nil {
+			result.Failed = true
+			result.Msg = conversionErr.Error()
+			return result
+		}
+		result.Images = append(result.Images, image)
 	}
+	result.Changed = true
+	return result
+}
+
+func inspectionMap(value client.ImageInspectResult) (map[string]any, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("encode image inspection: %w", err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(encoded, &result); err != nil {
+		return nil, fmt.Errorf("decode image inspection: %w", err)
+	}
+	return result, nil
+}
+
+func isImageID(value string) bool {
+	trimmed := strings.TrimPrefix(strings.ToLower(value), "sha256:")
+	if len(trimmed) < 12 || len(trimmed) > 64 {
+		return false
+	}
+	for _, character := range trimmed {
+		if character < '0' || character > '9' && character < 'a' || character > 'f' {
+			return false
+		}
+	}
+	return true
 }

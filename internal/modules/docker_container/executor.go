@@ -1,28 +1,43 @@
 package docker_container
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/netip"
-	"strconv"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/docker/go-connections/nat"
-	"github.com/docker/go-units"
+	"github.com/gjergjiramku/dibra/internal/execution"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 func Execute(req Request) Response {
-	return ExecuteWithDependencies(req, docker.Dependencies{})
+	return ExecuteWithDependenciesAndState(req, docker.Dependencies{}, execution.State{})
+}
+
+func ExecuteWithState(req Request, state execution.State) Response {
+	return ExecuteWithDependenciesAndState(req, docker.Dependencies{}, state)
 }
 
 func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
-	if _, _, err := docker.BuildPortBindings(req.Ports); err != nil {
-		return Response{Failed: true, Msg: fmt.Sprintf("invalid published port: %v", err)}
+	return ExecuteWithDependenciesAndState(req, dependencies, execution.State{})
+}
+
+func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependencies, state execution.State) Response {
+	req = normalizeDefaults(req)
+	if err := validateRequest(req); err != nil {
+		return Response{Failed: true, Msg: err.Error()}
 	}
 	dependencies = dependencies.Resolve()
 	cli, err := dependencies.NewClient(req.CommonArgs)
@@ -30,855 +45,966 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 		return Response{Failed: true, Msg: docker.WrapError("create client", "", err).Error()}
 	}
 	defer cli.Close()
-
 	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
-	state := req.State
-	if state == "" {
-		state = "started"
+	inspectResult, inspectErr := cli.ContainerInspect(ctx, req.Name, client.ContainerInspectOptions{})
+	exists := inspectErr == nil
+	if inspectErr != nil && !docker.IsNotFoundError(inspectErr) {
+		return Response{Failed: true, Msg: docker.WrapError("inspect container", req.Name, inspectErr).Error()}
+	}
+	diff := docker.NewDiffBuilder()
+	actions := make([]map[string]any, 0)
+	finish := func(response Response) Response {
+		if state.DiffMode {
+			response.Diff = diff.DiffMap()
+		}
+		if state.CheckMode || boolValue(req.Debug) {
+			response.Actions = actions
+		}
+		return response
 	}
 
-	inspectResult, err := cli.ContainerInspect(ctx, req.Name, client.ContainerInspectOptions{})
-	exists := err == nil
-	if err != nil && !docker.IsNotFoundError(err) {
-		return Response{Failed: true, Msg: docker.WrapError("inspect container", req.Name, err).Error()}
-	}
-	existing := inspectResult.Container
-
-	switch state {
-	case "absent":
+	if req.State == "absent" {
 		if !exists {
-			return Response{Changed: false, Msg: "container already absent"}
+			return finish(Response{Msg: "container already absent"})
 		}
-		return removeContainer(ctx, cli, req.Name, req.ForceKill, req.KeepVolumes)
-
-	case "stopped":
-		if !exists {
-			return Response{Changed: false, Msg: "container not found"}
+		if inspectResult.Container.State != nil && inspectResult.Container.State.Running {
+			diff.Add("running", false, true)
+			action := map[string]any{"stopped": inspectResult.Container.ID, "timeout": req.StopTimeout}
+			if req.ForceKill {
+				action = map[string]any{"killed": inspectResult.Container.ID, "signal": effectiveKillSignal(req)}
+			}
+			actions = append(actions, action)
 		}
-		if !existing.State.Running {
-			return Response{Changed: false, Msg: "container already stopped", Container: convertContainer(existing)}
+		diff.Add("exists", false, true)
+		actions = append(actions, removalAction(inspectResult.Container.ID, req))
+		if state.CheckMode {
+			return finish(Response{Changed: true})
 		}
-		return stopContainer(ctx, cli, req.Name, req.ForceKill)
-
-	case "started", "present":
-		return handlePresentOrStarted(ctx, cli, req, existing, exists, state)
-
-	default:
-		return Response{Failed: true, Msg: fmt.Sprintf("unknown state: %s", state)}
-	}
-}
-
-func handlePresentOrStarted(ctx context.Context, cli client.APIClient, req Request, existing container.InspectResponse, exists bool, state string) Response {
-	diffBuilder := docker.NewDiffBuilder()
-	var actions []string
-
-	pullPolicy := req.Pull
-	if pullPolicy == "" {
-		pullPolicy = PullMissing
+		response := removeContainer(ctx, cli, req, inspectResult.Container)
+		return finish(response)
 	}
 
+	req = resolveContainerNamespaceModes(ctx, cli, req)
+	desiredConfig, desiredHost, err := buildContainerConfig(req, dependencies.FileSystem)
+	if err != nil {
+		return finish(Response{Failed: true, Msg: err.Error()})
+	}
+	if req.Platform != "" {
+		req.resolvedPlatform, err = resolvePlatform(ctx, cli, req.Platform)
+		if err != nil {
+			return finish(Response{Failed: true, Msg: err.Error()})
+		}
+	}
+
+	imageChanged, imageAction, response := ensureImage(ctx, cli, req, exists, state.CheckMode)
+	if response.Failed {
+		return finish(response)
+	}
+	if imageAction != nil {
+		actions = append(actions, imageAction)
+	}
+	if err := applyDefaultHostIP(ctx, cli, req, desiredHost); err != nil {
+		return finish(Response{Failed: true, Msg: err.Error()})
+	}
+	var desiredImage image.InspectResponse
 	if req.Image != "" {
-		registryAuth, authErr := docker.EncodeRegistryAuthForImage(req.Image, req.RegistryUsername, req.RegistryPassword)
-		if authErr != nil {
-			return Response{Failed: true, Msg: docker.WrapError("resolve registry authentication", req.Image, authErr).Error()}
+		var inspected client.ImageInspectResult
+		inspected, err = cli.ImageInspect(ctx, req.Image)
+		desiredImage = inspected.InspectResponse
+		if err != nil && !(state.CheckMode && docker.IsNotFoundError(err)) {
+			return finish(Response{Failed: true, Msg: docker.WrapError("inspect image", req.Image, err).Error()})
 		}
-		pulled, pullErr := handleImagePull(ctx, cli, req.Image, pullPolicy, exists, registryAuth)
-		if pullErr != nil {
-			return Response{Failed: true, Msg: pullErr.Error()}
+	}
+	if exists && inspectResult.Container.State != nil && inspectResult.Container.State.Status == "removing" {
+		if !state.CheckMode {
+			if waitErr := waitForRemoval(ctx, cli, inspectResult.Container.ID, req.RemovalWaitTimeout, dependencies.Clock); waitErr != nil {
+				return finish(Response{Failed: true, Msg: waitErr.Error()})
+			}
 		}
-		if pulled {
-			actions = append(actions, "pulled")
-		}
+		exists = false
 	}
 
 	if !exists {
-		resp := createAndStart(ctx, cli, req, state)
-		if !resp.Failed {
-			resp.Actions = append([]string{"created"}, actions...)
-			if state == "started" {
-				resp.Actions = append(resp.Actions, "started")
+		if req.Image == "" {
+			return finish(Response{Failed: true, Msg: "cannot create container when image is not specified"})
+		}
+		diff.Add("exists", true, false)
+		actions = append(actions, map[string]any{"created": "Created container"})
+		if req.State == "started" || req.State == "healthy" {
+			diff.Add("running", true, false)
+		}
+		if state.CheckMode {
+			return finish(Response{Changed: true})
+		}
+		created := createContainer(ctx, cli, req, desiredConfig, desiredHost)
+		if created.Failed {
+			return finish(created)
+		}
+		createdID := created.Container["Id"].(string)
+		if req.State == "started" || req.State == "healthy" {
+			actions = append(actions, map[string]any{"started": createdID})
+		}
+		return finish(reconcileLifecycle(ctx, cli, req, createdID, true, dependencies.Clock))
+	}
+
+	if req.Image == "" {
+		desiredConfig.Image = inspectResult.Container.Image
+	}
+	comparisonImage := desiredImage
+	if (req.Image == "" || req.ImageComparison == "current-image") && inspectResult.Container.Image != "" {
+		if currentImage, imageErr := inspectImage(ctx, cli, inspectResult.Container.Image); imageErr == nil {
+			comparisonImage = currentImage
+		} else if req.ImageComparison == "current-image" {
+			comparisonImage = image.InspectResponse{}
+		}
+	}
+	expectedConfig, expectedErr := expectedConfigWithImageDefaults(req, desiredConfig, comparisonImage)
+	if expectedErr != nil {
+		return finish(Response{Failed: true, Msg: expectedErr.Error()})
+	}
+	comparison := compareContainer(req, expectedConfig, desiredHost, inspectResult.Container, diff)
+	if req.Platform != "" && comparisonMode(req, "platform") != "ignore" {
+		currentImage, imageErr := inspectImage(ctx, cli, inspectResult.Container.Image)
+		if imageErr != nil {
+			return finish(Response{Failed: true, Msg: imageErr.Error()})
+		}
+		actualPlatform := imagePlatform(currentImage)
+		desiredPlatform := req.resolvedPlatform
+		canonicalDesired := desiredPlatform.OS + "/" + desiredPlatform.Architecture
+		if desiredPlatform.Variant != "" {
+			canonicalDesired += "/" + desiredPlatform.Variant
+		}
+		if actualPlatform != canonicalDesired {
+			diff.Add("platform", canonicalDesired, actualPlatform)
+			comparison.recreate = true
+		}
+	}
+	if req.Image != "" && comparisonMode(req, "image") != "ignore" {
+		if desiredImage.ID != "" && desiredImage.ID != inspectResult.Container.Image {
+			diff.Add("image", desiredImage.ID, inspectResult.Container.Image)
+			comparison.recreate = true
+		}
+		if req.ImageNameMismatch == "recreate" && inspectResult.Container.Config != nil && inspectResult.Container.Config.Image != req.Image {
+			diff.Add("image_name", req.Image, inspectResult.Container.Config.Image)
+			comparison.recreate = true
+		}
+	}
+	if req.Recreate == RecreateAlways {
+		comparison.recreate = true
+		diff.Add("recreate", true, false)
+	}
+	if req.Recreate == RecreateNever {
+		comparison.recreate = false
+	}
+
+	if comparison.recreate {
+		if inspectResult.Container.State != nil && inspectResult.Container.State.Running {
+			if req.ForceKill {
+				actions = append(actions, map[string]any{"killed": inspectResult.Container.ID, "signal": effectiveKillSignal(req)})
+			} else {
+				actions = append(actions, map[string]any{"stopped": inspectResult.Container.ID, "timeout": req.StopTimeout})
 			}
 		}
-		return resp
-	}
-
-	recreatePolicy := req.Recreate
-	if recreatePolicy == "" {
-		recreatePolicy = RecreateAuto
-	}
-
-	if recreatePolicy == RecreateAlways {
-		return recreateContainer(ctx, cli, req, state, actions)
-	}
-
-	needsRecreate, needsUpdate := compareContainer(ctx, cli, req, existing, diffBuilder)
-
-	if recreatePolicy == RecreateNever {
-		needsRecreate = false
-	}
-
-	if needsRecreate {
-		resp := recreateContainer(ctx, cli, req, state, actions)
-		resp.Diff = diffBuilder.DiffMap()
-		return resp
-	}
-
-	if needsUpdate {
-		updateResp := updateContainer(ctx, cli, existing.ID, req)
-		if updateResp.Failed {
-			return updateResp
+		actions = append(actions, removalAction(inspectResult.Container.ID, req), map[string]any{"created": "Created container"})
+		if state.CheckMode {
+			return finish(Response{Changed: true, Container: convertContainer(inspectResult.Container)})
 		}
-		actions = append(actions, "updated")
-	}
-
-	resp := reconcileNetworks(ctx, cli, req, existing, diffBuilder)
-	if resp.Failed {
-		return resp
-	}
-	if resp.Changed {
-		actions = append(actions, "network_updated")
-	}
-
-	if state == "started" && !existing.State.Running {
-		startResp := startContainer(ctx, cli, req.Name)
-		if startResp.Failed {
-			return startResp
+		removeResponse := removeContainer(ctx, cli, req, inspectResult.Container)
+		if removeResponse.Failed {
+			return finish(removeResponse)
 		}
-		actions = append(actions, "started")
-		startResp.Actions = actions
-		startResp.Diff = diffBuilder.DiffMap()
-		return startResp
+		if waitErr := waitForRemoval(ctx, cli, inspectResult.Container.ID, req.RemovalWaitTimeout, dependencies.Clock); waitErr != nil {
+			return finish(Response{Failed: true, Msg: waitErr.Error()})
+		}
+		created := createContainer(ctx, cli, req, desiredConfig, desiredHost)
+		if created.Failed {
+			return finish(created)
+		}
+		createdID := created.Container["Id"].(string)
+		if req.State == "started" || req.State == "healthy" {
+			actions = append(actions, map[string]any{"started": createdID})
+		}
+		return finish(reconcileLifecycle(ctx, cli, req, createdID, true, dependencies.Clock))
 	}
 
-	inspectResult, _ := cli.ContainerInspect(ctx, existing.ID, client.ContainerInspectOptions{})
-	return Response{
-		Changed:   len(actions) > 0 || diffBuilder.HasDiffs(),
-		Container: convertContainer(inspectResult.Container),
-		Actions:   actions,
-		Diff:      diffBuilder.DiffMap(),
-	}
-}
-
-func handleImagePull(ctx context.Context, cli client.APIClient, image string, pullPolicy PullPolicy, containerExists bool, registryAuth string) (bool, error) {
-	switch pullPolicy {
-	case PullNever:
-		return false, nil
-	case PullAlways:
-		return pullImage(ctx, cli, image, registryAuth)
-	case PullMissing:
-		fallthrough
-	default:
-		if !containerExists {
-			_, err := cli.ImageInspect(ctx, image)
-			if docker.IsNotFoundError(err) {
-				return pullImage(ctx, cli, image, registryAuth)
+	changed := imageChanged
+	if comparison.update {
+		actions = append(actions, map[string]any{"updated": inspectResult.Container.ID})
+		changed = true
+		if !state.CheckMode {
+			if updateResponse := updateContainer(ctx, cli, inspectResult.Container.ID, req, desiredHost); updateResponse.Failed {
+				return finish(updateResponse)
 			}
 		}
-		return false, nil
 	}
+	connect, disconnect, networkErr := networkDifferences(req, inspectResult.Container, diff)
+	if networkErr != nil {
+		return finish(Response{Failed: true, Msg: networkErr.Error()})
+	}
+	if len(connect)+len(disconnect) > 0 {
+		changed = true
+		for _, name := range disconnect {
+			actions = append(actions, map[string]any{"removed_from_network": name})
+		}
+		for _, desired := range connect {
+			actions = append(actions, map[string]any{"added_to_network": desired.Name, "network_parameters": desired})
+		}
+		if !state.CheckMode {
+			if networkResponse := applyNetworkChanges(ctx, cli, inspectResult.Container.ID, connect, disconnect); networkResponse.Failed {
+				return finish(networkResponse)
+			}
+		}
+	}
+
+	lifecycleChange := needsLifecycleChange(req, inspectResult.Container)
+	if lifecycleChange != "" {
+		changed = true
+		actions = append(actions, lifecycleAction(lifecycleChange, inspectResult.Container.ID, req))
+		diff.Add(lifecycleDiffField(lifecycleChange), lifecycleDiffDesired(lifecycleChange), lifecycleDiffCurrent(lifecycleChange))
+	}
+	if state.CheckMode {
+		return finish(Response{Changed: changed, Container: convertContainer(inspectResult.Container)})
+	}
+	lifecycle := reconcileLifecycle(ctx, cli, req, inspectResult.Container.ID, false, dependencies.Clock)
+	if lifecycle.Failed {
+		return finish(lifecycle)
+	}
+	lifecycle.Changed = lifecycle.Changed || changed
+	return finish(lifecycle)
 }
 
-func pullImage(ctx context.Context, cli client.APIClient, image string, registryAuth string) (bool, error) {
-	existingID := ""
-	if inspect, err := cli.ImageInspect(ctx, image); err == nil {
-		existingID = inspect.ID
+func ensureImage(ctx context.Context, cli client.APIClient, req Request, containerExists, checkMode bool) (bool, map[string]any, Response) {
+	if req.Image == "" {
+		return false, nil, Response{}
 	}
-
-	pullOpts := client.ImagePullOptions{}
-	if registryAuth != "" {
-		pullOpts.RegistryAuth = registryAuth
+	inspect, inspectErr := cli.ImageInspect(ctx, req.Image)
+	present := inspectErr == nil
+	if inspectErr != nil && !docker.IsNotFoundError(inspectErr) {
+		return false, nil, Response{Failed: true, Msg: docker.WrapError("inspect image", req.Image, inspectErr).Error()}
 	}
-
-	reader, err := cli.ImagePull(ctx, image, pullOpts)
+	if isImageID(req.Image) {
+		if !present {
+			return false, nil, Response{Failed: true, Msg: fmt.Sprintf("cannot find image %s", req.Image)}
+		}
+		return false, nil, Response{}
+	}
+	if req.Pull == PullNever {
+		if !present {
+			return false, nil, Response{Failed: true, Msg: fmt.Sprintf("cannot find image %s, and pull=never", req.Image)}
+		}
+		return false, nil, Response{}
+	}
+	shouldPull := !present || req.Pull == PullAlways
+	if !shouldPull {
+		return false, nil, Response{}
+	}
+	if checkMode {
+		changed := !present || req.PullCheckModeBehavior == "always"
+		if !changed {
+			return false, nil, Response{}
+		}
+		action := map[string]any{"pulled_image": req.Image}
+		if !present {
+			action["changed"] = true
+		}
+		return true, action, Response{}
+	}
+	auth, authErr := docker.EncodeRegistryAuthForImage(req.Image, req.RegistryUsername, req.RegistryPassword)
+	if authErr != nil {
+		return false, nil, Response{Failed: true, Msg: docker.WrapError("resolve registry authentication", req.Image, authErr).Error()}
+	}
+	options := client.ImagePullOptions{RegistryAuth: auth}
+	if req.resolvedPlatform != nil {
+		options.Platforms = []ocispec.Platform{*req.resolvedPlatform}
+	}
+	reader, err := cli.ImagePull(ctx, req.Image, options)
 	if err != nil {
-		return false, docker.WrapError("pull image", image, err)
+		return false, nil, Response{Failed: true, Msg: docker.WrapError("pull image", req.Image, err).Error()}
 	}
 	defer reader.Close()
-
-	result := docker.ParsePullPushStream(reader)
-	if result.Error != nil {
-		return false, docker.WrapError("pull image", image, result.Error)
+	stream := docker.ParsePullPushStream(reader)
+	if stream.Error != nil {
+		return false, nil, Response{Failed: true, Msg: docker.WrapError("pull image", req.Image, stream.Error).Error()}
 	}
-
-	if existingID != "" {
-		if inspect, err := cli.ImageInspect(ctx, image); err == nil {
-			if inspect.ID == existingID {
-				return false, nil
-			}
+	if present {
+		updated, err := cli.ImageInspect(ctx, req.Image)
+		if err == nil && updated.ID == inspect.ID {
+			return false, map[string]any{"pulled_image": req.Image, "changed": false}, Response{}
 		}
 	}
-
-	return true, nil
+	return true, map[string]any{"pulled_image": req.Image, "changed": true}, Response{}
 }
 
-func compareContainer(ctx context.Context, cli client.APIClient, req Request, existing container.InspectResponse, diff *docker.DiffBuilder) (needsRecreate, needsUpdate bool) {
-	if req.Image != "" {
-		imageID, err := resolveImageID(ctx, cli, req.Image)
-		if err == nil && existing.Image != imageID {
-			diff.Add("image", req.Image, existing.Config.Image)
-			needsRecreate = true
-		}
-	}
-
-	if req.Command != nil {
-		desiredCmd := parseCommand(req.Command)
-		if !docker.CompareStringSlicesOrdered(desiredCmd, existing.Config.Cmd) {
-			diff.Add("command", desiredCmd, existing.Config.Cmd)
-			needsRecreate = true
-		}
-	}
-
-	if req.Entrypoint != nil {
-		desiredEntry := parseCommand(req.Entrypoint)
-		if !docker.CompareStringSlicesOrdered(desiredEntry, existing.Config.Entrypoint) {
-			diff.Add("entrypoint", desiredEntry, existing.Config.Entrypoint)
-			needsRecreate = true
-		}
-	}
-
-	if len(req.Env) > 0 {
-		desiredMap := req.Env
-		currentMap := docker.EnvSliceToMap(existing.Config.Env)
-		for k, v := range desiredMap {
-			if cv, ok := currentMap[k]; !ok || cv != v {
-				diff.Add("env."+k, v, cv)
-				needsRecreate = true
-			}
-		}
-	}
-
-	if req.User != "" && diff.AddIfDifferentStr("user", req.User, existing.Config.User) {
-		needsRecreate = true
-	}
-	if req.WorkingDir != "" && diff.AddIfDifferentStr("working_dir", req.WorkingDir, existing.Config.WorkingDir) {
-		needsRecreate = true
-	}
-	if req.Hostname != "" && diff.AddIfDifferentStr("hostname", req.Hostname, existing.Config.Hostname) {
-		needsRecreate = true
-	}
-	if req.Domainname != "" && diff.AddIfDifferentStr("domainname", req.Domainname, existing.Config.Domainname) {
-		needsRecreate = true
-	}
-
-	if len(req.Labels) > 0 && !docker.CompareMaps(req.Labels, existing.Config.Labels) {
-		diff.Add("labels", req.Labels, existing.Config.Labels)
-		needsRecreate = true
-	}
-
-	if len(req.Ports) > 0 {
-		desiredPorts, _, _ := docker.BuildPortBindings(req.Ports)
-		if !docker.ComparePortBindings(desiredPorts, toNatPortMap(existing.HostConfig.PortBindings)) {
-			diff.Add("ports", req.Ports, existing.HostConfig.PortBindings)
-			needsRecreate = true
-		}
-	}
-
-	if len(req.Volumes) > 0 {
-		desiredVolumes := docker.NormalizeMounts(req.Volumes)
-		currentVolumes := docker.NormalizeMounts(existing.HostConfig.Binds)
-		if !docker.CompareStringSlices(desiredVolumes, currentVolumes) {
-			diff.Add("volumes", desiredVolumes, currentVolumes)
-			needsRecreate = true
-		}
-	}
-
-	if req.NetworkMode != "" {
-		currentMode := normalizeNetworkMode(string(existing.HostConfig.NetworkMode))
-		desiredMode := normalizeNetworkMode(req.NetworkMode)
-		if desiredMode != currentMode {
-			diff.Add("network_mode", req.NetworkMode, string(existing.HostConfig.NetworkMode))
-			needsRecreate = true
-		}
-	}
-
-	if diff.AddIfDifferentBool("privileged", req.Privileged, existing.HostConfig.Privileged) {
-		needsRecreate = true
-	}
-
-	if !docker.CompareStringSlices(req.CapAdd, existing.HostConfig.CapAdd) {
-		diff.Add("cap_add", req.CapAdd, existing.HostConfig.CapAdd)
-		needsRecreate = true
-	}
-	if !docker.CompareStringSlices(req.CapDrop, existing.HostConfig.CapDrop) {
-		diff.Add("cap_drop", req.CapDrop, existing.HostConfig.CapDrop)
-		needsRecreate = true
-	}
-
-	if req.Init && (existing.HostConfig.Init == nil || !*existing.HostConfig.Init) {
-		diff.Add("init", true, false)
-		needsRecreate = true
-	}
-
-	needsUpdate = checkMutableFields(req, existing, diff)
-
-	return needsRecreate, needsUpdate
-}
-
-func checkMutableFields(req Request, existing container.InspectResponse, diff *docker.DiffBuilder) bool {
-	needsUpdate := false
-
-	if req.RestartPolicy != "" {
-		desiredPolicy, desiredMax := parseRestartPolicy(req.RestartPolicy)
-		currentPolicy := existing.HostConfig.RestartPolicy.Name
-		currentMax := existing.HostConfig.RestartPolicy.MaximumRetryCount
-		if desiredPolicy != string(currentPolicy) || desiredMax != currentMax {
-			diff.Add("restart_policy", req.RestartPolicy, fmt.Sprintf("%s:%d", currentPolicy, currentMax))
-			needsUpdate = true
-		}
-	}
-
-	if req.Memory != "" {
-		desiredMem, _ := units.RAMInBytes(req.Memory)
-		if desiredMem != existing.HostConfig.Memory {
-			diff.Add("memory", req.Memory, existing.HostConfig.Memory)
-			needsUpdate = true
-		}
-	}
-
-	if req.CPUs > 0 {
-		desiredNano := int64(req.CPUs * 1e9)
-		if desiredNano != existing.HostConfig.NanoCPUs {
-			diff.Add("cpus", req.CPUs, float64(existing.HostConfig.NanoCPUs)/1e9)
-			needsUpdate = true
-		}
-	}
-
-	if req.PidsLimit > 0 {
-		currentPids := int64(0)
-		if existing.HostConfig.PidsLimit != nil {
-			currentPids = *existing.HostConfig.PidsLimit
-		}
-		if req.PidsLimit != currentPids {
-			diff.Add("pids_limit", req.PidsLimit, currentPids)
-			needsUpdate = true
-		}
-	}
-
-	return needsUpdate
-}
-
-func updateContainer(ctx context.Context, cli client.APIClient, containerID string, req Request) Response {
-	resources := container.Resources{}
-	updateOptions := client.ContainerUpdateOptions{Resources: &resources}
-
-	if req.RestartPolicy != "" {
-		name, maxRetry := parseRestartPolicy(req.RestartPolicy)
-		restartPolicy := container.RestartPolicy{Name: container.RestartPolicyMode(name), MaximumRetryCount: maxRetry}
-		updateOptions.RestartPolicy = &restartPolicy
-	}
-
-	if req.Memory != "" {
-		mem, err := units.RAMInBytes(req.Memory)
-		if err == nil {
-			resources.Memory = mem
-		}
-	}
-
-	if req.MemorySwap != "" {
-		if req.MemorySwap == "-1" {
-			resources.MemorySwap = -1
-		} else {
-			swap, err := units.RAMInBytes(req.MemorySwap)
-			if err == nil {
-				resources.MemorySwap = swap
-			}
-		}
-	}
-
-	if req.CPUs > 0 {
-		resources.NanoCPUs = int64(req.CPUs * 1e9)
-	}
-
-	if req.PidsLimit > 0 {
-		resources.PidsLimit = &req.PidsLimit
-	}
-
-	_, err := cli.ContainerUpdate(ctx, containerID, updateOptions)
+func inspectImage(ctx context.Context, cli client.APIClient, reference string) (image.InspectResponse, error) {
+	result, err := cli.ImageInspect(ctx, reference)
 	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("update container", containerID, err).Error()}
+		return image.InspectResponse{}, docker.WrapError("inspect image", reference, err)
 	}
-
-	return Response{Changed: true, Msg: "container updated"}
+	return result.InspectResponse, nil
 }
 
-func reconcileNetworks(ctx context.Context, cli client.APIClient, req Request, existing container.InspectResponse, diff *docker.DiffBuilder) Response {
-	if len(req.Networks) == 0 {
-		return Response{Changed: false}
+func expectedConfigWithImageDefaults(req Request, desired *container.Config, imageInfo image.InspectResponse) (*container.Config, error) {
+	result := *desired
+	if imageInfo.Config == nil {
+		return &result, nil
 	}
-
-	currentNetworks := make(map[string]bool)
-	primaryNetwork := ""
-	if existing.NetworkSettings != nil {
-		for name := range existing.NetworkSettings.Networks {
-			currentNetworks[name] = true
+	if req.Env != nil || req.EnvFile != "" {
+		environment := docker.EnvSliceToMap(imageInfo.Config.Env)
+		for key, value := range docker.EnvSliceToMap(desired.Env) {
+			environment[key] = value
 		}
-		// The primary network is the one set via NetworkMode
-		primaryNetwork = normalizeNetworkMode(string(existing.HostConfig.NetworkMode))
+		result.Env = environmentSlice(environment)
 	}
-
-	desiredNetworks := make(map[string]Network)
-	for _, n := range req.Networks {
-		desiredNetworks[n.Name] = n
-	}
-
-	changed := false
-
-	// Connect to new networks
-	for name, netConfig := range desiredNetworks {
-		if !currentNetworks[name] {
-			endpointConfig := &network.EndpointSettings{
-				Aliases: netConfig.Aliases,
-				Links:   netConfig.Links,
-			}
-			if netConfig.IPv4Address != "" {
-				address, err := netip.ParseAddr(netConfig.IPv4Address)
-				if err != nil {
-					return Response{Failed: true, Msg: fmt.Sprintf("invalid IPv4 address %q: %v", netConfig.IPv4Address, err)}
-				}
-				endpointConfig.IPAMConfig = &network.EndpointIPAMConfig{
-					IPv4Address: address,
+	if req.Labels != nil {
+		if req.ImageLabelMismatch == "fail" && comparisonMode(req, "labels") == "strict" {
+			missing := make([]string, 0)
+			for label := range imageInfo.Config.Labels {
+				if _, found := req.Labels[label]; !found {
+					missing = append(missing, label)
 				}
 			}
-			if netConfig.IPv6Address != "" {
-				address, err := netip.ParseAddr(netConfig.IPv6Address)
-				if err != nil {
-					return Response{Failed: true, Msg: fmt.Sprintf("invalid IPv6 address %q: %v", netConfig.IPv6Address, err)}
+			if len(missing) > 0 {
+				sort.Strings(missing)
+				quoted := make([]string, len(missing))
+				for index, label := range missing {
+					quoted[index] = fmt.Sprintf("%q", label)
 				}
-				if endpointConfig.IPAMConfig == nil {
-					endpointConfig.IPAMConfig = &network.EndpointIPAMConfig{}
-				}
-				endpointConfig.IPAMConfig.IPv6Address = address
+				return nil, fmt.Errorf("some labels should be removed but are present in the base image; set image_label_mismatch to ignore to retain them. Labels: %s", strings.Join(quoted, ", "))
 			}
-
-			if _, err := cli.NetworkConnect(ctx, name, client.NetworkConnectOptions{Container: existing.ID, EndpointConfig: endpointConfig}); err != nil {
-				return Response{Failed: true, Msg: docker.WrapError("connect network", name, err).Error()}
+		}
+		if req.ImageLabelMismatch == "ignore" {
+			result.Labels = make(map[string]string, len(imageInfo.Config.Labels)+len(req.Labels))
+			for key, value := range imageInfo.Config.Labels {
+				result.Labels[key] = value
 			}
-			diff.Add("network."+name, "connected", "disconnected")
-			changed = true
+			for key, value := range req.Labels {
+				result.Labels[key] = value
+			}
 		}
 	}
-
-	// Disconnect from networks not in desired list (except primary network)
-	if !req.NetworksAppend {
-		for name := range currentNetworks {
-			// Skip primary network - cannot disconnect from it
-			if name == primaryNetwork {
-				continue
+	if req.ExposedPorts != nil || req.PublishedPorts != nil {
+		ports := make(network.PortSet, len(imageInfo.Config.ExposedPorts)+len(result.ExposedPorts))
+		for value := range imageInfo.Config.ExposedPorts {
+			if port, err := network.ParsePort(value); err == nil {
+				ports[port] = struct{}{}
 			}
-			// Skip if in desired list
-			if _, desired := desiredNetworks[name]; desired {
-				continue
-			}
-			if _, err := cli.NetworkDisconnect(ctx, name, client.NetworkDisconnectOptions{Container: existing.ID}); err != nil {
-				// Don't fail on disconnect errors - network might already be gone
-				if !docker.IsNotFoundError(err) {
-					return Response{Failed: true, Msg: docker.WrapError("disconnect network", name, err).Error()}
-				}
-			}
-			diff.Add("network."+name, "disconnected", "connected")
-			changed = true
 		}
+		for value := range result.ExposedPorts {
+			ports[value] = struct{}{}
+		}
+		result.ExposedPorts = ports
 	}
-
-	return Response{Changed: changed}
+	if req.Volumes != nil {
+		volumes := make(map[string]struct{}, len(imageInfo.Config.Volumes)+len(result.Volumes))
+		for value := range imageInfo.Config.Volumes {
+			volumes[value] = struct{}{}
+		}
+		for value := range result.Volumes {
+			volumes[value] = struct{}{}
+		}
+		result.Volumes = volumes
+	}
+	if req.Command != nil && len(result.Cmd) == 0 {
+		result.Cmd = append([]string(nil), imageInfo.Config.Cmd...)
+	}
+	return &result, nil
 }
 
-func resolveImageID(ctx context.Context, cli client.APIClient, image string) (string, error) {
-	inspect, err := cli.ImageInspect(ctx, image)
-	if err != nil {
-		return "", err
+func environmentSlice(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
 	}
-	return inspect.ID, nil
+	sort.Strings(keys)
+	result := make([]string, 0, len(keys))
+	for _, key := range keys {
+		result = append(result, key+"="+values[key])
+	}
+	return result
 }
 
-func recreateContainer(ctx context.Context, cli client.APIClient, req Request, state string, prevActions []string) Response {
-	removeResp := removeContainer(ctx, cli, req.Name, req.ForceKill, req.KeepVolumes)
-	if removeResp.Failed {
-		return removeResp
+func imagePlatform(value image.InspectResponse) string {
+	if value.Os == "" || value.Architecture == "" {
+		return value.Os
 	}
-
-	createResp := createAndStart(ctx, cli, req, state)
-	if !createResp.Failed {
-		createResp.Actions = append(prevActions, "recreated")
-		if state == "started" {
-			createResp.Actions = append(createResp.Actions, "started")
-		}
+	operatingSystem, _ := normalizePlatformOS(value.Os)
+	architecture, variant := normalizePlatformArch(value.Architecture, value.Variant)
+	result := operatingSystem + "/" + architecture
+	if variant != "" {
+		result += "/" + variant
 	}
-	return createResp
+	return result
 }
 
-func createAndStart(ctx context.Context, cli client.APIClient, req Request, state string) Response {
-	config, hostConfig, err := buildContainerConfig(req)
-	if err != nil {
-		return Response{Failed: true, Msg: err.Error()}
-	}
-
-	created, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:     config,
-		HostConfig: hostConfig,
-		Name:       req.Name,
-	})
-	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("create container", req.Name, err).Error()}
-	}
-
-	for _, n := range req.Networks {
-		endpointConfig := &network.EndpointSettings{
-			Aliases: n.Aliases,
-			Links:   n.Links,
+func resolveContainerNamespaceModes(ctx context.Context, cli client.APIClient, req Request) Request {
+	resolve := func(value string) string {
+		name, found := strings.CutPrefix(value, "container:")
+		if !found || name == "" {
+			return value
 		}
-		if n.IPv4Address != "" {
-			address, err := netip.ParseAddr(n.IPv4Address)
+		inspected, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
+		if err != nil || inspected.Container.ID == "" {
+			return value
+		}
+		return "container:" + inspected.Container.ID
+	}
+	req.NetworkMode = resolve(req.NetworkMode)
+	req.IPCMode = resolve(req.IPCMode)
+	req.PIDMode = resolve(req.PIDMode)
+	return req
+}
+
+func applyDefaultHostIP(ctx context.Context, cli client.APIClient, req Request, host *container.HostConfig) error {
+	if len(req.PublishedPorts) == 0 {
+		return nil
+	}
+	defaultIP := "0.0.0.0"
+	if req.DefaultHostIP != nil {
+		defaultIP = strings.Trim(*req.DefaultHostIP, "[]")
+	} else {
+		for _, desired := range req.Networks {
+			inspected, err := cli.NetworkInspect(ctx, desired.Name, client.NetworkInspectOptions{})
 			if err != nil {
-				_, _ = cli.ContainerRemove(ctx, created.ID, client.ContainerRemoveOptions{Force: true})
-				return Response{Failed: true, Msg: fmt.Sprintf("invalid IPv4 address %q: %v", n.IPv4Address, err)}
+				return docker.WrapError("inspect network for default_host_ip", desired.Name, err)
 			}
-			endpointConfig.IPAMConfig = &network.EndpointIPAMConfig{IPv4Address: address}
-		}
-		if n.IPv6Address != "" {
-			address, err := netip.ParseAddr(n.IPv6Address)
-			if err != nil {
-				_, _ = cli.ContainerRemove(ctx, created.ID, client.ContainerRemoveOptions{Force: true})
-				return Response{Failed: true, Msg: fmt.Sprintf("invalid IPv6 address %q: %v", n.IPv6Address, err)}
-			}
-			if endpointConfig.IPAMConfig == nil {
-				endpointConfig.IPAMConfig = &network.EndpointIPAMConfig{}
-			}
-			endpointConfig.IPAMConfig.IPv6Address = address
-		}
-		if _, err := cli.NetworkConnect(ctx, n.Name, client.NetworkConnectOptions{Container: created.ID, EndpointConfig: endpointConfig}); err != nil {
-			_, _ = cli.ContainerRemove(ctx, created.ID, client.ContainerRemoveOptions{Force: true})
-			return Response{Failed: true, Msg: docker.WrapError("connect network", n.Name, err).Error()}
-		}
-	}
-
-	if state == "present" {
-		return Response{Changed: true, Msg: "container created", Container: map[string]interface{}{"Id": created.ID}}
-	}
-
-	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
-		_, _ = cli.ContainerRemove(ctx, created.ID, client.ContainerRemoveOptions{Force: true})
-		return Response{Failed: true, Msg: docker.WrapError("start container", req.Name, err).Error()}
-	}
-
-	inspectResult, _ := cli.ContainerInspect(ctx, created.ID, client.ContainerInspectOptions{})
-	return Response{Changed: true, Msg: "container started", Container: convertContainer(inspectResult.Container)}
-}
-
-func buildContainerConfig(req Request) (*container.Config, *container.HostConfig, error) {
-	config := &container.Config{
-		Image:      req.Image,
-		Env:        convertEnv(req.Env),
-		Hostname:   req.Hostname,
-		Domainname: req.Domainname,
-		User:       req.User,
-		WorkingDir: req.WorkingDir,
-		Labels:     req.Labels,
-	}
-
-	if req.Command != nil {
-		config.Cmd = parseCommand(req.Command)
-	}
-	if req.Entrypoint != nil {
-		config.Entrypoint = parseCommand(req.Entrypoint)
-	}
-
-	portBindings, exposedPorts, err := docker.BuildPortBindings(req.Ports)
-	if err != nil {
-		return nil, nil, fmt.Errorf("invalid published port: %w", err)
-	}
-	for _, p := range req.ExposedPorts {
-		port := nat.Port(p)
-		exposedPorts[port] = struct{}{}
-	}
-	config.ExposedPorts = toNetworkPortSet(exposedPorts)
-
-	hostConfig := &container.HostConfig{
-		AutoRemove:   req.AutoRemove,
-		Privileged:   req.Privileged,
-		NetworkMode:  container.NetworkMode(req.NetworkMode),
-		Binds:        req.Volumes,
-		PortBindings: toNetworkPortMap(portBindings),
-		CapAdd:       req.CapAdd,
-		CapDrop:      req.CapDrop,
-		Links:        req.Links,
-		Sysctls:      req.Sysctls,
-		SecurityOpt:  req.SecurityOpt,
-	}
-
-	if req.RestartPolicy != "" {
-		name, maxRetry := parseRestartPolicy(req.RestartPolicy)
-		hostConfig.RestartPolicy = container.RestartPolicy{Name: container.RestartPolicyMode(name), MaximumRetryCount: maxRetry}
-	}
-
-	if req.LogDriver != "" {
-		hostConfig.LogConfig = container.LogConfig{
-			Type:   req.LogDriver,
-			Config: req.LogOptions,
-		}
-	}
-
-	if len(req.Devices) > 0 {
-		for _, d := range req.Devices {
-			hostConfig.Devices = append(hostConfig.Devices, parseDevice(d))
-		}
-	}
-
-	if req.Healthcheck != nil {
-		config.Healthcheck = buildHealthcheck(req.Healthcheck)
-	}
-
-	if req.Init {
-		init := true
-		hostConfig.Init = &init
-	}
-
-	if len(req.Tmpfs) > 0 {
-		hostConfig.Tmpfs = make(map[string]string)
-		for _, t := range req.Tmpfs {
-			parts := strings.SplitN(t, ":", 2)
-			if len(parts) == 2 {
-				hostConfig.Tmpfs[parts[0]] = parts[1]
-			} else {
-				hostConfig.Tmpfs[parts[0]] = ""
-			}
-		}
-	}
-
-	if req.ShmSize != "" {
-		size, err := units.RAMInBytes(req.ShmSize)
-		if err == nil {
-			hostConfig.ShmSize = size
-		}
-	}
-
-	if req.Memory != "" {
-		mem, err := units.RAMInBytes(req.Memory)
-		if err == nil {
-			hostConfig.Memory = mem
-		}
-	}
-
-	if req.MemorySwap != "" {
-		if req.MemorySwap == "-1" {
-			hostConfig.MemorySwap = -1
-		} else {
-			swap, err := units.RAMInBytes(req.MemorySwap)
-			if err == nil {
-				hostConfig.MemorySwap = swap
-			}
-		}
-	}
-
-	if req.CPUs > 0 {
-		hostConfig.NanoCPUs = int64(req.CPUs * 1e9)
-	}
-
-	if req.PidsLimit > 0 {
-		hostConfig.PidsLimit = &req.PidsLimit
-	}
-
-	for _, u := range req.Ulimits {
-		hostConfig.Ulimits = append(hostConfig.Ulimits, &units.Ulimit{
-			Name: u.Name,
-			Soft: u.Soft,
-			Hard: u.Hard,
-		})
-	}
-
-	return config, hostConfig, nil
-}
-
-func toNetworkPortMap(input nat.PortMap) network.PortMap {
-	result := make(network.PortMap, len(input))
-	for port, bindings := range input {
-		key, err := network.ParsePort(string(port))
-		if err != nil {
-			continue
-		}
-		converted := make([]network.PortBinding, 0, len(bindings))
-		for _, binding := range bindings {
-			var hostIP netip.Addr
-			if binding.HostIP != "" {
-				hostIP, err = netip.ParseAddr(binding.HostIP)
-				if err != nil {
-					continue
+			if inspected.Network.Driver == "bridge" {
+				if value := inspected.Network.Options["com.docker.network.bridge.host_binding_ipv4"]; value != "" {
+					defaultIP = value
+					break
 				}
 			}
-			converted = append(converted, network.PortBinding{HostIP: hostIP, HostPort: binding.HostPort})
-		}
-		result[key] = converted
-	}
-	return result
-}
-
-func toNetworkPortSet(input nat.PortSet) network.PortSet {
-	result := make(network.PortSet, len(input))
-	for port := range input {
-		key, err := network.ParsePort(string(port))
-		if err == nil {
-			result[key] = struct{}{}
 		}
 	}
-	return result
-}
-
-func toNatPortMap(input network.PortMap) nat.PortMap {
-	result := make(nat.PortMap, len(input))
-	for port, bindings := range input {
-		converted := make([]nat.PortBinding, 0, len(bindings))
-		for _, binding := range bindings {
-			hostIP := ""
-			if binding.HostIP.IsValid() {
-				hostIP = binding.HostIP.String()
+	if defaultIP == "" {
+		return nil
+	}
+	address, err := netip.ParseAddr(defaultIP)
+	if err != nil {
+		return fmt.Errorf("invalid default_host_ip %q: %w", defaultIP, err)
+	}
+	for port, bindings := range host.PortBindings {
+		for index := range bindings {
+			if !bindings[index].HostIP.IsValid() {
+				bindings[index].HostIP = address
 			}
-			converted = append(converted, nat.PortBinding{HostIP: hostIP, HostPort: binding.HostPort})
 		}
-		result[nat.Port(port.String())] = converted
-	}
-	return result
-}
-
-func buildHealthcheck(hc *Healthcheck) *container.HealthConfig {
-	config := &container.HealthConfig{
-		Test:    hc.Test,
-		Retries: hc.Retries,
-	}
-
-	if hc.Interval != "" {
-		if d, err := time.ParseDuration(hc.Interval); err == nil {
-			config.Interval = d
-		}
-	}
-	if hc.Timeout != "" {
-		if d, err := time.ParseDuration(hc.Timeout); err == nil {
-			config.Timeout = d
-		}
-	}
-	if hc.StartPeriod != "" {
-		if d, err := time.ParseDuration(hc.StartPeriod); err == nil {
-			config.StartPeriod = d
-		}
-	}
-
-	return config
-}
-
-func parseDevice(spec string) container.DeviceMapping {
-	parts := strings.Split(spec, ":")
-	device := container.DeviceMapping{
-		PathOnHost: parts[0],
-	}
-	if len(parts) > 1 {
-		device.PathInContainer = parts[1]
-	} else {
-		device.PathInContainer = parts[0]
-	}
-	if len(parts) > 2 {
-		device.CgroupPermissions = parts[2]
-	} else {
-		device.CgroupPermissions = "rwm"
-	}
-	return device
-}
-
-func parseRestartPolicy(policy string) (string, int) {
-	parts := strings.Split(policy, ":")
-	name := parts[0]
-	maxRetry := 0
-	if len(parts) > 1 {
-		if n, err := strconv.Atoi(parts[1]); err == nil {
-			maxRetry = n
-		}
-	}
-	return name, maxRetry
-}
-
-func removeContainer(ctx context.Context, cli client.APIClient, name string, force bool, keepVolumes bool) Response {
-	inspectResult, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
-	if err == nil && inspectResult.Container.State.Running {
-		timeout := 10
-		if force {
-			_, _ = cli.ContainerKill(ctx, name, client.ContainerKillOptions{Signal: "SIGKILL"})
-		} else {
-			_, _ = cli.ContainerStop(ctx, name, client.ContainerStopOptions{Timeout: &timeout})
-		}
-	}
-
-	opts := client.ContainerRemoveOptions{
-		Force:         true,
-		RemoveVolumes: !keepVolumes,
-	}
-	if _, err := cli.ContainerRemove(ctx, name, opts); err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("remove container", name, err).Error()}
-	}
-	return Response{Changed: true, Msg: "container removed", Actions: []string{"removed"}}
-}
-
-func stopContainer(ctx context.Context, cli client.APIClient, name string, force bool) Response {
-	if force {
-		if _, err := cli.ContainerKill(ctx, name, client.ContainerKillOptions{Signal: "SIGKILL"}); err != nil {
-			return Response{Failed: true, Msg: docker.WrapError("kill container", name, err).Error()}
-		}
-	} else {
-		timeout := 10
-		if _, err := cli.ContainerStop(ctx, name, client.ContainerStopOptions{Timeout: &timeout}); err != nil {
-			return Response{Failed: true, Msg: docker.WrapError("stop container", name, err).Error()}
-		}
-	}
-	return Response{Changed: true, Msg: "container stopped", Actions: []string{"stopped"}}
-}
-
-func startContainer(ctx context.Context, cli client.APIClient, name string) Response {
-	if _, err := cli.ContainerStart(ctx, name, client.ContainerStartOptions{}); err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("start container", name, err).Error()}
-	}
-	inspectResult, _ := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
-	return Response{Changed: true, Container: convertContainer(inspectResult.Container), Actions: []string{"started"}}
-}
-
-func parseCommand(cmd interface{}) []string {
-	if s, ok := cmd.(string); ok {
-		return strings.Fields(s)
-	}
-	if list, ok := cmd.([]interface{}); ok {
-		res := make([]string, len(list))
-		for i, v := range list {
-			res[i] = fmt.Sprint(v)
-		}
-		return res
-	}
-	if list, ok := cmd.([]string); ok {
-		return list
+		host.PortBindings[port] = bindings
 	}
 	return nil
 }
 
-func normalizeNetworkMode(mode string) string {
-	mode = strings.ToLower(strings.TrimSpace(mode))
-	if mode == "" || mode == "default" || mode == "bridge" {
-		return "bridge"
+func waitForRemoval(ctx context.Context, cli client.APIClient, id string, timeout *float64, clock docker.Clock) error {
+	started := clock.Now()
+	for {
+		_, err := cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+		if docker.IsNotFoundError(err) {
+			return nil
+		}
+		if err != nil {
+			return docker.WrapError("wait for container removal", id, err)
+		}
+		if timeout != nil && clock.Now().Sub(started) >= time.Duration(*timeout*float64(time.Second)) {
+			return fmt.Errorf("timeout of %g seconds exceeded while waiting for container %q to be removed", *timeout, id)
+		}
+		clock.Sleep(100 * time.Millisecond)
+	}
+}
+
+func createContainer(ctx context.Context, cli client.APIClient, req Request, config *container.Config, hostConfig *container.HostConfig) Response {
+	options := client.ContainerCreateOptions{Config: config, HostConfig: hostConfig, Name: req.Name}
+	if req.resolvedPlatform != nil {
+		options.Platform = req.resolvedPlatform
+	}
+	if boolValue(req.NetworksCLICompatible) && len(req.Networks) > 0 {
+		options.NetworkingConfig = &network.NetworkingConfig{EndpointsConfig: make(map[string]*network.EndpointSettings)}
+		for _, desired := range req.Networks {
+			settings, err := endpointSettings(desired)
+			if err != nil {
+				return Response{Failed: true, Msg: err.Error()}
+			}
+			options.NetworkingConfig.EndpointsConfig[desired.Name] = settings
+		}
+	}
+	if req.MacAddress != "" {
+		if options.NetworkingConfig == nil {
+			options.NetworkingConfig = &network.NetworkingConfig{EndpointsConfig: make(map[string]*network.EndpointSettings)}
+		}
+		primary := primaryNetworkName(req)
+		if primary == "host" || primary == "none" || strings.HasPrefix(primary, "container:") {
+			return Response{Failed: true, Msg: fmt.Sprintf("mac_address cannot be used with network_mode %q", req.NetworkMode)}
+		}
+		settings := options.NetworkingConfig.EndpointsConfig[primary]
+		if settings == nil {
+			settings = &network.EndpointSettings{}
+			options.NetworkingConfig.EndpointsConfig[primary] = settings
+		}
+		address, parseErr := net.ParseMAC(strings.ReplaceAll(req.MacAddress, "-", ":"))
+		if parseErr != nil {
+			return Response{Failed: true, Msg: fmt.Sprintf("invalid mac_address %q: %v", req.MacAddress, parseErr)}
+		}
+		settings.MacAddress = network.HardwareAddr(address)
+	}
+	created, err := cli.ContainerCreate(ctx, options)
+	if err != nil {
+		return Response{Failed: true, Msg: docker.WrapError("create container", req.Name, err).Error()}
+	}
+	if req.Networks != nil {
+		inspected, inspectErr := cli.ContainerInspect(ctx, created.ID, client.ContainerInspectOptions{})
+		if inspectErr != nil {
+			_, _ = cli.ContainerRemove(ctx, created.ID, client.ContainerRemoveOptions{Force: true})
+			return Response{Failed: true, Msg: docker.WrapError("inspect created container networks", created.ID, inspectErr).Error()}
+		}
+		connect, disconnect, differenceErr := networkDifferencesForCreate(req, inspected.Container, docker.NewDiffBuilder())
+		if differenceErr != nil {
+			_, _ = cli.ContainerRemove(ctx, created.ID, client.ContainerRemoveOptions{Force: true})
+			return Response{Failed: true, Msg: differenceErr.Error()}
+		}
+		if response := applyNetworkChanges(ctx, cli, created.ID, connect, disconnect); response.Failed {
+			_, _ = cli.ContainerRemove(ctx, created.ID, client.ContainerRemoveOptions{Force: true})
+			return response
+		}
+	}
+	return Response{Changed: true, Msg: "container created", Container: map[string]interface{}{"Id": created.ID}}
+}
+
+func updateContainer(ctx context.Context, cli client.APIClient, id string, req Request, desired *container.HostConfig) Response {
+	options := client.ContainerUpdateOptions{Resources: &container.Resources{}}
+	resources := options.Resources
+	if req.BlkioWeight != nil {
+		resources.BlkioWeight = desired.BlkioWeight
+	}
+	if req.CPUPeriod != nil {
+		resources.CPUPeriod = desired.CPUPeriod
+	}
+	if req.CPUQuota != nil {
+		resources.CPUQuota = desired.CPUQuota
+	}
+	if req.CPUShares != nil {
+		resources.CPUShares = desired.CPUShares
+	}
+	if req.argumentProvided("cpuset_cpus", req.CPUSetCPUs != "") {
+		resources.CpusetCpus = desired.CpusetCpus
+	}
+	if req.argumentProvided("cpuset_mems", req.CPUSetMems != "") {
+		resources.CpusetMems = desired.CpusetMems
+	}
+	if req.Memory != nil {
+		resources.Memory = desired.Memory
+	}
+	if req.MemoryReservation != nil {
+		resources.MemoryReservation = desired.MemoryReservation
+	}
+	if req.MemorySwap != nil {
+		resources.MemorySwap = desired.MemorySwap
+	}
+	if req.RestartPolicy != "" {
+		options.RestartPolicy = &desired.RestartPolicy
+	}
+	if _, err := cli.ContainerUpdate(ctx, id, options); err != nil {
+		return Response{Failed: true, Msg: docker.WrapError("update container", id, err).Error()}
+	}
+	return Response{Changed: true}
+}
+
+func applyNetworkChanges(ctx context.Context, cli client.APIClient, id string, connect []Network, disconnect []string) Response {
+	for _, name := range disconnect {
+		if _, err := cli.NetworkDisconnect(ctx, name, client.NetworkDisconnectOptions{Container: id}); err != nil && !docker.IsNotFoundError(err) {
+			return Response{Failed: true, Msg: docker.WrapError("disconnect network", name, err).Error()}
+		}
+	}
+	for _, desired := range connect {
+		settings, err := endpointSettings(desired)
+		if err != nil {
+			return Response{Failed: true, Msg: err.Error()}
+		}
+		// Reconnecting is required when endpoint settings differ.
+		_, _ = cli.NetworkDisconnect(ctx, desired.Name, client.NetworkDisconnectOptions{Container: id, Force: true})
+		if _, err := cli.NetworkConnect(ctx, desired.Name, client.NetworkConnectOptions{Container: id, EndpointConfig: settings}); err != nil {
+			return Response{Failed: true, Msg: docker.WrapError("connect network", desired.Name, err).Error()}
+		}
+	}
+	return Response{Changed: len(connect)+len(disconnect) > 0}
+}
+
+func needsLifecycleChange(req Request, existing container.InspectResponse) string {
+	if existing.State == nil {
+		return ""
+	}
+	switch {
+	case (req.State == "started" || req.State == "healthy") && !existing.State.Running:
+		return "started"
+	case (req.State == "started" || req.State == "healthy") && req.Restart:
+		return "restarted"
+	case req.State == "stopped" && existing.State.Running:
+		return "stopped"
+	case req.Paused != nil && existing.State.Paused != *req.Paused:
+		if *req.Paused {
+			return "paused"
+		}
+		return "unpaused"
+	default:
+		return ""
+	}
+}
+
+func reconcileLifecycle(ctx context.Context, cli client.APIClient, req Request, id string, created bool, clock docker.Clock) Response {
+	inspect, err := cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	if err != nil {
+		return Response{Failed: true, Msg: docker.WrapError("inspect container", id, err).Error()}
+	}
+	changed := created
+	if req.State == "started" || req.State == "healthy" {
+		if inspect.Container.State == nil || !inspect.Container.State.Running {
+			if _, err := cli.ContainerStart(ctx, id, client.ContainerStartOptions{}); err != nil {
+				return Response{Failed: true, Msg: docker.WrapError("start container", id, err).Error()}
+			}
+			changed = true
+		} else if req.Restart && !created {
+			if _, err := cli.ContainerRestart(ctx, id, client.ContainerRestartOptions{Timeout: req.StopTimeout}); err != nil {
+				return Response{Failed: true, Msg: docker.WrapError("restart container", id, err).Error()}
+			}
+			changed = true
+		}
+	} else if req.State == "stopped" && inspect.Container.State != nil && inspect.Container.State.Running {
+		if response := stopContainer(ctx, cli, req, id); response.Failed {
+			return response
+		}
+		changed = true
+	}
+
+	latest, err := cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	if err != nil {
+		return Response{Failed: true, Msg: docker.WrapError("inspect container", id, err).Error()}
+	}
+	if (req.State == "started" || req.State == "healthy") && req.Paused != nil && latest.Container.State != nil && latest.Container.State.Paused != *req.Paused {
+		if *req.Paused {
+			_, err = cli.ContainerPause(ctx, id, client.ContainerPauseOptions{})
+		} else {
+			_, err = cli.ContainerUnpause(ctx, id, client.ContainerUnpauseOptions{})
+		}
+		if err != nil {
+			return Response{Failed: true, Msg: docker.WrapError("set paused state", id, err).Error()}
+		}
+		changed = true
+	}
+	if req.State == "healthy" {
+		healthy, waitErr := waitForHealthy(ctx, cli, id, req.HealthyWaitTimeout, clock)
+		if waitErr != nil {
+			return Response{Failed: true, Msg: waitErr.Error(), Container: healthy}
+		}
+	}
+	if boolValue(req.Detach) || (req.Detach == nil && req.ContainerDefaultBehavior != "compatibility") || req.State == "present" || req.State == "stopped" {
+		latest, _ = cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+		return Response{Changed: changed, Container: convertContainer(latest.Container)}
+	}
+	return waitForExit(ctx, cli, req, id, changed)
+}
+
+func stopContainer(ctx context.Context, cli client.APIClient, req Request, id string) Response {
+	if inspected, err := cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{}); err == nil && inspected.Container.State != nil && inspected.Container.State.Paused {
+		if _, err := cli.ContainerUnpause(ctx, id, client.ContainerUnpauseOptions{}); err != nil {
+			return Response{Failed: true, Msg: docker.WrapError("unpause container before stopping", id, err).Error()}
+		}
+	}
+	if req.ForceKill {
+		signal := req.KillSignal
+		if signal == "" {
+			signal = "SIGKILL"
+		}
+		if _, err := cli.ContainerKill(ctx, id, client.ContainerKillOptions{Signal: signal}); err != nil {
+			return Response{Failed: true, Msg: docker.WrapError("kill container", id, err).Error()}
+		}
+	} else if _, err := cli.ContainerStop(ctx, id, client.ContainerStopOptions{Timeout: req.StopTimeout}); err != nil {
+		return Response{Failed: true, Msg: docker.WrapError("stop container", id, err).Error()}
+	}
+	return Response{Changed: true}
+}
+
+func removeContainer(ctx context.Context, cli client.APIClient, req Request, existing container.InspectResponse) Response {
+	if existing.State != nil && existing.State.Paused {
+		_, _ = cli.ContainerUnpause(ctx, existing.ID, client.ContainerUnpauseOptions{})
+	}
+	if existing.State != nil && existing.State.Running {
+		if response := stopContainer(ctx, cli, req, existing.ID); response.Failed {
+			return response
+		}
+	}
+	removeVolumes := !boolValue(req.KeepVolumes)
+	if _, err := cli.ContainerRemove(ctx, existing.ID, client.ContainerRemoveOptions{Force: req.ForceKill, RemoveVolumes: removeVolumes}); err != nil {
+		message := err.Error()
+		alreadyRemoving := strings.Contains(message, "removal of container ") && strings.Contains(message, " is already in progress")
+		if !docker.IsNotFoundError(err) && !alreadyRemoving {
+			return Response{Failed: true, Msg: docker.WrapError("remove container", existing.ID, err).Error()}
+		}
+	}
+	return Response{Changed: true, Msg: "container removed"}
+}
+
+func waitForHealthy(ctx context.Context, cli client.APIClient, id string, timeout *float64, clock docker.Clock) (map[string]interface{}, error) {
+	started := clock.Now()
+	for {
+		inspect, err := cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+		if err != nil {
+			return nil, docker.WrapError("inspect container health", id, err)
+		}
+		if inspect.Container.State == nil || inspect.Container.State.Health == nil || inspect.Container.State.Health.Status == "healthy" {
+			return convertContainer(inspect.Container), nil
+		}
+		if status := inspect.Container.State.Health.Status; status != "starting" && status != "unhealthy" {
+			return convertContainer(inspect.Container), fmt.Errorf("encountered unexpected health state %q while waiting for container %q", status, id)
+		}
+		if timeout != nil && clock.Now().Sub(started) >= time.Duration(*timeout*float64(time.Second)) {
+			return convertContainer(inspect.Container), fmt.Errorf("timeout of %g seconds exceeded while waiting for container %q to become healthy", *timeout, id)
+		}
+		clock.Sleep(time.Second)
+	}
+}
+
+func waitForExit(ctx context.Context, cli client.APIClient, req Request, id string, changed bool) Response {
+	wait := cli.ContainerWait(ctx, id, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+	var result container.WaitResponse
+	select {
+	case err := <-wait.Error:
+		if err != nil {
+			return Response{Failed: true, Msg: docker.WrapError("wait for container", id, err).Error()}
+		}
+	case result = <-wait.Result:
+	}
+	status := result.StatusCode
+	output := ""
+	realOutput := false
+	if !boolValue(req.AutoRemove) {
+		loggingDriver := ""
+		if inspected, err := cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{}); err == nil && inspected.Container.HostConfig != nil {
+			loggingDriver = inspected.Container.HostConfig.LogConfig.Type
+		}
+		if loggingDriver != "" && loggingDriver != "json-file" && loggingDriver != "journald" && loggingDriver != "local" {
+			output = fmt.Sprintf("Result logged using `%s` driver", loggingDriver)
+		} else {
+			logs, err := cli.ContainerLogs(ctx, id, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true})
+			if err == nil {
+				output = readContainerLogs(logs, boolValue(req.TTY))
+				realOutput = true
+				_ = logs.Close()
+			}
+		}
+	} else {
+		output = "Cannot retrieve result as auto_remove is enabled"
+	}
+	if req.Cleanup {
+		_, _ = cli.ContainerRemove(ctx, id, client.ContainerRemoveOptions{Force: true, RemoveVolumes: !boolValue(req.KeepVolumes)})
+	}
+	response := Response{Changed: changed, Status: &status}
+	if req.OutputLogs && realOutput {
+		response.Stdout = output
+	}
+	if inspect, err := cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{}); err == nil {
+		response.Container = convertContainer(inspect.Container)
+	} else {
+		response.Container = map[string]interface{}{"Output": output}
+	}
+	response.Container["Output"] = output
+	if status != 0 {
+		response.Failed = true
+		response.Msg = output
+	}
+	return response
+}
+
+func readContainerLogs(reader io.Reader, tty bool) string {
+	if tty {
+		data, _ := io.ReadAll(reader)
+		return string(data)
+	}
+	var stdout, stderr bytes.Buffer
+	if _, err := stdcopy.StdCopy(&stdout, &stderr, reader); err != nil {
+		data, _ := io.ReadAll(reader)
+		return string(data)
+	}
+	return stdout.String() + stderr.String()
+}
+
+func lifecycleDiffField(action string) string {
+	if action == "paused" || action == "unpaused" {
+		return "paused"
+	}
+	if action == "restarted" {
+		return "restarted"
+	}
+	return "running"
+}
+func lifecycleDiffDesired(action string) bool {
+	return action == "started" || action == "restarted" || action == "paused"
+}
+func lifecycleDiffCurrent(action string) bool { return !lifecycleDiffDesired(action) }
+
+func effectiveKillSignal(req Request) string {
+	if req.KillSignal != "" {
+		return req.KillSignal
+	}
+	return "SIGKILL"
+}
+
+func removalAction(id string, req Request) map[string]any {
+	return map[string]any{
+		"removed":      id,
+		"volume_state": !boolValue(req.KeepVolumes),
+		"link":         false,
+		"force":        req.ForceKill,
+	}
+}
+
+func lifecycleAction(action, id string, req Request) map[string]any {
+	switch action {
+	case "paused":
+		return map[string]any{"set_paused": true}
+	case "unpaused":
+		return map[string]any{"set_paused": false}
+	case "restarted":
+		return map[string]any{"restarted": id, "timeout": req.StopTimeout}
+	case "stopped":
+		if req.ForceKill {
+			return map[string]any{"killed": id, "signal": effectiveKillSignal(req)}
+		}
+		return map[string]any{"stopped": id, "timeout": req.StopTimeout}
+	default:
+		return map[string]any{"started": id}
+	}
+}
+
+func convertContainer(value container.InspectResponse) map[string]interface{} {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return map[string]interface{}{}
+	}
+	result := make(map[string]interface{})
+	if err := json.Unmarshal(encoded, &result); err != nil {
+		return map[string]interface{}{}
+	}
+	return result
+}
+
+func resolvePlatform(ctx context.Context, cli client.APIClient, value string) (*ocispec.Platform, error) {
+	parts := strings.Split(value, "/")
+	daemonOS, daemonArch := "", ""
+	if len(parts) == 1 {
+		info, err := cli.Info(ctx, client.InfoOptions{})
+		if err != nil {
+			return nil, docker.WrapError("inspect Docker daemon platform", "", err)
+		}
+		daemonOS, daemonArch = info.Info.OSType, info.Info.Architecture
+	}
+	return parsePlatform(value, daemonOS, daemonArch)
+}
+
+func parsePlatform(value, daemonOS, daemonArch string) (*ocispec.Platform, error) {
+	parts := strings.Split(value, "/")
+	if len(parts) == 0 || len(parts) > 3 {
+		return nil, fmt.Errorf("invalid platform %q; expected os[/architecture[/variant]]", value)
+	}
+	for _, part := range parts {
+		if part == "" || !isPlatformPart(part) {
+			return nil, fmt.Errorf("invalid platform %q", value)
+		}
+	}
+	if len(parts) == 1 {
+		part := strings.ToLower(parts[0])
+		if normalizedOS, found := normalizePlatformOS(part); found {
+			architecture, variant := normalizePlatformArch(daemonArch, "")
+			return &ocispec.Platform{OS: normalizedOS, Architecture: architecture, Variant: variant}, nil
+		}
+		architecture, variant := normalizePlatformArch(part, "")
+		if !knownPlatformArch(architecture) {
+			return nil, fmt.Errorf("invalid platform %q: unknown OS or architecture", value)
+		}
+		operatingSystem, _ := normalizePlatformOS(daemonOS)
+		return &ocispec.Platform{OS: operatingSystem, Architecture: architecture, Variant: variant}, nil
+	}
+	operatingSystem, _ := normalizePlatformOS(parts[0])
+	if operatingSystem == "" {
+		operatingSystem = strings.ToLower(parts[0])
+	}
+	variant := ""
+	if len(parts) == 3 {
+		variant = strings.ToLower(parts[2])
+	}
+	architecture, variant := normalizePlatformArch(parts[1], variant)
+	if len(parts) == 2 && architecture == "arm" && variant == "v7" {
+		variant = ""
+	}
+	return &ocispec.Platform{OS: operatingSystem, Architecture: architecture, Variant: variant}, nil
+}
+
+func isImageID(value string) bool {
+	value = strings.TrimPrefix(strings.ToLower(value), "sha256:")
+	if len(value) != 64 {
+		return false
+	}
+	for _, character := range value {
+		if !strings.ContainsRune("0123456789abcdef", character) {
+			return false
+		}
+	}
+	return true
+}
+
+func primaryNetworkName(req Request) string {
+	if len(req.Networks) > 0 && boolValue(req.NetworksCLICompatible) {
+		return req.Networks[0].Name
+	}
+	mode := normalizeNetworkMode(req.NetworkMode)
+	if mode == "host" || mode == "none" || strings.HasPrefix(mode, "container:") {
+		return mode
 	}
 	return mode
 }
 
-func convertEnv(env map[string]string) []string {
-	res := make([]string, 0, len(env))
-	for k, v := range env {
-		res = append(res, fmt.Sprintf("%s=%s", k, v))
+func isPlatformPart(value string) bool {
+	for _, character := range value {
+		if !((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') || character == '_' || character == '-') {
+			return false
+		}
 	}
-	return res
+	return true
 }
 
-func convertContainer(c container.InspectResponse) map[string]interface{} {
-	return map[string]interface{}{
-		"Id":              c.ID,
-		"Name":            c.Name,
-		"State":           c.State,
-		"NetworkSettings": c.NetworkSettings,
-		"Config":          c.Config,
-		"HostConfig":      c.HostConfig,
+func normalizePlatformOS(value string) (string, bool) {
+	value = strings.ToLower(value)
+	if value == "macos" {
+		value = "darwin"
 	}
+	known := map[string]bool{"aix": true, "android": true, "darwin": true, "dragonfly": true, "freebsd": true, "hurd": true, "illumos": true, "ios": true, "js": true, "linux": true, "nacl": true, "netbsd": true, "openbsd": true, "plan9": true, "solaris": true, "windows": true, "zos": true}
+	return value, known[value]
+}
+
+func normalizePlatformArch(architecture, variant string) (string, string) {
+	architecture = strings.ToLower(architecture)
+	variant = strings.ToLower(variant)
+	switch architecture {
+	case "i386":
+		architecture = "386"
+	case "x86_64", "x86-64":
+		architecture = "amd64"
+	case "aarch64":
+		architecture = "arm64"
+	case "armhf":
+		architecture, variant = "arm", "v7"
+	case "armel":
+		architecture, variant = "arm", "v6"
+	}
+	if architecture == "arm64" && (variant == "8" || variant == "v8") {
+		variant = ""
+	}
+	if architecture == "arm" && variant != "" && !strings.HasPrefix(variant, "v") {
+		variant = "v" + variant
+	}
+	return architecture, variant
+}
+
+func knownPlatformArch(value string) bool {
+	known := map[string]bool{"386": true, "amd64": true, "amd64p32": true, "arm": true, "armbe": true, "arm64": true, "arm64be": true, "ppc64": true, "ppc64le": true, "loong64": true, "mips": true, "mipsle": true, "mips64": true, "mips64le": true, "mips64p32": true, "mips64p32le": true, "ppc": true, "riscv": true, "riscv64": true, "s390": true, "s390x": true, "sparc": true, "sparc64": true, "wasm": true}
+	return known[value]
 }

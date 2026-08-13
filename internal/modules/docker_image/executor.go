@@ -2,268 +2,858 @@ package docker_image
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
 
+	"github.com/docker/go-units"
+	"github.com/gjergjiramku/dibra/internal/execution"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+var imageIDPattern = regexp.MustCompile(`^(?:sha256:)?[0-9a-fA-F]{12,64}$`)
+
 func Execute(req Request) Response {
-	return ExecuteWithDependencies(req, docker.Dependencies{})
+	return ExecuteWithDependenciesAndState(req, docker.Dependencies{}, execution.State{})
+}
+
+func ExecuteWithState(req Request, state execution.State) Response {
+	return ExecuteWithDependenciesAndState(req, docker.Dependencies{}, state)
 }
 
 func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	return ExecuteWithDependenciesAndState(req, dependencies, execution.State{})
+}
+
+func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependencies, state execution.State) Response {
+	result := emptyResponse()
+	req = applyDefaults(req)
+	if err := validateRequest(req); err != nil {
+		return failedResponse(err.Error())
+	}
+
 	dependencies = dependencies.Resolve()
 	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("create docker client", "", err).Error()}
+		return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
 	}
 	defer cli.Close()
 
 	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
-	ref, err := docker.JoinImageNameTag(req.Name, req.Tag)
+	name, tag, reference, err := resolveRequestedReference(req.Name, req.Tag)
 	if err != nil {
-		return Response{Failed: true, Msg: fmt.Sprintf("invalid image name %q: %v", req.Name, err)}
+		return failedResponse(err.Error())
 	}
 
-	state := req.State
-	if state == "" {
-		state = "present"
+	if req.State == "absent" {
+		return removeImage(ctx, cli, reference, req.ForceAbsent, state.CheckMode)
 	}
 
-	switch state {
-	case "absent":
-		return handleAbsent(ctx, cli, ref, req)
-	case "present":
-		return handlePresent(ctx, cli, ref, req)
-	default:
-		return Response{Failed: true, Msg: fmt.Sprintf("unknown state: %s", state)}
-	}
-}
-
-// handleAbsent removes an image
-func handleAbsent(ctx context.Context, cli client.APIClient, ref string, req Request) Response {
-	// Check if exists
-	_, err := cli.ImageInspect(ctx, ref)
-	if docker.IsNotFoundError(err) {
-		return Response{Changed: false, Msg: "image already absent"}
-	}
+	_, existingRaw, existingFound, err := inspectImage(ctx, cli, reference)
 	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("inspect image", ref, err).Error()}
+		return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
+	}
+	if existingFound {
+		result.Image = existingRaw
 	}
 
-	// Determine force flag (3.5: prefer ForceRemove, fall back to ForceSource for backward compat)
-	force := req.ForceRemove || req.ForceSource
-
-	// Remove
-	opts := client.ImageRemoveOptions{
-		Force:         force,
-		PruneChildren: true,
+	forceSource := req.ForceSource
+	if req.Pull != nil && req.Pull.Policy == "always" {
+		forceSource = true
 	}
-	_, err = cli.ImageRemove(ctx, ref, opts)
-	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("remove image", ref, err).Error()}
-	}
-	return Response{Changed: true, Msg: "image removed"}
-}
-
-// handlePresent ensures an image is present
-func handlePresent(ctx context.Context, cli client.APIClient, ref string, req Request) Response {
-	source := req.Source
-	if source == "" {
-		source = "pull"
+	if req.Pull != nil && req.Pull.Policy == "never" && !existingFound {
+		return failedResponse(fmt.Sprintf("Cannot find the image %s locally.", reference))
 	}
 
-	switch source {
-	case "pull":
-		return handlePull(ctx, cli, ref, req)
-	case "local":
-		return handleLocal(ctx, cli, ref, req)
-	default:
-		return Response{Failed: true, Msg: fmt.Sprintf("unsupported source: %s (supported: pull, local)", source)}
-	}
-}
-
-// handlePull pulls an image from registry (3.1, 3.2)
-func handlePull(ctx context.Context, cli client.APIClient, ref string, req Request) Response {
-	// Determine pull policy (3.2, 3.5: handle backward compat)
-	pullPolicy := req.Pull
-	if pullPolicy == "" {
-		pullPolicy = PullMissing
-	}
-	// ForceSource/ForcePull override to "always" for backward compat
-	if req.ForcePull || req.ForceSource {
-		pullPolicy = PullAlways
-	}
-
-	// Get existing image ID before pull (3.2.3)
-	var existingID string
-	if inspect, err := cli.ImageInspect(ctx, ref); err == nil {
-		existingID = inspect.ID
-	}
-
-	// Decide whether to pull based on policy
-	switch pullPolicy {
-	case PullNever:
-		if existingID == "" {
-			return Response{Failed: true, Msg: fmt.Sprintf("image %s not found locally and pull is 'never'", ref)}
-		}
-		return Response{Changed: false, Msg: "image already present (pull: never)", ImageID: existingID}
-
-	case PullMissing:
-		if existingID != "" {
-			// Image already exists, no need to pull
-			return Response{Changed: false, Msg: "image already present", ImageID: existingID}
-		}
-		// Fall through to pull
-
-	case PullAlways:
-		// Always pull, even if exists
-	}
-
-	// Pull the image (3.1, 3.2)
-	changed, newID, digest, err := pullImage(ctx, cli, ref, existingID, req.RegistryUsername, req.RegistryPassword)
-	if err != nil {
-		return Response{Failed: true, Msg: err.Error()}
-	}
-
-	if !changed {
-		return Response{Changed: false, Msg: "image already up to date", ImageID: newID, Digest: digest}
-	}
-
-	return Response{Changed: true, Msg: "image pulled", ImageID: newID, Digest: digest}
-}
-
-// pullImage performs the actual image pull (3.1, 3.2)
-func pullImage(ctx context.Context, cli client.APIClient, image, existingID, username, password string) (changed bool, imageID, digest string, err error) {
-	// Encode registry auth (3.1.3)
-	registryAuth, authErr := docker.EncodeRegistryAuthForImage(image, username, password)
-	if authErr != nil {
-		return false, "", "", docker.WrapError("resolve registry authentication", image, authErr)
-	}
-
-	pullOpts := client.ImagePullOptions{}
-	if registryAuth != "" {
-		pullOpts.RegistryAuth = registryAuth
-	}
-
-	reader, err := cli.ImagePull(ctx, image, pullOpts)
-	if err != nil {
-		return false, "", "", docker.WrapError("pull image", image, err)
-	}
-	defer reader.Close()
-
-	// Parse stream for errors and digest (3.2.1, 3.2.2)
-	result := docker.ParsePullPushStream(reader)
-	if result.Error != nil {
-		return false, "", "", docker.WrapError("pull image", image, result.Error)
-	}
-
-	// Get the new image ID
-	inspect, err := cli.ImageInspect(ctx, image)
-	if err != nil {
-		return false, "", "", docker.WrapError("inspect image after pull", image, err)
-	}
-
-	// Compare image IDs to detect actual changes (3.2.3, 3.2.4)
-	if existingID != "" && inspect.ID == existingID {
-		return false, inspect.ID, result.Digest, nil
-	}
-
-	return true, inspect.ID, result.Digest, nil
-}
-
-// handleLocal handles source=local (tag and optionally push)
-func handleLocal(ctx context.Context, cli client.APIClient, ref string, req Request) Response {
-	// Check source image exists
-	inspect, err := cli.ImageInspect(ctx, ref)
-	if err != nil {
-		if docker.IsNotFoundError(err) {
-			return Response{Failed: true, Msg: fmt.Sprintf("image %s not found locally", ref)}
-		}
-		return Response{Failed: true, Msg: docker.WrapError("inspect image", ref, err).Error()}
-	}
-
-	// If no repository specified, just return the image info
-	if req.Repository == "" {
-		return Response{Changed: false, ImageID: inspect.ID}
-	}
-
-	// Tag the image (3.3)
-	targetRef, err := docker.JoinImageNameTag(req.Repository, req.Tag)
-	if err != nil {
-		return Response{Failed: true, Msg: fmt.Sprintf("invalid repository %q: %v", req.Repository, err)}
-	}
-	changed, err := tagImage(ctx, cli, ref, targetRef, inspect.ID, req.ForceTag)
-	if err != nil {
-		return Response{Failed: true, Msg: err.Error()}
-	}
-
-	// Push if requested (3.4)
-	if req.Push {
-		digest, err := pushImage(ctx, cli, targetRef, req.RegistryUsername, req.RegistryPassword)
-		if err != nil {
-			return Response{Failed: true, Msg: err.Error()}
-		}
-		msg := "image pushed"
-		if changed {
-			msg = "image tagged and pushed"
-		}
-		return Response{Changed: true, Msg: msg, ImageID: inspect.ID, Digest: digest}
-	}
-
-	if changed {
-		return Response{Changed: true, Msg: "image tagged", ImageID: inspect.ID}
-	}
-	return Response{Changed: false, Msg: "image already tagged correctly", ImageID: inspect.ID}
-}
-
-// tagImage tags an image with idempotency (3.3)
-func tagImage(ctx context.Context, cli client.APIClient, sourceRef, targetRef, sourceID string, force bool) (changed bool, err error) {
-	// Check if target already exists with same image ID (3.3.1, 3.3.2)
-	if !force {
-		if targetInspect, err := cli.ImageInspect(ctx, targetRef); err == nil {
-			if targetInspect.ID == sourceID {
-				// Already tagged correctly (3.3.4)
-				return false, nil
+	if !existingFound || forceSource {
+		switch req.Source {
+		case "pull":
+			if isImageID(req.Name) {
+				return failedResponse(fmt.Sprintf("Image name must not be an image ID for source=pull; got: %s", req.Name))
+			}
+			result.Actions = append(result.Actions, fmt.Sprintf("Pulled image %s", reference))
+			result.Changed = true
+			if !state.CheckMode {
+				pulledRaw, pullErr := pullImage(ctx, cli, reference, req, dependencies)
+				if pullErr != nil {
+					return failedResponse(pullErr.Error())
+				}
+				result.Image = pulledRaw
+				if existingFound && imageID(existingRaw) == imageID(pulledRaw) {
+					result.Changed = false
+				}
+			}
+		case "build":
+			if isImageID(req.Name) {
+				return failedResponse(fmt.Sprintf("Image name must not be an image ID for source=build; got: %s", req.Name))
+			}
+			info, statErr := dependencies.FileSystem.Stat(req.Build.Path)
+			if statErr != nil || !info.IsDir() {
+				return failedResponse(fmt.Sprintf("Requested build path %s could not be found or you do not have access.", req.Build.Path))
+			}
+			action := fmt.Sprintf("Built image %s from %s", reference, req.Build.Path)
+			result.Actions = append(result.Actions, action)
+			result.Changed = true
+			if !state.CheckMode {
+				buildRaw, stdout, buildErr := buildImage(ctx, cli, reference, req, dependencies)
+				if buildErr != nil {
+					return failedResponse(buildErr.Error())
+				}
+				result.Image = buildRaw
+				result.Stdout = stdout
+				if existingFound && imageID(existingRaw) == imageID(buildRaw) {
+					result.Changed = false
+				}
+			}
+		case "load":
+			info, statErr := dependencies.FileSystem.Stat(req.LoadPath)
+			if statErr != nil || !info.Mode().IsRegular() {
+				return failedResponse(fmt.Sprintf("Error loading image %s. Specified path %s does not exist.", req.Name, req.LoadPath))
+			}
+			result.Actions = append(result.Actions, fmt.Sprintf("Loaded image %s from %s", reference, req.LoadPath))
+			result.Changed = true
+			if !state.CheckMode {
+				loadedRaw, stdout, loadErr := loadImage(ctx, cli, reference, req.Name, req.LoadPath, dependencies)
+				if loadErr != nil {
+					response := failedResponse(loadErr.Error())
+					response.Stdout = stdout
+					return response
+				}
+				result.Image = loadedRaw
+				if existingFound && imageID(existingRaw) == imageID(loadedRaw) {
+					result.Changed = false
+				}
+			}
+		case "local":
+			if !existingFound {
+				return failedResponse(fmt.Sprintf("Cannot find the image %s locally.", reference))
 			}
 		}
 	}
 
-	// Tag the image (3.3.3)
-	if _, err := cli.ImageTag(ctx, client.ImageTagOptions{Source: sourceRef, Target: targetRef}); err != nil {
-		return false, docker.WrapError("tag image", targetRef, err)
+	if req.ArchivePath != "" {
+		archiveChanged, archiveAction, archiveErr := archiveImage(ctx, cli, reference, result.Image, req.ArchivePath, dependencies, state.CheckMode)
+		if archiveErr != nil {
+			return failedResponse(archiveErr.Error())
+		}
+		if archiveAction != "" {
+			result.Actions = append(result.Actions, archiveAction)
+		}
+		result.Changed = archiveChanged
 	}
 
-	return true, nil
+	if req.Repository != "" {
+		target, targetErr := repositoryReference(req.Repository, tag)
+		if targetErr != nil {
+			return failedResponse(targetErr.Error())
+		}
+		tagChanged, tagAction, taggedRaw, tagErr := tagImage(ctx, cli, reference, target, req.ForceTag, state.CheckMode)
+		if tagErr != nil {
+			return failedResponse(tagErr.Error())
+		}
+		if tagAction != "" {
+			result.Actions = append(result.Actions, tagAction)
+		}
+		result.Changed = result.Changed || tagChanged
+		if taggedRaw != nil {
+			result.Image = taggedRaw
+		}
+		if req.Push {
+			pushChanged, pushAction, pushedRaw, pushErr := pushImage(ctx, cli, target, name, req, dependencies, state.CheckMode)
+			if pushErr != nil {
+				return failedResponse(pushErr.Error())
+			}
+			if pushAction != "" {
+				result.Actions = append(result.Actions, pushAction)
+			}
+			result.Changed = pushChanged
+			if pushedRaw != nil {
+				result.Image = pushedRaw
+			}
+		}
+	} else if req.Push {
+		if isImageID(req.Name) {
+			return failedResponse(fmt.Sprintf("Cannot push an image ID: %s", req.Name))
+		}
+		pushChanged, pushAction, pushedRaw, pushErr := pushImage(ctx, cli, reference, name, req, dependencies, state.CheckMode)
+		if pushErr != nil {
+			return failedResponse(pushErr.Error())
+		}
+		if pushAction != "" {
+			result.Actions = append(result.Actions, pushAction)
+		}
+		result.Changed = pushChanged
+		if pushedRaw != nil {
+			result.Image = pushedRaw
+		}
+	}
+
+	return result
 }
 
-// pushImage pushes an image to registry (3.4)
-func pushImage(ctx context.Context, cli client.APIClient, ref, username, password string) (digest string, err error) {
-	// Encode registry auth (3.4.3)
-	registryAuth, authErr := docker.EncodeRegistryAuthForImage(ref, username, password)
-	if authErr != nil {
-		return "", docker.WrapError("resolve registry authentication", ref, authErr)
-	}
+func emptyResponse() Response {
+	return Response{Actions: []string{}, Image: map[string]any{}}
+}
 
-	pushOpts := client.ImagePushOptions{}
-	if registryAuth != "" {
-		pushOpts.RegistryAuth = registryAuth
-	}
+func failedResponse(message string) Response {
+	response := emptyResponse()
+	response.Failed = true
+	response.Msg = message
+	return response
+}
 
-	reader, err := cli.ImagePush(ctx, ref, pushOpts)
+func applyDefaults(req Request) Request {
+	if req.State == "" {
+		req.State = "present"
+	}
+	if req.Tag == "" && (req.providedArguments == nil || !req.argumentProvided("tag")) {
+		req.Tag = "latest"
+	}
+	return req
+}
+
+func validateRequest(req Request) error {
+	if strings.TrimSpace(req.Name) == "" {
+		return fmt.Errorf("name is required")
+	}
+	if req.State != "present" && req.State != "absent" {
+		return fmt.Errorf("state must be present or absent")
+	}
+	if req.Tag != "" && !validTag(req.Tag) {
+		return fmt.Errorf("%q is not a valid docker tag", req.Tag)
+	}
+	if req.Repository != "" && isImageID(req.Repository) {
+		return fmt.Errorf("`repository` must not be an image ID; got: %s", req.Repository)
+	}
+	if req.State == "absent" {
+		return nil
+	}
+	switch req.Source {
+	case "build", "load", "pull", "local":
+	case "":
+		return fmt.Errorf("source is required when state=present")
+	default:
+		return fmt.Errorf("source must be build, load, pull, or local")
+	}
+	if req.Source == "build" {
+		if req.Build == nil || strings.TrimSpace(req.Build.Path) == "" {
+			return fmt.Errorf(`If "source" is set to "build", the "build.path" option must be specified.`)
+		}
+		if req.Build.HTTPTimeout < 0 {
+			return fmt.Errorf("build.http_timeout must be positive")
+		}
+	}
+	if req.Source == "load" && strings.TrimSpace(req.LoadPath) == "" {
+		return fmt.Errorf("load_path is required when source=load")
+	}
+	if req.Push && req.Repository == "" && isImageID(req.Name) {
+		return fmt.Errorf("Cannot push an image by ID; specify `repository` to tag and push the image with ID %s instead", req.Name)
+	}
+	return nil
+}
+
+func resolveRequestedReference(value, defaultTag string) (string, string, string, error) {
+	if isImageID(value) {
+		return value, defaultTag, value, nil
+	}
+	parsed := docker.ParseImageReference(value)
+	if err := parsed.Validate(); err != nil {
+		return "", "", "", fmt.Errorf("invalid image name %q: %v", value, err)
+	}
+	name := value
+	tag := defaultTag
+	if parsed.Tag != "" {
+		tag = parsed.Tag
+		parsed.Tag = ""
+		name = parsed.String()
+	}
+	reference, err := docker.JoinImageNameTag(name, tag)
 	if err != nil {
-		return "", docker.WrapError("push image", ref, err)
+		return "", "", "", fmt.Errorf("invalid image name %q: %v", value, err)
 	}
-	defer reader.Close()
+	return name, tag, reference, nil
+}
 
-	// Parse stream for errors and digest (3.4.1, 3.4.2)
-	result := docker.ParsePullPushStream(reader)
-	if result.Error != nil {
-		return "", docker.WrapError("push image", ref, result.Error)
+func repositoryReference(repository, tag string) (string, error) {
+	if isImageID(repository) {
+		return "", fmt.Errorf("`repository` must not be an image ID; got: %s", repository)
+	}
+	reference, err := docker.JoinImageNameTag(repository, tag)
+	if err != nil {
+		return "", fmt.Errorf("invalid repository %q: %v", repository, err)
+	}
+	return reference, nil
+}
+
+func isImageID(value string) bool {
+	return imageIDPattern.MatchString(value)
+}
+
+func validTag(value string) bool {
+	if value == "" || len(value) > 128 {
+		return value == ""
+	}
+	first := value[0]
+	if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') || (first >= '0' && first <= '9') || first == '_') {
+		return false
+	}
+	for _, character := range value[1:] {
+		if !((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') || character == '_' || character == '.' || character == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+func inspectImage(ctx context.Context, cli client.APIClient, reference string) (client.ImageInspectResult, map[string]any, bool, error) {
+	inspect, err := cli.ImageInspect(ctx, reference)
+	if docker.IsNotFoundError(err) {
+		return client.ImageInspectResult{}, nil, false, nil
+	}
+	if err != nil {
+		return client.ImageInspectResult{}, nil, false, err
+	}
+	raw, err := inspectMap(inspect)
+	if err != nil {
+		return client.ImageInspectResult{}, nil, false, err
+	}
+	return inspect, raw, true, nil
+}
+
+func inspectMap(inspect client.ImageInspectResult) (map[string]any, error) {
+	encoded, err := json.Marshal(inspect)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	if err := json.Unmarshal(encoded, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func imageID(inspect map[string]any) string {
+	if inspect == nil {
+		return ""
+	}
+	value, _ := inspect["Id"].(string)
+	return value
+}
+
+func removeImage(ctx context.Context, cli client.APIClient, reference string, force, checkMode bool) Response {
+	_, raw, found, err := inspectImage(ctx, cli, reference)
+	if err != nil {
+		return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
+	}
+	if !found {
+		return emptyResponse()
+	}
+	result := emptyResponse()
+	result.Changed = true
+	result.Actions = append(result.Actions, fmt.Sprintf("Removed image %s", reference))
+	result.Image = raw
+	result.Image["state"] = "Deleted"
+	if checkMode {
+		return result
+	}
+	if _, err := cli.ImageRemove(ctx, reference, client.ImageRemoveOptions{Force: force, PruneChildren: false}); err != nil {
+		if docker.IsNotFoundError(err) {
+			return result
+		}
+		return failedResponse(fmt.Sprintf("Error removing image %s - %v", reference, err))
+	}
+	return result
+}
+
+func pullImage(ctx context.Context, cli client.APIClient, reference string, req Request, dependencies docker.Dependencies) (map[string]any, error) {
+	auth, err := registryAuth(reference, req, dependencies, false)
+	if err != nil {
+		return nil, err
+	}
+	options := client.ImagePullOptions{RegistryAuth: auth}
+	if req.Pull != nil && req.Pull.Platform != "" {
+		platform, parseErr := parsePlatform(req.Pull.Platform)
+		if parseErr != nil {
+			return nil, fmt.Errorf("invalid pull.platform %q: %v", req.Pull.Platform, parseErr)
+		}
+		options.Platforms = append(options.Platforms, platform)
+	}
+	stream, err := cli.ImagePull(ctx, reference, options)
+	if err != nil {
+		return nil, fmt.Errorf("Error pulling image %s - %v", reference, err)
+	}
+	defer stream.Close()
+	parsed := docker.ParsePullPushStream(stream)
+	if parsed.Error != nil {
+		return nil, fmt.Errorf("Error pulling image %s - %v", reference, parsed.Error)
+	}
+	_, raw, found, err := inspectImage(ctx, cli, reference)
+	if err != nil {
+		return nil, fmt.Errorf("Error inspecting image %s after pull - %v", reference, err)
+	}
+	if !found {
+		return nil, fmt.Errorf("Error pulling image %s - image was not present after pull", reference)
+	}
+	return raw, nil
+}
+
+func buildImage(ctx context.Context, cli client.APIClient, reference string, req Request, dependencies docker.Dependencies) (map[string]any, string, error) {
+	build := req.Build
+	info, err := dependencies.FileSystem.Stat(build.Path)
+	if err != nil || !info.IsDir() {
+		return nil, "", fmt.Errorf("Requested build path %s could not be found or you do not have access.", build.Path)
+	}
+	contextReader, err := buildContextArchive(build.Path, dependencies.FileSystem)
+	if err != nil {
+		return nil, "", fmt.Errorf("Error preparing build context %s - %v", build.Path, err)
+	}
+	defer contextReader.Close()
+
+	options := client.ImageBuildOptions{
+		Tags:        []string{reference},
+		Context:     contextReader,
+		NoCache:     build.NoCache,
+		Remove:      build.Remove == nil || *build.Remove,
+		ForceRemove: build.Remove == nil || *build.Remove,
+		PullParent:  build.Pull != nil && *build.Pull,
+		CPUSetCPUs:  containerLimitCPUSet(build.ContainerLimits),
+		CPUShares:   containerLimitCPUShares(build.ContainerLimits),
+		NetworkMode: build.Network,
+		Dockerfile:  build.Dockerfile,
+		BuildArgs:   stringifyPointerMap(build.Args),
+		Labels:      stringifyMap(build.Labels),
+		CacheFrom:   build.CacheFrom,
+		ExtraHosts:  extraHosts(build.EtcHosts),
+		Target:      build.Target,
+	}
+	options.AuthConfigs, err = dockerConfigAuthConfigs(req, reference, dependencies)
+	if err != nil {
+		return nil, "", fmt.Errorf("Error resolving registry authentication for build - %v", err)
+	}
+	if build.Platform != "" {
+		platform, parseErr := parsePlatform(build.Platform)
+		if parseErr != nil {
+			return nil, "", fmt.Errorf("invalid build.platform %q: %v", build.Platform, parseErr)
+		}
+		options.Platforms = append(options.Platforms, platform)
+	}
+	if build.ContainerLimits != nil {
+		options.Memory, err = byteValue(build.ContainerLimits.Memory, false)
+		if err != nil {
+			return nil, "", fmt.Errorf("Failed to convert build.container_limits.memory to bytes: %v", err)
+		}
+		options.MemorySwap, err = byteValue(build.ContainerLimits.MemorySwap, true)
+		if err != nil {
+			return nil, "", fmt.Errorf("Failed to convert build.container_limits.memswap to bytes: %v", err)
+		}
+	}
+	options.ShmSize, err = byteValue(build.ShmSize, false)
+	if err != nil {
+		return nil, "", fmt.Errorf("Failed to convert build.shm_size to bytes: %v", err)
+	}
+	if build.UseConfigProxy != nil && *build.UseConfigProxy {
+		for key, value := range dockerConfigProxyArgs(req, dependencies) {
+			if _, exists := options.BuildArgs[key]; !exists {
+				copy := value
+				options.BuildArgs[key] = &copy
+			}
+		}
 	}
 
-	return result.Digest, nil
+	buildCtx := ctx
+	var cancel context.CancelFunc
+	if build.HTTPTimeout > 0 {
+		buildCtx, cancel = context.WithTimeout(ctx, time.Duration(build.HTTPTimeout)*time.Second)
+		defer cancel()
+	}
+	response, err := cli.ImageBuild(buildCtx, contextReader, options)
+	if err != nil {
+		return nil, "", fmt.Errorf("Error building %s - %v", req.Name, err)
+	}
+	defer response.Body.Close()
+	parsed := docker.ParseBuildStream(response.Body)
+	stdout := strings.Join(parsed.Logs, "\n")
+	if parsed.Error != nil {
+		return nil, stdout, fmt.Errorf("Error building %s - %v, logs: %v", req.Name, parsed.Error, parsed.Logs)
+	}
+	_, raw, found, err := inspectImage(ctx, cli, reference)
+	if err != nil {
+		return nil, stdout, err
+	}
+	if !found {
+		return nil, stdout, fmt.Errorf("Error building %s - resulting image was not found", req.Name)
+	}
+	return raw, stdout, nil
+}
+
+func loadImage(ctx context.Context, cli client.APIClient, reference, requestedName, path string, dependencies docker.Dependencies) (map[string]any, string, error) {
+	archive, err := dependencies.FileSystem.Open(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("Error opening image %s - %v", path, err)
+	}
+	defer archive.Close()
+	response, err := cli.ImageLoad(ctx, archive)
+	if err != nil {
+		return nil, "", fmt.Errorf("Error loading image %s - %v", requestedName, err)
+	}
+	defer response.Close()
+	parsed := docker.ParseLoadStream(response)
+	stdout := strings.Join(parsed.Logs, "\n")
+	if parsed.Error != nil {
+		return nil, stdout, fmt.Errorf("Error loading image %s - %v", requestedName, parsed.Error)
+	}
+	if len(parsed.Images) == 0 {
+		return nil, stdout, fmt.Errorf("Detected no loaded images. Archive potentially corrupt?")
+	}
+	expected := reference
+	matched := false
+	for _, loaded := range parsed.Images {
+		if loaded == expected || (isImageID(requestedName) && strings.EqualFold(loaded, requestedName)) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		found := append([]string(nil), parsed.Images...)
+		sort.Strings(found)
+		quoted := make([]string, len(found))
+		for index, value := range found {
+			quoted[index] = fmt.Sprintf("%q", value)
+		}
+		return nil, stdout, fmt.Errorf("The archive did not contain image '%s'. Instead, found %s.", expected, strings.Join(quoted, ", "))
+	}
+	_, raw, found, err := inspectImage(ctx, cli, reference)
+	if err != nil {
+		return nil, stdout, err
+	}
+	if !found {
+		return nil, stdout, fmt.Errorf("The archive did not contain image '%s'.", expected)
+	}
+	return raw, stdout, nil
+}
+
+func archiveImage(ctx context.Context, cli client.APIClient, reference string, inspect map[string]any, path string, dependencies docker.Dependencies, checkMode bool) (bool, string, error) {
+	if imageID(inspect) == "" {
+		return false, "", nil
+	}
+	action := fmt.Sprintf("Archived image %s to %s, since none present", reference, path)
+	if existing, err := dependencies.FileSystem.Open(path); err == nil {
+		manifest, manifestErr := docker.ReadImageArchiveManifest(existing)
+		_ = existing.Close()
+		if manifestErr == nil && docker.ImageArchiveMatches(manifest, map[string]string{reference: imageID(inspect)}) {
+			return false, "", nil
+		}
+		if manifestErr != nil {
+			action = fmt.Sprintf("Archived image %s to %s, overwriting an unreadable archive file", reference, path)
+		} else if len(manifest) > 0 {
+			names := strings.Join(manifest[0].RepoTags, ", ")
+			action = fmt.Sprintf("Archived image %s to %s, overwriting archive with image %s named %s", reference, path, manifest[0].ImageID, names)
+		}
+	}
+	if checkMode {
+		return true, action, nil
+	}
+	stream, err := cli.ImageSave(ctx, []string{reference})
+	if err != nil {
+		return false, "", fmt.Errorf("Error getting image %s - %v", reference, err)
+	}
+	defer stream.Close()
+	output, err := dependencies.FileSystem.Create(path)
+	if err != nil {
+		return false, "", fmt.Errorf("Error writing image archive %s - %v", path, err)
+	}
+	if _, err := io.Copy(output, stream); err != nil {
+		_ = output.Close()
+		return false, "", fmt.Errorf("Error writing image archive %s - %v", path, err)
+	}
+	if err := output.Close(); err != nil {
+		return false, "", fmt.Errorf("Error writing image archive %s - %v", path, err)
+	}
+	return true, action, nil
+}
+
+func tagImage(ctx context.Context, cli client.APIClient, source, target string, force, checkMode bool) (bool, string, map[string]any, error) {
+	_, existing, found, err := inspectImage(ctx, cli, target)
+	if err != nil {
+		return false, "", nil, err
+	}
+	if found && !force {
+		return false, "", existing, nil
+	}
+	action := fmt.Sprintf("Tagged image %s to %s", source, target)
+	if checkMode {
+		return true, action, existing, nil
+	}
+	if _, err := cli.ImageTag(ctx, client.ImageTagOptions{Source: source, Target: target}); err != nil {
+		return false, "", nil, fmt.Errorf("Error: failed to tag image - %v", err)
+	}
+	_, tagged, taggedFound, err := inspectImage(ctx, cli, target)
+	if err != nil {
+		return false, "", nil, err
+	}
+	if !taggedFound {
+		return false, "", nil, fmt.Errorf("Error: failed to tag image - target image was not found")
+	}
+	if found && imageID(existing) == imageID(tagged) {
+		return false, action, tagged, nil
+	}
+	return true, action, tagged, nil
+}
+
+func pushImage(ctx context.Context, cli client.APIClient, reference, actionName string, req Request, dependencies docker.Dependencies, checkMode bool) (bool, string, map[string]any, error) {
+	action := fmt.Sprintf("Pushed image %s to %s", actionName, reference)
+	if checkMode {
+		return true, action, nil, nil
+	}
+	auth, err := registryAuth(reference, req, dependencies, true)
+	if err != nil {
+		return false, "", nil, err
+	}
+	stream, err := cli.ImagePush(ctx, reference, client.ImagePushOptions{RegistryAuth: auth})
+	if err != nil {
+		return false, "", nil, fmt.Errorf("Error pushing image %s: %v", reference, err)
+	}
+	defer stream.Close()
+	parsed := docker.ParsePullPushStream(stream)
+	if parsed.Error != nil {
+		return false, "", nil, fmt.Errorf("Error pushing image %s: %v", reference, parsed.Error)
+	}
+	changed := false
+	for _, line := range parsed.Logs {
+		if strings.HasSuffix(line, ": Pushing") || strings.HasSuffix(line, ": Pushed") || line == "Pushing" || line == "Pushed" {
+			changed = true
+		}
+	}
+	_, raw, found, err := inspectImage(ctx, cli, reference)
+	if err != nil {
+		return false, "", nil, err
+	}
+	if !found {
+		raw = map[string]any{}
+	}
+	if len(parsed.Logs) > 0 {
+		raw["push_status"] = parsed.Logs[len(parsed.Logs)-1]
+	}
+	return changed, action, raw, nil
+}
+
+func dockerConfigAuthConfigs(req Request, reference string, dependencies docker.Dependencies) (map[string]registry.AuthConfig, error) {
+	result := map[string]registry.AuthConfig{}
+	data, found, err := dockerConfigBytes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		var config struct {
+			Auths map[string]struct {
+				Auth          string `json:"auth"`
+				Username      string `json:"username"`
+				Password      string `json:"password"`
+				IdentityToken string `json:"identitytoken"`
+				RegistryToken string `json:"registrytoken"`
+			} `json:"auths"`
+		}
+		if err := json.Unmarshal(data, &config); err != nil {
+			return nil, fmt.Errorf("decode Docker registry config: %w", err)
+		}
+		for server, entry := range config.Auths {
+			auth := registry.AuthConfig{
+				Username:      entry.Username,
+				Password:      entry.Password,
+				ServerAddress: server,
+				IdentityToken: entry.IdentityToken,
+				RegistryToken: entry.RegistryToken,
+			}
+			if auth.Username == "" && auth.Password == "" && entry.Auth != "" {
+				decoded, decodeErr := base64.StdEncoding.DecodeString(entry.Auth)
+				if decodeErr != nil {
+					return nil, fmt.Errorf("decode authentication for registry %s: %w", server, decodeErr)
+				}
+				username, password, ok := strings.Cut(string(decoded), ":")
+				if !ok {
+					return nil, fmt.Errorf("authentication for registry %s does not contain username and password", server)
+				}
+				auth.Username = username
+				auth.Password = password
+			}
+			result[server] = auth
+		}
+	}
+	if req.RegistryUsername != "" || req.RegistryPassword != "" {
+		server, registryErr := docker.RegistryName(reference)
+		if registryErr != nil {
+			return nil, registryErr
+		}
+		result[server] = registry.AuthConfig{
+			Username:      req.RegistryUsername,
+			Password:      req.RegistryPassword,
+			ServerAddress: server,
+		}
+	}
+	return result, nil
+}
+
+func registryAuth(reference string, req Request, dependencies docker.Dependencies, requireHeader bool) (string, error) {
+	if req.RegistryUsername != "" || req.RegistryPassword != "" {
+		return docker.EncodeRegistryAuthForImage(reference, req.RegistryUsername, req.RegistryPassword)
+	}
+	config, found, err := dockerConfigBytes(dependencies)
+	if err != nil {
+		return "", err
+	}
+	if found {
+		auth, authFound, authErr := docker.RegistryAuthFromConfig(config, reference)
+		if authErr != nil {
+			return "", authErr
+		}
+		if authFound {
+			return docker.EncodeRegistryAuthConfig(auth)
+		}
+	}
+	if requireHeader {
+		return base64.URLEncoding.EncodeToString([]byte("{}")), nil
+	}
+	return "", nil
+}
+
+func dockerConfigBytes(dependencies docker.Dependencies) ([]byte, bool, error) {
+	var directory string
+	if configured, found := dependencies.Environment.LookupEnv("DOCKER_CONFIG"); found && configured != "" {
+		directory = configured
+	} else {
+		home, err := dependencies.FileSystem.UserHomeDir()
+		if err != nil {
+			return nil, false, nil
+		}
+		directory = filepath.Join(home, ".docker")
+	}
+	data, err := dependencies.FileSystem.ReadFile(filepath.Join(directory, "config.json"))
+	if err != nil {
+		return nil, false, nil
+	}
+	return data, true, nil
+}
+
+func dockerConfigProxyArgs(req Request, dependencies docker.Dependencies) map[string]string {
+	data, found, _ := dockerConfigBytes(dependencies)
+	if !found {
+		return nil
+	}
+	var config struct {
+		Proxies map[string]map[string]string `json:"proxies"`
+	}
+	if json.Unmarshal(data, &config) != nil {
+		return nil
+	}
+	values := map[string]string(nil)
+	if connection, err := docker.ResolveConnectionWithEnvironment(req.CommonArgs, dependencies.Environment); err == nil {
+		values = config.Proxies[connection.DockerHost]
+	}
+	if values == nil {
+		values = config.Proxies["default"]
+	}
+	mapping := map[string]string{
+		"httpProxy":  "HTTP_PROXY",
+		"httpsProxy": "HTTPS_PROXY",
+		"noProxy":    "NO_PROXY",
+		"ftpProxy":   "FTP_PROXY",
+	}
+	result := map[string]string{}
+	for source, target := range mapping {
+		if value := values[source]; value != "" {
+			result[target] = value
+			result[strings.ToLower(target)] = value
+		}
+	}
+	return result
+}
+
+func stringifyMap(values map[string]any) map[string]string {
+	if values == nil {
+		return nil
+	}
+	result := make(map[string]string, len(values))
+	for key, value := range values {
+		result[key] = fmt.Sprint(value)
+	}
+	return result
+}
+
+func stringifyPointerMap(values map[string]any) map[string]*string {
+	if values == nil {
+		return nil
+	}
+	result := make(map[string]*string, len(values))
+	for key, value := range values {
+		text := fmt.Sprint(value)
+		result[key] = &text
+	}
+	return result
+}
+
+func extraHosts(values map[string]any) []string {
+	if values == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]string, 0, len(keys))
+	for _, key := range keys {
+		result = append(result, fmt.Sprintf("%s:%v", key, values[key]))
+	}
+	return result
+}
+
+func containerLimitCPUSet(limits *ContainerLimits) string {
+	if limits == nil {
+		return ""
+	}
+	return limits.CPUSetCPUs
+}
+
+func containerLimitCPUShares(limits *ContainerLimits) int64 {
+	if limits == nil {
+		return 0
+	}
+	return limits.CPUShares
+}
+
+func byteValue(value string, allowUnlimited bool) (int64, error) {
+	if value == "" {
+		return 0, nil
+	}
+	if allowUnlimited && (value == "unlimited" || value == "-1") {
+		return -1, nil
+	}
+	return units.RAMInBytes(value)
+}
+
+func parsePlatform(value string) (ocispec.Platform, error) {
+	parts := strings.Split(value, "/")
+	if len(parts) < 1 || len(parts) > 3 || parts[0] == "" {
+		return ocispec.Platform{}, fmt.Errorf("must use os[/arch[/variant]]")
+	}
+	result := ocispec.Platform{OS: strings.ToLower(parts[0])}
+	if len(parts) >= 2 {
+		result.Architecture = strings.ToLower(parts[1])
+	}
+	if len(parts) == 3 {
+		result.Variant = strings.ToLower(parts[2])
+	}
+	return result, nil
 }

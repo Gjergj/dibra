@@ -9,7 +9,6 @@ services:
     cgroup: host
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
-      - /var/run/docker.sock:/var/run/docker.sock
     tmpfs:
       - /run
       - /run/lock
@@ -22,7 +21,7 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     healthcheck:
-      test: ["CMD", "systemctl", "is-active", "ssh"]
+      test: ["CMD-SHELL", "systemctl is-active --quiet ssh && docker info >/dev/null"]
       interval: 2s
       timeout: 5s
       retries: 15

@@ -224,9 +224,10 @@ func BuildPortBindings(specs []string) (nat.PortMap, nat.PortSet, error) {
 	return ToNatPortMap(bindings)
 }
 
-// ExpandPortBinding expands matching container and host ranges. A host range
-// paired with one container port is preserved because Docker treats it as a
-// range from which it may select an available host port.
+// ExpandPortBinding expands container and host ranges. When both sides are
+// ranges, only the shorter length is used, matching community.docker's zip
+// semantics. A host range paired with one container port is preserved because
+// Docker treats it as a range from which it may select an available host port.
 func ExpandPortBinding(binding PortBinding) ([]PortBinding, error) {
 	containerPorts, err := ExpandPortRange(binding.ContainerPort)
 	if err != nil {
@@ -241,8 +242,10 @@ func ExpandPortBinding(binding PortBinding) ([]PortBinding, error) {
 		}
 		if len(containerPorts) == 1 && len(hostPorts) > 1 {
 			hostPorts = []string{binding.HostPort}
-		} else if len(hostPorts) != len(containerPorts) {
-			return nil, fmt.Errorf("port ranges do not match in length")
+		} else if len(hostPorts) < len(containerPorts) {
+			containerPorts = containerPorts[:len(hostPorts)]
+		} else if len(containerPorts) < len(hostPorts) {
+			hostPorts = hostPorts[:len(containerPorts)]
 		}
 	}
 
@@ -306,7 +309,19 @@ func normalizePort(port nat.Port) nat.Port {
 
 // ComparePortBindings compares two port maps for equality.
 func ComparePortBindings(desired, current nat.PortMap) bool {
-	if len(desired) != len(current) {
+	return comparePortBindings(desired, current, true)
+}
+
+// PortBindingsContain reports whether every desired container-port binding is
+// present in current while allowing current to expose additional container
+// ports. Bindings for a requested port still compare exactly, matching
+// community.docker's allow_more_present dictionary semantics.
+func PortBindingsContain(desired, current nat.PortMap) bool {
+	return comparePortBindings(desired, current, false)
+}
+
+func comparePortBindings(desired, current nat.PortMap, strict bool) bool {
+	if strict && len(desired) != len(current) {
 		return false
 	}
 

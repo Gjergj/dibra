@@ -1,5 +1,6 @@
 FROM ubuntu:22.04
 
+ARG DOCKER_ENGINE_VERSION=29.7.2
 ARG COMPOSE_VERSION=5.4.0
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -24,8 +25,16 @@ RUN apt-get update && apt-get install -y \
     xz-utils \
     cowsay \
     nginx \
-    docker.io \
     && rm -rf /var/lib/apt/lists/*
+
+# The integration host runs its own daemon. This avoids silently testing
+# against whichever Engine happens to back the developer's Docker Desktop.
+RUN architecture="$(uname -m)" && \
+    curl -fSL "https://download.docker.com/linux/static/stable/${architecture}/docker-${DOCKER_ENGINE_VERSION}.tgz" -o /tmp/docker.tgz && \
+    tar -xzf /tmp/docker.tgz -C /usr/local/bin --strip-components=1 && \
+    rm -f /tmp/docker.tgz
+
+COPY docker.service /etc/systemd/system/docker.service
 
 # Install Docker Plugins manually
 RUN mkdir -p /usr/local/lib/docker/cli-plugins && \
@@ -43,7 +52,7 @@ RUN cd /lib/systemd/system/sysinit.target.wants/ && \
     rm -f /lib/systemd/system/basic.target.wants/* && \
     rm -f /lib/systemd/system/anaconda.target.wants/*
 
-RUN systemctl enable ssh
+RUN systemctl enable ssh docker
 
 RUN useradd -m -s /bin/bash testuser && \
     echo "testuser:testpass" | chpasswd && \
@@ -60,7 +69,7 @@ RUN ln -sf /lib/systemd/system/systemd-user-sessions.service /etc/systemd/system
 
 RUN mkdir -p /etc/apt/keyrings
 
-VOLUME ["/sys/fs/cgroup", "/tmp", "/run"]
+VOLUME ["/sys/fs/cgroup", "/var/lib/docker", "/tmp", "/run"]
 
 EXPOSE 22
 

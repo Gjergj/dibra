@@ -1,19 +1,41 @@
 package docker_image_info
 
-import "github.com/gjergjiramku/dibra/internal/modules/docker"
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 
-// Request represents the module arguments
-type Request struct {
-	docker.CommonArgs
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
+)
 
-	Name string `json:"name"` // Image name, tag, or ID to inspect (e.g., "alpine:latest", "sha256:abc123")
+type StringList []string
+
+func (values *StringList) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) > 0 && data[0] == '"' {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		*values = StringList{value}
+		return nil
+	}
+	var result []string
+	if err := json.Unmarshal(data, &result); err != nil {
+		return fmt.Errorf("must be a string or list of strings: %w", err)
+	}
+	*values = result
+	return nil
 }
 
-// Response represents the module return value
+type Request struct {
+	docker.CommonArgs
+	Name StringList `json:"name"`
+}
+
 type Response struct {
-	Changed bool                     `json:"changed"`
-	Failed  bool                     `json:"failed"`
-	Msg     string                   `json:"msg,omitempty"`
-	Exists  bool                     `json:"exists"`
-	Images  []map[string]interface{} `json:"images,omitempty"` // List of matching images
+	Changed bool             `json:"changed"`
+	Failed  bool             `json:"failed"`
+	Msg     string           `json:"msg,omitempty"`
+	Images  []map[string]any `json:"images"`
 }

@@ -1,6 +1,9 @@
 package docker
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestImageReferenceNormalization(t *testing.T) {
 	tests := []struct {
@@ -67,5 +70,21 @@ func TestImageReferenceHostnamePort(t *testing.T) {
 	host, port, err = ParseImageReference("registry.example.test:5443/app").HostnamePort()
 	if err != nil || host != "registry.example.test" || port != 5443 {
 		t.Fatalf("HostnamePort() = %q, %d, %v", host, port, err)
+	}
+}
+
+func TestImageIDAndTagValidation(t *testing.T) {
+	id := "sha256:" + strings.Repeat("a", 64)
+	if !IsImageID(id) || !IsImageID("sha256:"+strings.Repeat("A", 64)) {
+		t.Fatal("canonical full image IDs were rejected")
+	}
+	for _, value := range []string{strings.Repeat("a", 64), "sha256:" + strings.Repeat("a", 12), "sha256:not-hex"} {
+		if IsImageID(value) {
+			t.Fatalf("IsImageID(%q) unexpectedly succeeded", value)
+		}
+	}
+	if !IsValidImageTag("release_2026.08-1", false) || IsValidImageTag("foo/bar", false) ||
+		IsValidImageTag("", false) || !IsValidImageTag("", true) {
+		t.Fatal("image tag validation did not match the pinned contract")
 	}
 }

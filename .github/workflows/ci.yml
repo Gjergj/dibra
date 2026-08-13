@@ -56,6 +56,42 @@ jobs:
         if: always()
         run: make test-deploy-integration-down
 
+  docker-container-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Run Docker Engine 29.7.2 docker_container certification tests
+        run: make test-docker-container-integration
+
+      - name: Clean up integration containers
+        if: always()
+        run: make test-integration-down
+
+  docker-image-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Run Docker Engine 29.7.2 image-family certification tests
+        run: make test-docker-image-integration
+
+      - name: Clean up integration containers
+        if: always()
+        run: make test-integration-down
+
   goreleaser-check:
     runs-on: ubuntu-latest
     steps:

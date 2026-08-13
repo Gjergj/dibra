@@ -7,14 +7,22 @@ import (
 
 	"github.com/gjergjiramku/dibra/internal/execution"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_container"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_container_exec"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_container_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_image"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_image_build"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_image_export"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_image_info"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_image_load"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_image_pull"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_image_push"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_image_remove"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_image_tag"
 )
 
 func TestDefinitionsAreCompleteAndResolvable(t *testing.T) {
 	entries := Definitions()
-	if got, want := len(entries), 27; got != want {
+	if got, want := len(entries), 31; got != want {
 		t.Fatalf("Definitions() has %d entries, want %d", got, want)
 	}
 
@@ -78,6 +86,60 @@ func TestDecodeUsesRegisteredConcreteRequestType(t *testing.T) {
 	}
 }
 
+func TestDockerContainerCompatibilityAliasesNormalizeToCanonicalContract(t *testing.T) {
+	invocation, err := Decode("docker_container", json.RawMessage(`{
+		"name":"web",
+		"cap_add":["NET_ADMIN"],
+		"ports":["8080:80"],
+		"security_opt":["no-new-privileges:true"],
+		"comparisons":{"cap_add":"strict","ports":"ignore"},
+		"networks_append":false,
+		"restart_policy":"on-failure:3",
+		"ulimits":[{"name":"nofile","soft":1024,"hard":2048}]
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := invocation.Arguments.(docker_container.Request)
+	if len(request.Capabilities) != 1 || request.Capabilities[0] != "NET_ADMIN" || len(request.PublishedPorts) != 1 {
+		t.Fatalf("aliases were not normalized: %#v", request)
+	}
+	if request.Comparisons["networks"] != "strict" || request.RestartPolicy != "on-failure" || request.RestartRetries == nil || *request.RestartRetries != 3 {
+		t.Fatalf("behavior aliases were not normalized: %#v", request)
+	}
+	if request.Comparisons["capabilities"] != "strict" || request.Comparisons["published_ports"] != "ignore" {
+		t.Fatalf("comparison aliases were not normalized: %#v", request.Comparisons)
+	}
+	if len(request.Ulimits) != 1 || request.Ulimits[0] != "nofile:1024:2048" {
+		t.Fatalf("legacy ulimits were not normalized: %#v", request.Ulimits)
+	}
+}
+
+func TestDockerContainerComparisonAliasesRejectDuplicates(t *testing.T) {
+	_, err := Decode("docker_container", json.RawMessage(`{
+		"name":"web",
+		"comparisons":{"cap_add":"strict","capabilities":"ignore"}
+	}`))
+	if err == nil || !strings.Contains(err.Error(), "both capabilities and its alias cap_add") {
+		t.Fatalf("duplicate comparison aliases error = %v", err)
+	}
+}
+
+func TestDockerContainerNetworksAppendAliasPreservesExistingNetworks(t *testing.T) {
+	invocation, err := Decode("docker_container", json.RawMessage(`{
+		"name":"web",
+		"networks":[{"name":"frontend"}],
+		"networks_append":true
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := invocation.Arguments.(docker_container.Request)
+	if request.Comparisons["networks"] != "allow_more_present" || request.Comparisons["network_mode"] != "ignore" {
+		t.Fatalf("networks_append normalization failed: %#v", request.Comparisons)
+	}
+}
+
 func TestDecodePreservesExplicitFalseDockerConnectionArguments(t *testing.T) {
 	explicit, err := Decode("docker_container_info", json.RawMessage(`{"name":"web","tls":false,"validate_certs":false}`))
 	if err != nil {
@@ -95,6 +157,119 @@ func TestDecodePreservesExplicitFalseDockerConnectionArguments(t *testing.T) {
 	omittedRequest := omitted.Arguments.(docker_container_info.Request)
 	if omittedRequest.TLS != nil || omittedRequest.ValidateCerts != nil {
 		t.Fatalf("omitted values were not preserved: %#v", omittedRequest.CommonArgs)
+	}
+}
+
+func TestDockerContainerExecAliasesDefaultsAndPresence(t *testing.T) {
+	invocation, err := Decode("docker_container_exec", json.RawMessage(`{
+		"container":"web",
+		"command":"printf 'hello world'",
+		"docker_url":"unix:///tmp/docker.sock",
+		"docker_api_version":"1.55",
+		"tls_verify":false,
+		"stdin_add_newline":false,
+		"strip_empty_ends":false
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := invocation.Arguments.(docker_container_exec.Request)
+	if request.DockerHost == nil || *request.DockerHost != "unix:///tmp/docker.sock" ||
+		request.APIVersion == nil || *request.APIVersion != "1.55" ||
+		request.ValidateCerts == nil || *request.ValidateCerts {
+		t.Fatalf("connection aliases were not normalized: %#v", request.CommonArgs)
+	}
+	if request.StdinAddNewline == nil || *request.StdinAddNewline ||
+		request.StripEmptyEnds == nil || *request.StripEmptyEnds {
+		t.Fatalf("explicit false defaults were not preserved: %#v", request)
+	}
+
+	arguments, err := ArgumentsMap(invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"container", "command", "docker_host", "api_version", "validate_certs", "stdin_add_newline", "strip_empty_ends"} {
+		if _, found := arguments[name]; !found {
+			t.Errorf("canonical argument %q was not forwarded: %#v", name, arguments)
+		}
+	}
+	for _, name := range []string{"argv", "stdin", "detach", "tty", "tls", "docker_url", "docker_api_version", "tls_verify"} {
+		if _, found := arguments[name]; found {
+			t.Errorf("omitted or alias argument %q was forwarded: %#v", name, arguments)
+		}
+	}
+}
+
+func TestDockerContainerExecRejectsDuplicateAliases(t *testing.T) {
+	_, err := Decode("docker_container_exec", json.RawMessage(`{
+		"container":"web",
+		"argv":["true"],
+		"ca_cert":"/certs/one.pem",
+		"tls_ca_cert":"/certs/two.pem"
+	}`))
+	if err == nil || !strings.Contains(err.Error(), "both ca_cert and its alias tls_ca_cert") {
+		t.Fatalf("duplicate aliases error = %v", err)
+	}
+}
+
+func TestDockerContainerInfoAliasesAndPresence(t *testing.T) {
+	invocation, err := Decode("community.docker.docker_container_info", json.RawMessage(`{
+		"name":"",
+		"docker_url":"unix:///tmp/docker.sock",
+		"docker_api_version":"1.55",
+		"ca_cert":"/certs/ca.pem",
+		"tls_client_cert":"/certs/cert.pem",
+		"tls_client_key":"/certs/key.pem",
+		"tls_verify":false
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := invocation.Arguments.(docker_container_info.Request)
+	if request.Name != "" ||
+		request.DockerHost == nil || *request.DockerHost != "unix:///tmp/docker.sock" ||
+		request.APIVersion == nil || *request.APIVersion != "1.55" ||
+		request.CAPath == nil || *request.CAPath != "/certs/ca.pem" ||
+		request.ClientCert == nil || *request.ClientCert != "/certs/cert.pem" ||
+		request.ClientKey == nil || *request.ClientKey != "/certs/key.pem" ||
+		request.ValidateCerts == nil || *request.ValidateCerts {
+		t.Fatalf("decoded request = %#v", request)
+	}
+
+	arguments, err := ArgumentsMap(invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"name", "docker_host", "api_version", "ca_path", "client_cert", "client_key", "validate_certs"} {
+		if _, found := arguments[name]; !found {
+			t.Errorf("canonical argument %q was not forwarded: %#v", name, arguments)
+		}
+	}
+	for _, name := range []string{"tls", "debug", "timeout", "docker_url", "docker_api_version", "ca_cert", "tls_verify"} {
+		if _, found := arguments[name]; found {
+			t.Errorf("omitted or alias argument %q was forwarded: %#v", name, arguments)
+		}
+	}
+}
+
+func TestDockerContainerArgumentsMapPreservesExplicitEmptyScalars(t *testing.T) {
+	invocation, err := Decode("docker_container", json.RawMessage(`{"name":"web","hostname":"","user":"","network_mode":""}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	arguments, err := ArgumentsMap(invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"name", "hostname", "user", "network_mode"} {
+		if _, found := arguments[name]; !found {
+			t.Fatalf("explicit argument %q was dropped: %#v", name, arguments)
+		}
+	}
+	for _, name := range []string{"domainname", "working_dir", "privileged"} {
+		if _, found := arguments[name]; found {
+			t.Fatalf("omitted argument %q was emitted: %#v", name, arguments)
+		}
 	}
 }
 
@@ -144,8 +319,15 @@ func TestCheckModeSkipsModuleWithoutImplementedSupport(t *testing.T) {
 	}
 }
 
-func TestOnlyReadOnlyModulesInitiallyImplementCheckMode(t *testing.T) {
+func TestModulesWithImplementedCheckModeAreDeclared(t *testing.T) {
 	implemented := map[string]bool{
+		"docker_container":          true,
+		"docker_image":              true,
+		"docker_image_build":        true,
+		"docker_image_export":       true,
+		"docker_image_pull":         true,
+		"docker_image_remove":       true,
+		"docker_image_tag":          true,
 		"docker_container_info":     true,
 		"docker_image_info":         true,
 		"docker_network_info":       true,
@@ -220,6 +402,186 @@ func TestImageExportNameArgumentAliasIsNormalizedByTypedDecoder(t *testing.T) {
 	if len(request.Names) != 1 || request.Names[0] != "alpine:latest" {
 		t.Fatalf("names = %#v", request.Names)
 	}
+
+	invocation, err = Decode("docker_image_export", json.RawMessage(`{"name":["alpine","busybox"],"path":"/tmp/images.tar"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request = invocation.Arguments.(docker_image_export.Request)
+	if len(request.Names) != 2 || request.Names[1] != "busybox" {
+		t.Fatalf("list-form name alias decoded as %#v", request.Names)
+	}
+
+	if _, err := Decode("docker_image_export", json.RawMessage(`{"name":"alpine","names":["busybox"],"path":"/tmp/images.tar"}`)); err == nil {
+		t.Fatal("name and names together were accepted")
+	}
+}
+
+func TestDockerImageBuildCanonicalOptionsDecodeStrictly(t *testing.T) {
+	invocation, err := Decode("community.docker.docker_image_build", json.RawMessage(`{
+		"name":"example:v1",
+		"path":"/src",
+		"platform":"linux/amd64",
+		"args":{"COUNT":3},
+		"secrets":[{"id":"token","type":"value","value":"secret"}],
+		"outputs":[{"type":"image","name":"registry.test/example:v1","push":true}],
+		"docker_cli":"/usr/local/bin/docker",
+		"docker_url":"unix:///run/docker.sock"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, ok := invocation.Arguments.(docker_image_build.Request)
+	if !ok {
+		t.Fatalf("arguments type = %T", invocation.Arguments)
+	}
+	if len(request.Platform) != 1 || request.Platform[0] != "linux/amd64" ||
+		len(request.Outputs) != 1 || len(request.Outputs[0].Name) != 1 ||
+		request.DockerCLI != "/usr/local/bin/docker" || request.DockerHost == nil ||
+		*request.DockerHost != "unix:///run/docker.sock" {
+		t.Fatalf("request = %#v", request)
+	}
+
+	for _, payload := range []string{
+		`{"name":"example","path":"/src","secrets":[{"id":"token","type":"value","unknown":true}]}`,
+		`{"name":"example","path":"/src","outputs":[{"type":"image","unknown":true}]}`,
+	} {
+		if _, err := Decode("docker_image_build", json.RawMessage(payload)); err == nil {
+			t.Fatalf("Decode(%s) succeeded", payload)
+		}
+	}
+}
+
+func TestDockerImageInfoAndLoadDecodePinnedContracts(t *testing.T) {
+	infoInvocation, err := Decode("community.docker.docker_image_info", json.RawMessage(`{
+		"name":["alpine","busybox:stable"],
+		"docker_url":"unix:///run/docker.sock",
+		"docker_api_version":"auto"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	infoRequest, ok := infoInvocation.Arguments.(docker_image_info.Request)
+	if !ok || len(infoRequest.Name) != 2 || infoRequest.Name[0] != "alpine" ||
+		infoRequest.DockerHost == nil || *infoRequest.DockerHost != "unix:///run/docker.sock" {
+		t.Fatalf("info request = %#v", infoInvocation.Arguments)
+	}
+	scalarInvocation, err := Decode("docker_image_info", json.RawMessage(`{"name":"alpine"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request := scalarInvocation.Arguments.(docker_image_info.Request); len(request.Name) != 1 || request.Name[0] != "alpine" {
+		t.Fatalf("scalar info request = %#v", request)
+	}
+	allInvocation, err := Decode("docker_image_info", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request := allInvocation.Arguments.(docker_image_info.Request); request.Name != nil {
+		t.Fatalf("all-images request = %#v", request)
+	}
+
+	loadInvocation, err := Decode("community.docker.docker_image_load", json.RawMessage(`{
+		"path":"/tmp/images.tar",
+		"tls_ca_cert":"/tmp/ca.pem",
+		"docker_api_version":"1.52"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loadRequest, ok := loadInvocation.Arguments.(docker_image_load.Request)
+	if !ok || loadRequest.Path != "/tmp/images.tar" || loadRequest.CAPath == nil ||
+		*loadRequest.CAPath != "/tmp/ca.pem" || loadRequest.APIVersion == nil ||
+		*loadRequest.APIVersion != "1.52" {
+		t.Fatalf("load request = %#v", loadInvocation.Arguments)
+	}
+}
+
+func TestDockerImagePullAndPushDecodePinnedContracts(t *testing.T) {
+	pullInvocation, err := Decode("community.docker.docker_image_pull", json.RawMessage(`{
+		"name":"registry.test/team/app:v2",
+		"tag":"ignored",
+		"platform":"linux/amd64",
+		"pull":"not_present",
+		"docker_url":"unix:///run/docker.sock",
+		"docker_api_version":"1.52"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pullRequest, ok := pullInvocation.Arguments.(docker_image_pull.Request)
+	if !ok || pullRequest.Name != "registry.test/team/app:v2" || pullRequest.Platform != "linux/amd64" ||
+		pullRequest.Pull != "not_present" || pullRequest.DockerHost == nil ||
+		*pullRequest.DockerHost != "unix:///run/docker.sock" {
+		t.Fatalf("pull request = %#v", pullInvocation.Arguments)
+	}
+
+	pushInvocation, err := Decode("docker_image_push", json.RawMessage(`{
+		"name":"registry.test/team/app",
+		"tag":"v1",
+		"tls_ca_cert":"/tmp/ca.pem",
+		"docker_api_version":"auto"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushRequest, ok := pushInvocation.Arguments.(docker_image_push.Request)
+	if !ok || pushRequest.Name != "registry.test/team/app" || pushRequest.Tag != "v1" ||
+		pushRequest.CAPath == nil || *pushRequest.CAPath != "/tmp/ca.pem" {
+		t.Fatalf("push request = %#v", pushInvocation.Arguments)
+	}
+
+	for _, module := range []string{"docker_image_pull", "docker_image_push"} {
+		if _, err := Decode(module, json.RawMessage(`{"name":"alpine","unknown":true}`)); err == nil {
+			t.Fatalf("%s accepted unknown option", module)
+		}
+	}
+}
+
+func TestDockerImageRemoveAndTagDecodePinnedContracts(t *testing.T) {
+	removeInvocation, err := Decode("community.docker.docker_image_remove", json.RawMessage(`{
+		"name":"example:v1",
+		"tag":"ignored",
+		"force":true,
+		"prune":false,
+		"docker_url":"unix:///run/docker.sock"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	removeRequest, ok := removeInvocation.Arguments.(docker_image_remove.Request)
+	if !ok || removeRequest.Name != "example:v1" || !removeRequest.Force || removeRequest.Prune ||
+		removeRequest.DockerHost == nil || *removeRequest.DockerHost != "unix:///run/docker.sock" {
+		t.Fatalf("remove request = %#v", removeInvocation.Arguments)
+	}
+	if !removeRequest.ProvidedArguments()["prune"] {
+		t.Fatalf("remove argument presence = %#v", removeRequest.ProvidedArguments())
+	}
+
+	tagInvocation, err := Decode("docker_image_tag", json.RawMessage(`{
+		"name":"example:v1",
+		"tag":"ignored",
+		"repository":["target:latest","registry.test/team/target:v2"],
+		"existing_images":"keep",
+		"tls_ca_cert":"/tmp/ca.pem"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tagRequest, ok := tagInvocation.Arguments.(docker_image_tag.Request)
+	if !ok || len(tagRequest.Repository) != 2 || tagRequest.ExistingImages != "keep" ||
+		tagRequest.CAPath == nil || *tagRequest.CAPath != "/tmp/ca.pem" {
+		t.Fatalf("tag request = %#v", tagInvocation.Arguments)
+	}
+
+	for _, module := range []string{"docker_image_remove", "docker_image_tag"} {
+		if _, err := Decode(module, json.RawMessage(`{"name":"alpine","unknown":true}`)); err == nil {
+			t.Fatalf("%s accepted unknown option", module)
+		}
+	}
+	if _, err := Decode("docker_image_tag", json.RawMessage(`{"name":"alpine","repository":"target"}`)); err == nil {
+		t.Fatal("docker_image_tag accepted scalar repository")
+	}
 }
 
 func TestDockerImageBuildPathCompatibilityAliasIsNormalized(t *testing.T) {
@@ -231,15 +593,79 @@ func TestDockerImageBuildPathCompatibilityAliasIsNormalized(t *testing.T) {
 	if !ok {
 		t.Fatalf("arguments type = %T", invocation.Arguments)
 	}
-	if request.BuildPath != "/src" {
-		t.Fatalf("build path = %q", request.BuildPath)
+	if request.Build == nil || request.Build.Path != "/src" {
+		t.Fatalf("build = %#v", request.Build)
+	}
+}
+
+func TestDockerImageCanonicalNestedOptionsAndPresence(t *testing.T) {
+	invocation, err := Decode("community.docker.docker_image", json.RawMessage(`{
+		"name":"example",
+		"source":"build",
+		"build":{
+			"path":"/src",
+			"dockerfile":"Containerfile",
+			"cache_from":["base:latest"],
+			"container_limits":{"memory":"7MB","memswap":"unlimited","cpushares":512,"cpusetcpus":"0-1"},
+			"etc_hosts":{"host.test":"host-gateway"},
+			"args":{"NUMBER":42},
+			"pull":false,
+			"rm":false,
+			"platform":"linux/amd64",
+			"labels":{"parity":"verified"}
+		},
+		"archive_path":"/tmp/image.tar",
+		"force_absent":true,
+		"force_source":true,
+		"force_tag":true,
+		"pull":{"platform":"linux/amd64"},
+		"push":true,
+		"repository":"registry.test/example:v1",
+		"state":"present",
+		"tag":"v1",
+		"docker_url":"unix:///run/docker.sock"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, ok := invocation.Arguments.(docker_image.Request)
+	if !ok {
+		t.Fatalf("arguments type = %T", invocation.Arguments)
+	}
+	if request.Build == nil || request.Build.Path != "/src" || request.Build.Dockerfile != "Containerfile" ||
+		request.Build.ContainerLimits == nil || request.Build.ContainerLimits.MemorySwap != "unlimited" ||
+		request.Pull == nil || request.Pull.Platform != "linux/amd64" {
+		t.Fatalf("request = %#v", request)
+	}
+	if request.Build.Pull == nil || *request.Build.Pull || request.Build.Remove == nil || *request.Build.Remove {
+		t.Fatalf("explicit false values were not preserved: %#v", request.Build)
+	}
+	if request.DockerHost == nil || *request.DockerHost != "unix:///run/docker.sock" {
+		t.Fatalf("docker_host = %#v", request.DockerHost)
+	}
+	for _, argument := range []string{"build", "archive_path", "force_source", "pull", "repository"} {
+		if !request.ProvidedArguments()[argument] {
+			t.Errorf("provided arguments = %#v, missing %q", request.ProvidedArguments(), argument)
+		}
+	}
+}
+
+func TestDockerImageRejectsUnknownNestedAndDuplicateCompatibilityOptions(t *testing.T) {
+	for _, input := range []string{
+		`{"name":"example","source":"build","build":{"path":"/src","unknown":true}}`,
+		`{"name":"example","source":"build","build_path":"/src","build":{"path":"/other"}}`,
+		`{"name":"example","source":"build","dockerfile":"Dockerfile","build":{"path":"/src","dockerfile":"Containerfile"}}`,
+	} {
+		if _, err := Decode("docker_image", json.RawMessage(input)); err == nil {
+			t.Fatalf("Decode(%s) unexpectedly succeeded", input)
+		}
 	}
 }
 
 func TestSensitiveArgumentsAreDeclared(t *testing.T) {
 	tests := map[string][]string{
 		"docker_container":           {"registry_password"},
-		"docker_image":               {"registry_password"},
+		"docker_image":               {"build.args", "registry_password"},
 		"docker_login":               {"password"},
 		"docker_secret":              {"data"},
 		"docker_config":              {"data"},
@@ -383,6 +809,10 @@ func TestCapabilitiesMatchUpstreamDeclarations(t *testing.T) {
 		"docker_image_build":         {SupportFull, SupportNone},
 		"docker_image_load":          {SupportNone, SupportNone},
 		"docker_image_export":        {SupportFull, SupportNone},
+		"docker_image_pull":          {SupportPartial, SupportFull},
+		"docker_image_push":          {SupportNone, SupportNone},
+		"docker_image_remove":        {SupportFull, SupportFull},
+		"docker_image_tag":           {SupportFull, SupportFull},
 		"docker_container_info":      {SupportFull, SupportNA},
 		"docker_image_info":          {SupportFull, SupportNA},
 		"docker_network_info":        {SupportFull, SupportNA},

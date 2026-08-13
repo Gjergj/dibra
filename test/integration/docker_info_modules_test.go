@@ -5,100 +5,110 @@ package integration
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
 
-// TestPlaybook_DockerContainerInfo tests the docker_container_info module
 func TestPlaybook_DockerContainerInfo(t *testing.T) {
-	// First create a container to inspect
-	setupPlaybook := `
-hosts:
-  - name: testhost
-    host: localhost
-    port: 2222
-    user: root
-    password: rootpass
+	client := getClient(t)
+	defer client.Close()
 
-tasks:
-  - name: Create test container
-    docker_container:
-      name: info-test-container
-      image: alpine:latest
-      state: started
-      command: ["sleep", "infinity"]
+	const containerName = "info-test-container"
+	const presentResult = "/tmp/dibra-container-info-present.json"
+	const missingResult = "/tmp/dibra-container-info-missing.json"
+	resultTemplate := filepath.Join(t.TempDir(), "container-info-result.j2")
+	if err := os.WriteFile(resultTemplate, []byte(`{{ container_info | to_json }}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	remoteExec(t, client, "docker rm -f "+containerName+" || true")
+	remoteExec(t, client, "rm -f "+presentResult+" "+missingResult)
+	remoteExec(t, client, "docker run -d --name "+containerName+" --label parity=container-info -e MODE=test alpine:latest sleep 3600")
+	defer remoteExec(t, client, "docker rm -f "+containerName+" || true")
+
+	presentPlaybook := playbookHeader + `
+  - name: Inspect the existing container
+    community.docker.docker_container_info:
+      name: ` + containerName + `
+      docker_url: unix:///var/run/docker.sock
+      docker_api_version: auto
+    register: container_info
+
+  - name: Save the registered result for comparison
+    template:
+      src: ` + resultTemplate + `
+      dest: ` + presentResult + `
 `
-	runPlaybook(t, setupPlaybook)
-	defer func() {
-		cleanupPlaybook := `
-hosts:
-  - name: testhost
-    host: localhost
-    port: 2222
-    user: root
-    password: rootpass
+	presentOutput := runPlaybook(t, presentPlaybook)
+	if strings.Contains(presentOutput, "FAILED") {
+		t.Fatalf("existing-container inspection failed: %s", presentOutput)
+	}
 
-tasks:
-  - name: Remove test container
-    docker_container:
-      name: info-test-container
-      state: absent
-`
-		runPlaybook(t, cleanupPlaybook)
-	}()
+	var registered map[string]interface{}
+	presentJSON := remoteExec(t, client, "cat "+presentResult)
+	if presentJSON == "" {
+		t.Fatalf("registered result was not written: %s", presentOutput)
+	}
+	if err := json.Unmarshal([]byte(presentJSON), &registered); err != nil {
+		t.Fatal(err)
+	}
+	if registered["changed"] != false || registered["exists"] != true {
+		t.Fatalf("registered result = %#v", registered)
+	}
+	container, ok := registered["container"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("registered container = %T, want object", registered["container"])
+	}
 
-	// Test inspecting the container
-	t.Run("InspectExistingContainer", func(t *testing.T) {
-		playbook := `
-hosts:
-  - name: testhost
-    host: localhost
-    port: 2222
-    user: root
-    password: rootpass
+	var dockerInspect []map[string]interface{}
+	if err := json.Unmarshal([]byte(remoteExec(t, client, "docker inspect "+containerName)), &dockerInspect); err != nil {
+		t.Fatal(err)
+	}
+	if len(dockerInspect) != 1 || !reflect.DeepEqual(container, dockerInspect[0]) {
+		t.Fatalf("module result does not match docker inspect\nmodule: %#v\ndocker: %#v", container, dockerInspect)
+	}
 
-tasks:
-  - name: Get container info
+	missingPlaybook := playbookHeader + `
+  - name: Inspect a missing container
     docker_container_info:
-      name: info-test-container
+      name: definitely-missing-container-info
+    register: container_info
+
+  - name: Save the missing result
+    template:
+      src: ` + resultTemplate + `
+      dest: ` + missingResult + `
 `
-		output := runPlaybookWithArgs(t, playbook, "--check")
-		if strings.Contains(output, "FAILED") {
-			t.Errorf("Expected success, got failure: %s", output)
-		}
-		if strings.Contains(output, "SKIPPED") {
-			t.Errorf("Read-only info module should execute in check mode: %s", output)
-		}
-		// Info modules return OK for successful inspection
-		if !strings.Contains(output, "OK") {
-			t.Errorf("Expected OK in output: %s", output)
-		}
-	})
+	missingOutput := runPlaybook(t, missingPlaybook)
+	if strings.Contains(missingOutput, "FAILED") {
+		t.Fatalf("missing-container inspection failed: %s", missingOutput)
+	}
+	var missing map[string]interface{}
+	missingJSON := remoteExec(t, client, "cat "+missingResult)
+	if missingJSON == "" {
+		t.Fatalf("missing-container result was not written: %s", missingOutput)
+	}
+	if err := json.Unmarshal([]byte(missingJSON), &missing); err != nil {
+		t.Fatal(err)
+	}
+	containerValue, hasContainer := missing["container"]
+	if missing["changed"] != false || missing["exists"] != false || !hasContainer || containerValue != nil {
+		t.Fatalf("missing-container result = %#v", missing)
+	}
 
-	t.Run("InspectNonExistentContainer", func(t *testing.T) {
-		playbook := `
-hosts:
-  - name: testhost
-    host: localhost
-    port: 2222
-    user: root
-    password: rootpass
-
-tasks:
-  - name: Get container info for non-existent
+	checkPlaybook := playbookHeader + `
+  - name: Inspect in check and diff mode
     docker_container_info:
-      name: non-existent-container-xyz
+      name: ` + containerName + `
 `
-		output := runPlaybook(t, playbook)
-		// Should succeed with msg about not found
-		if strings.Contains(output, "FAILED") {
-			t.Errorf("Expected success (not failure) for non-existent container: %s", output)
+	for iteration := 0; iteration < 2; iteration++ {
+		output := runPlaybookWithArgs(t, checkPlaybook, "--check", "--diff")
+		if strings.Contains(output, "FAILED") || strings.Contains(output, "SKIPPED") || !strings.Contains(output, "OK") {
+			t.Fatalf("read-only execution %d failed: %s", iteration+1, output)
 		}
-		// The msg should indicate container was not found
-		if !strings.Contains(output, "not found") {
-			t.Errorf("Expected 'not found' message in output: %s", output)
-		}
-	})
+	}
 }
 
 // TestPlaybook_DockerImageInfo tests the docker_image_info module
@@ -141,12 +151,11 @@ tasks:
       name: non-existent-image-xyz:v999
 `
 		output := runPlaybook(t, playbook)
-		// Should succeed with msg about not found
 		if strings.Contains(output, "FAILED") {
 			t.Errorf("Expected success (not failure) for non-existent image: %s", output)
 		}
-		if !strings.Contains(output, "not found") {
-			t.Errorf("Expected 'not found' message in output: %s", output)
+		if !strings.Contains(output, "OK") {
+			t.Errorf("Expected OK with an empty images result: %s", output)
 		}
 	})
 }

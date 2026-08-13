@@ -21,10 +21,11 @@ func getProjectRoot() string {
 }
 
 const (
-	testHost     = "127.0.0.1"
-	testPort     = 2222
-	testUser     = "root"
-	testPassword = "rootpass"
+	testHost                = "127.0.0.1"
+	testPort                = 2222
+	testUser                = "root"
+	testPassword            = "rootpass"
+	testDockerEngineVersion = "29.7.2"
 )
 
 func TestMain(m *testing.M) {
@@ -32,7 +33,29 @@ func TestMain(m *testing.M) {
 		println("SSH not available:", err.Error())
 		os.Exit(1)
 	}
+	if err := requireDockerEngineVersion(); err != nil {
+		println("Docker Engine baseline unavailable:", err.Error())
+		os.Exit(1)
+	}
 	os.Exit(m.Run())
+}
+
+func requireDockerEngineVersion() error {
+	client, err := ssh.Connect(ssh.Config{
+		Host: testHost, Port: testPort, User: testUser, Password: testPassword,
+	})
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	stdout, stderr, err := client.Run("docker version --format '{{.Server.Version}}'")
+	if err != nil {
+		return fmt.Errorf("inspect Docker Engine version: %w (%s)", err, strings.TrimSpace(stderr))
+	}
+	if actual := strings.TrimSpace(stdout); actual != testDockerEngineVersion {
+		return fmt.Errorf("got %s, require exact %s", actual, testDockerEngineVersion)
+	}
+	return nil
 }
 
 func waitForSSH(timeout time.Duration) error {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/execution"
@@ -24,6 +25,10 @@ import (
 	"github.com/gjergjiramku/dibra/internal/modules/docker_image_export"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_image_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_image_load"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_image_pull"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_image_push"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_image_remove"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_image_tag"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_login"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_network"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_network_info"
@@ -98,9 +103,17 @@ type Invocation struct {
 
 type argumentNormalizer func(map[string]json.RawMessage) error
 
+type argumentPresenceSetter interface {
+	SetProvidedArguments([]string)
+}
+
+type argumentPresence interface {
+	ProvidedArguments() map[string]bool
+}
+
 var definitions = []Definition{
-	module("docker_container", Capabilities{SupportPartial, SupportFull}, sensitivity("registry_password"), docker_container.Execute),
-	moduleWithAliases("docker_image", []string{"docker_image"}, Capabilities{SupportPartial, SupportNone}, sensitivity("registry_password"), normalizeDockerImageArguments, docker_image.Execute),
+	stateModule("docker_container", Capabilities{SupportPartial, SupportFull}, sensitivity("registry_password"), normalizeDockerContainerArguments, docker_container.ExecuteWithState),
+	stateModule("docker_image", Capabilities{SupportPartial, SupportNone}, sensitivity("build.args", "registry_password"), normalizeDockerImageArguments, docker_image.ExecuteWithState),
 	module("docker_network", Capabilities{SupportFull, SupportFull}, sensitivity(), docker_network.Execute),
 	module("docker_volume", Capabilities{SupportFull, SupportFull}, sensitivity(), docker_volume.Execute),
 	module("docker_prune", Capabilities{SupportNone, SupportNone}, sensitivity(), docker_prune.Execute),
@@ -113,13 +126,17 @@ var definitions = []Definition{
 	module("docker_secret", Capabilities{SupportFull, SupportNone}, sensitivity("data"), docker_secret.Execute),
 	module("docker_config", Capabilities{SupportFull, SupportNone}, sensitivity("data"), docker_config.Execute),
 	module("docker_stack", Capabilities{SupportNone, SupportNone}, sensitivity(), docker_stack.Execute),
-	module("docker_container_exec", Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), docker_container_exec.Execute),
+	moduleWithAliases("docker_container_exec", []string{"docker_container_exec"}, Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), normalizeDockerContainerExecArguments, docker_container_exec.Execute),
 	module("docker_container_copy_into", Capabilities{SupportFull, SupportFull}, sensitivity("content"), docker_container_copy_into.Execute),
-	module("docker_image_build", Capabilities{SupportFull, SupportNone}, sensitivity("args"), docker_image_build.Execute),
-	module("docker_image_load", Capabilities{SupportNone, SupportNone}, sensitivity(), docker_image_load.Execute),
-	moduleWithAliases("docker_image_export", []string{"docker_image_export"}, Capabilities{SupportFull, SupportNone}, sensitivity(), normalizeImageExportArguments, docker_image_export.Execute),
-	readOnlyModule("docker_container_info", sensitivity(), docker_container_info.Execute),
-	readOnlyModule("docker_image_info", sensitivity(), docker_image_info.Execute),
+	stateModule("docker_image_build", Capabilities{SupportFull, SupportNone}, sensitivity("args", "secrets.value"), normalizeDockerAPIArguments, docker_image_build.ExecuteWithState),
+	moduleWithAliases("docker_image_load", []string{"docker_image_load"}, Capabilities{SupportNone, SupportNone}, sensitivity(), normalizeDockerAPIArguments, docker_image_load.Execute),
+	stateModule("docker_image_export", Capabilities{SupportFull, SupportNone}, sensitivity(), normalizeImageExportArguments, docker_image_export.ExecuteWithState),
+	stateModule("docker_image_pull", Capabilities{SupportPartial, SupportFull}, sensitivity(), normalizeDockerAPIArguments, docker_image_pull.ExecuteWithState),
+	moduleWithAliases("docker_image_push", []string{"docker_image_push"}, Capabilities{SupportNone, SupportNone}, sensitivity(), normalizeDockerAPIArguments, docker_image_push.Execute),
+	stateModule("docker_image_remove", Capabilities{SupportFull, SupportFull}, sensitivity(), normalizeDockerAPIArguments, docker_image_remove.ExecuteWithState),
+	stateModule("docker_image_tag", Capabilities{SupportFull, SupportFull}, sensitivity(), normalizeDockerAPIArguments, docker_image_tag.ExecuteWithState),
+	readOnlyModuleWithNormalizer("docker_container_info", sensitivity(), normalizeDockerContainerInfoArguments, docker_container_info.Execute),
+	readOnlyModuleWithNormalizer("docker_image_info", sensitivity(), normalizeDockerAPIArguments, docker_image_info.Execute),
 	readOnlyModule("docker_network_info", sensitivity(), docker_network_info.Execute),
 	readOnlyModule("docker_volume_info", sensitivity(), docker_volume_info.Execute),
 	readOnlyModule("docker_host_info", sensitivity(), docker_host_info.Execute),
@@ -134,9 +151,28 @@ func module[Request, Response any](shortName string, capabilities Capabilities, 
 	return moduleWithAliases(shortName, []string{shortName}, capabilities, sensitive, nil, handler)
 }
 
+func stateModule[Request, Response any](shortName string, capabilities Capabilities, sensitive Sensitivity, normalizer argumentNormalizer, handler func(Request, execution.State) Response) Definition {
+	definition := moduleWithAliases(shortName, []string{shortName}, capabilities, sensitive, normalizer, func(request Request) Response {
+		return handler(request, execution.State{})
+	})
+	definition.ImplementedCapabilities = capabilities
+	definition.Handler = func(decoded any, state execution.State) (any, error) {
+		request, ok := decoded.(Request)
+		if !ok {
+			return nil, fmt.Errorf("handler for %s received %T, want its registered request type", definition.CanonicalName, decoded)
+		}
+		return handler(request, state), nil
+	}
+	return definition
+}
+
 func readOnlyModule[Request, Response any](shortName string, sensitive Sensitivity, handler func(Request) Response) Definition {
+	return readOnlyModuleWithNormalizer(shortName, sensitive, nil, handler)
+}
+
+func readOnlyModuleWithNormalizer[Request, Response any](shortName string, sensitive Sensitivity, normalizer argumentNormalizer, handler func(Request) Response) Definition {
 	capabilities := Capabilities{SupportFull, SupportNA}
-	definition := module(shortName, capabilities, sensitive, handler)
+	definition := moduleWithAliases(shortName, []string{shortName}, capabilities, sensitive, normalizer, handler)
 	definition.ImplementedCapabilities = capabilities
 	return definition
 }
@@ -265,7 +301,8 @@ func decodeStrict(data json.RawMessage, destination any, normalizer argumentNorm
 	if len(bytes.TrimSpace(data)) == 0 || bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
 		data = json.RawMessage(`{}`)
 	}
-	if normalizer != nil {
+	var provided []string
+	if normalizer != nil || implementsArgumentPresence(destination) {
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(data, &fields); err != nil {
 			return err
@@ -273,9 +310,16 @@ func decodeStrict(data json.RawMessage, destination any, normalizer argumentNorm
 		if fields == nil {
 			fields = make(map[string]json.RawMessage)
 		}
-		if err := normalizer(fields); err != nil {
-			return err
+		if normalizer != nil {
+			if err := normalizer(fields); err != nil {
+				return err
+			}
 		}
+		provided = make([]string, 0, len(fields))
+		for name := range fields {
+			provided = append(provided, name)
+		}
+		sort.Strings(provided)
 		var err error
 		data, err = json.Marshal(fields)
 		if err != nil {
@@ -293,34 +337,227 @@ func decodeStrict(data json.RawMessage, destination any, normalizer argumentNorm
 		}
 		return err
 	}
+	if setter, ok := destination.(argumentPresenceSetter); ok {
+		setter.SetProvidedArguments(provided)
+	}
 	return nil
 }
 
+func implementsArgumentPresence(destination any) bool {
+	_, ok := destination.(argumentPresenceSetter)
+	return ok
+}
+
 func normalizeImageExportArguments(fields map[string]json.RawMessage) error {
+	if err := normalizeDockerAPIArguments(fields); err != nil {
+		return err
+	}
 	name, hasName := fields["name"]
 	_, hasNames := fields["names"]
+	if hasName && hasNames {
+		return fmt.Errorf("both names and its alias name are specified")
+	}
 	if hasName && !hasNames {
-		var value string
-		if err := json.Unmarshal(name, &value); err != nil {
-			return fmt.Errorf("decode name alias: %w", err)
+		if len(bytes.TrimSpace(name)) > 0 && bytes.TrimSpace(name)[0] == '[' {
+			fields["names"] = name
+		} else {
+			var value string
+			if err := json.Unmarshal(name, &value); err != nil {
+				return fmt.Errorf("decode name alias: %w", err)
+			}
+			encoded, err := json.Marshal([]string{value})
+			if err != nil {
+				return err
+			}
+			fields["names"] = encoded
 		}
-		encoded, err := json.Marshal([]string{value})
-		if err != nil {
-			return err
-		}
-		fields["names"] = encoded
 	}
 	delete(fields, "name")
 	return nil
 }
 
 func normalizeDockerImageArguments(fields map[string]json.RawMessage) error {
-	buildPath, hasBuildPath := fields["build_path"]
-	_, hasLegacyBuildPath := fields["build.path"]
-	if hasBuildPath && !hasLegacyBuildPath {
-		fields["build.path"] = buildPath
+	if err := normalizeDockerAPIArguments(fields); err != nil {
+		return err
+	}
+
+	if err := normalizeArgumentAliases(fields, "force_absent", "force_remove"); err != nil {
+		return err
+	}
+	if err := normalizeArgumentAliases(fields, "force_source", "force_pull"); err != nil {
+		return err
+	}
+
+	build := map[string]json.RawMessage{}
+	if raw, found := fields["build"]; found {
+		if err := json.Unmarshal(raw, &build); err != nil {
+			return fmt.Errorf("decode build: %w", err)
+		}
+	}
+	if raw, found := fields["build_path"]; found {
+		if _, duplicate := build["path"]; duplicate {
+			return fmt.Errorf("build_path and build.path are mutually exclusive")
+		}
+		build["path"] = raw
+	}
+	if raw, found := fields["dockerfile"]; found {
+		if _, duplicate := build["dockerfile"]; duplicate {
+			return fmt.Errorf("dockerfile and build.dockerfile are mutually exclusive")
+		}
+		build["dockerfile"] = raw
+	}
+	if len(build) > 0 {
+		encoded, err := json.Marshal(build)
+		if err != nil {
+			return fmt.Errorf("encode build: %w", err)
+		}
+		fields["build"] = encoded
 	}
 	delete(fields, "build_path")
+	delete(fields, "dockerfile")
+	return nil
+}
+
+func normalizeDockerContainerExecArguments(fields map[string]json.RawMessage) error {
+	return normalizeDockerAPIArguments(fields)
+}
+
+func normalizeDockerContainerInfoArguments(fields map[string]json.RawMessage) error {
+	return normalizeDockerAPIArguments(fields)
+}
+
+func normalizeDockerAPIArguments(fields map[string]json.RawMessage) error {
+	aliases := map[string][]string{
+		"docker_host":    {"docker_url"},
+		"api_version":    {"docker_api_version"},
+		"ca_path":        {"ca_cert", "tls_ca_cert", "cacert_path"},
+		"client_cert":    {"tls_client_cert", "cert_path"},
+		"client_key":     {"tls_client_key", "key_path"},
+		"validate_certs": {"tls_verify"},
+	}
+	for canonical, names := range aliases {
+		if err := normalizeArgumentAliases(fields, canonical, names...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func normalizeArgumentAliases(fields map[string]json.RawMessage, canonical string, aliases ...string) error {
+	value, found := fields[canonical]
+	suppliedName := canonical
+	for _, alias := range aliases {
+		aliasValue, hasAlias := fields[alias]
+		if !hasAlias {
+			continue
+		}
+		if found {
+			return fmt.Errorf("both %s and its alias %s are specified", suppliedName, alias)
+		}
+		value, found, suppliedName = aliasValue, true, alias
+	}
+	for _, alias := range aliases {
+		delete(fields, alias)
+	}
+	if found {
+		fields[canonical] = value
+	}
+	return nil
+}
+
+func normalizeDockerContainerArguments(fields map[string]json.RawMessage) error {
+	aliases := map[string]string{
+		"cap_add":      "capabilities",
+		"security_opt": "security_opts",
+		"ports":        "published_ports",
+		"forcekill":    "force_kill",
+		"log_opt":      "log_options",
+		"exposed":      "exposed_ports",
+		"expose":       "exposed_ports",
+	}
+	for alias, canonical := range aliases {
+		value, hasAlias := fields[alias]
+		_, hasCanonical := fields[canonical]
+		if hasAlias && hasCanonical {
+			return fmt.Errorf("both %s and its alias %s are specified", canonical, alias)
+		}
+		if hasAlias {
+			fields[canonical] = value
+			delete(fields, alias)
+		}
+	}
+	if raw, found := fields["comparisons"]; found {
+		var comparisons map[string]string
+		if err := json.Unmarshal(raw, &comparisons); err != nil {
+			return fmt.Errorf("decode comparisons: %w", err)
+		}
+		for alias, canonical := range aliases {
+			mode, hasAlias := comparisons[alias]
+			_, hasCanonical := comparisons[canonical]
+			if hasAlias && hasCanonical {
+				return fmt.Errorf("both %s and its alias %s are specified in comparisons", canonical, alias)
+			}
+			if hasAlias {
+				comparisons[canonical] = mode
+				delete(comparisons, alias)
+			}
+		}
+		encoded, err := json.Marshal(comparisons)
+		if err != nil {
+			return err
+		}
+		fields["comparisons"] = encoded
+	}
+	if value, found := fields["networks_append"]; found {
+		var appendNetworks bool
+		if err := json.Unmarshal(value, &appendNetworks); err != nil {
+			return fmt.Errorf("decode networks_append compatibility alias: %w", err)
+		}
+		var comparisons map[string]string
+		if raw, exists := fields["comparisons"]; exists {
+			if err := json.Unmarshal(raw, &comparisons); err != nil {
+				return fmt.Errorf("decode comparisons: %w", err)
+			}
+		}
+		if comparisons == nil {
+			comparisons = make(map[string]string)
+		}
+		if _, exists := comparisons["networks"]; exists {
+			return fmt.Errorf("networks_append and comparisons.networks cannot both be specified")
+		}
+		if appendNetworks {
+			comparisons["networks"] = "allow_more_present"
+			// The historical Dibra option means "connect these networks without
+			// replacing existing attachments". The CLI-compatible default also
+			// infers network_mode from the first requested network; comparing that
+			// inferred value would recreate the container and defeat append mode.
+			if _, exists := comparisons["network_mode"]; !exists {
+				comparisons["network_mode"] = "ignore"
+			}
+		} else {
+			comparisons["networks"] = "strict"
+		}
+		encoded, err := json.Marshal(comparisons)
+		if err != nil {
+			return err
+		}
+		fields["comparisons"] = encoded
+		delete(fields, "networks_append")
+	}
+	if raw, found := fields["restart_policy"]; found {
+		var policy string
+		if err := json.Unmarshal(raw, &policy); err == nil && strings.HasPrefix(policy, "on-failure:") {
+			parts := strings.SplitN(policy, ":", 2)
+			retries, err := strconv.Atoi(parts[1])
+			if err != nil {
+				return fmt.Errorf("invalid restart_policy retry count %q", parts[1])
+			}
+			fields["restart_policy"] = json.RawMessage(`"on-failure"`)
+			if _, exists := fields["restart_retries"]; !exists {
+				fields["restart_retries"] = json.RawMessage(strconv.Itoa(retries))
+			}
+		}
+	}
 	return nil
 }
 
@@ -413,6 +650,14 @@ func ArgumentsMap(invocation *Invocation) (map[string]any, error) {
 	var arguments map[string]any
 	if err := json.Unmarshal(data, &arguments); err != nil {
 		return nil, fmt.Errorf("convert %s arguments: %w", definition.CanonicalName, err)
+	}
+	if presence, ok := invocation.Arguments.(argumentPresence); ok {
+		provided := presence.ProvidedArguments()
+		for name := range arguments {
+			if !provided[name] {
+				delete(arguments, name)
+			}
+		}
 	}
 	return arguments, nil
 }

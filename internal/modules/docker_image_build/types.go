@@ -1,38 +1,79 @@
 package docker_image_build
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
+
+type StringList []string
+
+func (values *StringList) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) > 0 && data[0] == '"' {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		*values = StringList{value}
+		return nil
+	}
+	var result []string
+	if err := json.Unmarshal(data, &result); err != nil {
+		return fmt.Errorf("must be a string or list of strings: %w", err)
+	}
+	*values = result
+	return nil
+}
+
+type Secret struct {
+	ID    string `json:"id"`
+	Type  string `json:"type"`
+	Src   string `json:"src"`
+	Env   string `json:"env"`
+	Value string `json:"value"`
+}
+
+type Output struct {
+	Type    string     `json:"type"`
+	Dest    string     `json:"dest"`
+	Context string     `json:"context"`
+	Name    StringList `json:"name"`
+	Push    bool       `json:"push"`
+}
 
 type Request struct {
 	docker.CommonArgs
 
-	Name       string            `json:"name"`       // Image name (required)
-	Tag        string            `json:"tag"`        // Image tag (default: latest)
-	Path       string            `json:"path"`       // Build context path (required)
-	Dockerfile string            `json:"dockerfile"` // Alternate Dockerfile name
-	CacheFrom  []string          `json:"cache_from"` // Cache source images
-	Pull       bool              `json:"pull"`       // Pull newer FROM images
-	Network    string            `json:"network"`    // Network for RUN instructions
-	NoCache    bool              `json:"nocache"`    // Disable cache
-	EtcHosts   map[string]string `json:"etc_hosts"`  // Extra /etc/hosts entries
-	Args       map[string]string `json:"args"`       // Build arguments
-	Target     string            `json:"target"`     // Target build stage
-	Platform   []string          `json:"platform"`   // Target platforms
-	ShmSize    string            `json:"shm_size"`   // /dev/shm size
-	Labels     map[string]string `json:"labels"`     // Image labels
-	Rebuild    string            `json:"rebuild"`    // never or always
-	Push       bool              `json:"push"`       // Push after build
+	Name       string         `json:"name"`
+	Tag        string         `json:"tag"`
+	Path       string         `json:"path"`
+	Dockerfile string         `json:"dockerfile"`
+	CacheFrom  StringList     `json:"cache_from"`
+	Pull       bool           `json:"pull"`
+	Network    string         `json:"network"`
+	NoCache    bool           `json:"nocache"`
+	EtcHosts   map[string]any `json:"etc_hosts"`
+	Args       map[string]any `json:"args"`
+	Target     string         `json:"target"`
+	Platform   StringList     `json:"platform"`
+	ShmSize    string         `json:"shm_size"`
+	Labels     map[string]any `json:"labels"`
+	Rebuild    string         `json:"rebuild"`
+	Secrets    []Secret       `json:"secrets"`
+	Outputs    []Output       `json:"outputs"`
+	DockerCLI  string         `json:"docker_cli"`
 }
 
 type Response struct {
-	Changed bool              `json:"changed"`
-	Failed  bool              `json:"failed"`
-	Msg     string            `json:"msg,omitempty"`
-	Image   map[string]string `json:"image,omitempty"`
-	ImageID string            `json:"image_id,omitempty"` // The resulting image ID
-	Digest  string            `json:"digest,omitempty"`   // The image digest (if pushed)
-	Stdout  string            `json:"stdout,omitempty"`
-	Stderr  string            `json:"stderr,omitempty"`
-	Logs    []string          `json:"logs,omitempty"` // Build log lines
+	Changed bool           `json:"changed"`
+	Failed  bool           `json:"failed"`
+	Msg     string         `json:"msg,omitempty"`
+	Actions []string       `json:"actions"`
+	Image   map[string]any `json:"image"`
+	Command []string       `json:"command,omitempty"`
+	Stdout  string         `json:"stdout,omitempty"`
+	Stderr  string         `json:"stderr,omitempty"`
 }

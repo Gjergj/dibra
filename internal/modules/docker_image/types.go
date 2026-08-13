@@ -2,83 +2,118 @@ package docker_image
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
 
-// PullPolicy represents the image pull behavior with backward compatibility
-type PullPolicy string
+type ContainerLimits struct {
+	Memory     string `json:"memory"`
+	MemorySwap string `json:"memswap"`
+	CPUShares  int64  `json:"cpushares"`
+	CPUSetCPUs string `json:"cpusetcpus"`
+}
 
-const (
-	PullMissing PullPolicy = "missing"
-	PullAlways  PullPolicy = "always"
-	PullNever   PullPolicy = "never"
-)
+type BuildOptions struct {
+	CacheFrom       []string         `json:"cache_from"`
+	Dockerfile      string           `json:"dockerfile"`
+	HTTPTimeout     int              `json:"http_timeout"`
+	Path            string           `json:"path"`
+	Pull            *bool            `json:"pull"`
+	Remove          *bool            `json:"rm"`
+	Network         string           `json:"network"`
+	NoCache         bool             `json:"nocache"`
+	EtcHosts        map[string]any   `json:"etc_hosts"`
+	Args            map[string]any   `json:"args"`
+	ContainerLimits *ContainerLimits `json:"container_limits"`
+	UseConfigProxy  *bool            `json:"use_config_proxy"`
+	Target          string           `json:"target"`
+	Platform        string           `json:"platform"`
+	ShmSize         string           `json:"shm_size"`
+	Labels          map[string]any   `json:"labels"`
+}
 
-// UnmarshalJSON handles both bool and string for backward compatibility
-func (p *PullPolicy) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err == nil {
-		*p = PullPolicy(s)
+// PullOptions is the pinned upstream pull dictionary. Policy is a Dibra
+// compatibility extension for the former pull: missing|always|never syntax.
+type PullOptions struct {
+	Platform string `json:"platform"`
+	Policy   string `json:"policy,omitempty"`
+}
+
+func (options *PullOptions) UnmarshalJSON(data []byte) error {
+	type plain PullOptions
+	var object plain
+	if err := json.Unmarshal(data, &object); err == nil {
+		*options = PullOptions(object)
 		return nil
 	}
-
-	var b bool
-	if err := json.Unmarshal(data, &b); err == nil {
-		if b {
-			*p = PullAlways
+	var policy string
+	if err := json.Unmarshal(data, &policy); err == nil {
+		switch policy {
+		case "missing", "always", "never":
+			options.Policy = policy
+			return nil
+		default:
+			return fmt.Errorf("pull policy must be missing, always, or never")
+		}
+	}
+	var legacy bool
+	if err := json.Unmarshal(data, &legacy); err == nil {
+		if legacy {
+			options.Policy = "always"
 		} else {
-			*p = PullMissing
+			options.Policy = "missing"
 		}
 		return nil
 	}
-
-	*p = PullMissing
-	return nil
+	return fmt.Errorf("pull must be a dictionary")
 }
 
 type Request struct {
 	docker.CommonArgs
 
-	Name       string `json:"name"`
-	Tag        string `json:"tag"`
-	Repository string `json:"repository"` // For tagging/pushing to a different repo
-	State      string `json:"state"`      // present, absent
-	Source     string `json:"source"`     // pull, local, build, load (default: pull)
+	Name        string        `json:"name"`
+	Source      string        `json:"source"`
+	Build       *BuildOptions `json:"build"`
+	ArchivePath string        `json:"archive_path"`
+	LoadPath    string        `json:"load_path"`
+	ForceSource bool          `json:"force_source"`
+	ForceAbsent bool          `json:"force_absent"`
+	ForceTag    bool          `json:"force_tag"`
+	Pull        *PullOptions  `json:"pull"`
+	Push        bool          `json:"push"`
+	Repository  string        `json:"repository"`
+	State       string        `json:"state"`
+	Tag         string        `json:"tag"`
 
-	// Pull behavior (3.2)
-	Pull PullPolicy `json:"pull"` // missing, always, never (default: missing)
+	// Direct credentials are retained as a documented Dibra compatibility
+	// extension; upstream docker_image reads credentials from config.json.
+	RegistryUsername string `json:"registry_username"`
+	RegistryPassword string `json:"registry_password"`
 
-	// Force flags (3.5) - split from ForceSource for clarity
-	ForcePull   bool `json:"force_pull"`   // Force pull even if image exists (deprecated, use pull: always)
-	ForceRemove bool `json:"force_remove"` // Force remove (removes containers using the image)
-	ForceTag    bool `json:"force_tag"`    // Force tag even if target exists
+	providedArguments map[string]bool
+}
 
-	// Legacy support
-	ForceSource bool `json:"force_source"` // Deprecated: use force_pull or force_remove
+func (request *Request) SetProvidedArguments(arguments []string) {
+	request.providedArguments = make(map[string]bool, len(arguments))
+	for _, argument := range arguments {
+		request.providedArguments[argument] = true
+	}
+}
 
-	// Push options (3.4)
-	Push bool `json:"push"` // Push after tagging
+func (request Request) ProvidedArguments() map[string]bool {
+	return request.providedArguments
+}
 
-	// Registry authentication (3.1)
-	RegistryUsername string `json:"registry_username"` // Username for registry auth
-	RegistryPassword string `json:"registry_password"` // Password for registry auth
-
-	// Build options (for source=build)
-	ArchivePath string `json:"archive_path"` // For load
-	DockerFile  string `json:"dockerfile"`   // For build
-	BuildPath   string `json:"build.path"`   // For build context
-
-	// Other options
-	KeepImage bool `json:"keep_image"` // For build/load: keep intermediate images
+func (request Request) argumentProvided(name string) bool {
+	return request.providedArguments == nil || request.providedArguments[name]
 }
 
 type Response struct {
-	Changed bool   `json:"changed"`
-	Failed  bool   `json:"failed"`
-	Msg     string `json:"msg,omitempty"`
-	ImageID string `json:"image_id,omitempty"` // Full image ID (sha256:...)
-	Digest  string `json:"digest,omitempty"`   // Image digest from registry
-	Stdout  string `json:"stdout,omitempty"`
-	Stderr  string `json:"stderr,omitempty"`
+	Changed bool           `json:"changed"`
+	Failed  bool           `json:"failed"`
+	Msg     string         `json:"msg,omitempty"`
+	Actions []string       `json:"actions"`
+	Image   map[string]any `json:"image"`
+	Stdout  string         `json:"stdout,omitempty"`
 }

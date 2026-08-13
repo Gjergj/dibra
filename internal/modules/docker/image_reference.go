@@ -145,3 +145,30 @@ func JoinImageNameTag(name, tag string) (string, error) {
 	}
 	return reference.String(), nil
 }
+
+// IsImageID matches the canonical image-ID syntax used by the pinned
+// community.docker mutating image modules.
+func IsImageID(value string) bool {
+	if !strings.HasPrefix(value, "sha256:") {
+		return false
+	}
+	trimmed := value[len("sha256:"):]
+	if len(trimmed) != 64 {
+		return false
+	}
+	for _, character := range trimmed {
+		if character < '0' || character > '9' && character < 'A' ||
+			character > 'F' && character < 'a' || character > 'f' {
+			return false
+		}
+	}
+	return true
+}
+
+// IsValidImageTag validates a Docker tag without accepting a digest.
+func IsValidImageTag(value string, allowEmpty bool) bool {
+	if value == "" {
+		return allowEmpty
+	}
+	return imageTagPattern.MatchString(value)
+}

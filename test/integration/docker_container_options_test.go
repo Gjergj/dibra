@@ -292,7 +292,8 @@ func TestPlaybook_DockerContainerShmSize(t *testing.T) {
 	}
 }
 
-// TestPlaybook_DockerContainerResources tests CPU and memory limits (2.8.8)
+// TestPlaybook_DockerContainerResources verifies the pinned upstream split
+// between live-update resource fields and fields that require recreation.
 func TestPlaybook_DockerContainerResources(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
@@ -338,9 +339,10 @@ func TestPlaybook_DockerContainerResources(t *testing.T) {
 	if !strings.Contains(pidsLimit, "100") {
 		t.Errorf("PidsLimit not set correctly: %s", pidsLimit)
 	}
+	originalID := remoteExec(t, client, "docker inspect --format '{{.Id}}' "+containerName)
 
-	// Test mutable field update (memory, cpus, pids_limit are mutable)
-	t.Log("Step 2: Update mutable resources")
+	// memory is one of the resource fields updated through ContainerUpdate.
+	t.Log("Step 2: Update a live-mutable resource")
 	playbookUpdate := playbookHeader + `
   - name: Update container resources
     docker_container:
@@ -348,9 +350,7 @@ func TestPlaybook_DockerContainerResources(t *testing.T) {
       image: alpine:latest
       state: started
       command: ["sleep", "300"]
-      cpus: 1.0
       memory: "512m"
-      pids_limit: 200
 `
 	output2 := runPlaybook(t, playbookUpdate)
 	if strings.Contains(output2, "FAILED") {
@@ -360,10 +360,37 @@ func TestPlaybook_DockerContainerResources(t *testing.T) {
 		t.Error("Expected CHANGED on resource update")
 	}
 
-	// Verify updated values
+	if currentID := remoteExec(t, client, "docker inspect --format '{{.Id}}' "+containerName); currentID != originalID {
+		t.Fatalf("memory update recreated the container: before=%s after=%s", originalID, currentID)
+	}
+	if updatedMemory := remoteExec(t, client, "docker inspect --format '{{.HostConfig.Memory}}' "+containerName); !strings.Contains(updatedMemory, "536870912") {
+		t.Errorf("Updated memory not set correctly: %s", updatedMemory)
+	}
+
+	// cpus and pids_limit are intentionally recreation fields in the pinned
+	// community.docker implementation even though the Engine update API can
+	// accept related values.
+	t.Log("Step 3: Recreate for non-live resource fields")
+	playbookRecreate := playbookHeader + `
+  - name: Recreate container for CPU and PID limits
+    docker_container:
+      name: ` + containerName + `
+      image: alpine:latest
+      state: started
+      command: ["sleep", "300"]
+      cpus: 1.0
+      pids_limit: 200
+`
+	output3 := runPlaybook(t, playbookRecreate)
+	if strings.Contains(output3, "FAILED") || !strings.Contains(output3, "CHANGED") {
+		t.Fatalf("Recreate resources failed: %s", output3)
+	}
+	if currentID := remoteExec(t, client, "docker inspect --format '{{.Id}}' "+containerName); currentID == originalID {
+		t.Fatalf("cpus/pids_limit did not recreate the container: %s", currentID)
+	}
 	nanoCpus2 := remoteExec(t, client, "docker inspect --format '{{.HostConfig.NanoCPUs}}' "+containerName)
 	if !strings.Contains(nanoCpus2, "1000000000") {
-		t.Errorf("Updated NanoCPUs not set correctly: %s", nanoCpus2)
+		t.Errorf("Recreated NanoCPUs not set correctly: %s", nanoCpus2)
 	}
 }
 
@@ -558,6 +585,8 @@ func TestPlaybook_DockerContainerNetworks(t *testing.T) {
       command: ["sleep", "300"]
       networks:
         - name: ` + network2 + `
+      comparisons:
+        networks: strict
 `
 	output3 := runPlaybook(t, playbook3)
 	if strings.Contains(output3, "FAILED") {
@@ -756,9 +785,9 @@ func TestPlaybook_DockerContainerPullPolicy(t *testing.T) {
 	}
 }
 
-// Mirrors community.docker's matching host/container range scenarios and
-// proves that Docker receives individual exposed-port keys (required by
-// current Engine versions).
+// Mirrors community.docker's host/container range scenarios, including its
+// shorter-range truncation, and proves that Docker receives individual
+// exposed-port keys (required by current Engine versions).
 func TestPlaybook_DockerContainerPortRangeExpansion(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
@@ -768,14 +797,14 @@ func TestPlaybook_DockerContainerPortRangeExpansion(t *testing.T) {
 	defer remoteExec(t, client, "docker rm -f "+containerName+" 2>/dev/null || true")
 
 	playbook := playbookHeader + `
-  - name: Publish matching port ranges
+  - name: Publish differently sized port ranges
     community.docker.docker_container:
       name: ` + containerName + `
       image: alpine:latest
       state: started
       command: ["sleep", "60"]
       ports:
-        - "127.0.0.1:48100-48101:80-81/tcp"
+        - "127.0.0.1:48100-48102:80-81/tcp"
 `
 	output := runPlaybook(t, playbook)
 	if strings.Contains(output, "FAILED") {
@@ -786,6 +815,9 @@ func TestPlaybook_DockerContainerPortRangeExpansion(t *testing.T) {
 		if !strings.Contains(bindings, expected) {
 			t.Errorf("Port bindings %s do not contain %q", bindings, expected)
 		}
+	}
+	if strings.Contains(bindings, "48102") {
+		t.Errorf("Port bindings did not truncate to the shorter range: %s", bindings)
 	}
 
 	output = runPlaybook(t, playbook)

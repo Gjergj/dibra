@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/moby/moby/api/pkg/authconfig"
@@ -121,6 +122,38 @@ func RegistryAuthFromConfig(configJSON []byte, image string) (registry.AuthConfi
 		return result, true, nil
 	}
 	return registry.AuthConfig{}, false, nil
+}
+
+// ResolveRegistryAuthForImage reads Docker's config.json through injected
+// dependencies and returns the Engine RegistryAuth value for an image.
+// Credential helpers are intentionally left to Docker CLI-backed modules.
+func ResolveRegistryAuthForImage(image string, dependencies Dependencies, requireHeader bool) (string, error) {
+	dependencies = dependencies.Resolve()
+	var directory string
+	if configured, found := dependencies.Environment.LookupEnv("DOCKER_CONFIG"); found && configured != "" {
+		directory = configured
+	} else {
+		home, err := dependencies.FileSystem.UserHomeDir()
+		if err == nil {
+			directory = filepath.Join(home, ".docker")
+		}
+	}
+	if directory != "" {
+		configJSON, err := dependencies.FileSystem.ReadFile(filepath.Join(directory, "config.json"))
+		if err == nil {
+			auth, found, err := RegistryAuthFromConfig(configJSON, image)
+			if err != nil {
+				return "", err
+			}
+			if found {
+				return EncodeRegistryAuthConfig(auth)
+			}
+		}
+	}
+	if requireHeader {
+		return base64.URLEncoding.EncodeToString([]byte("{}")), nil
+	}
+	return "", nil
 }
 
 func normalizeRegistryConfigKey(value string) string {

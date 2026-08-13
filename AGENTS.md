@@ -65,6 +65,18 @@ make test-integration
 # Run integration tests (container must be running)
 make test-integration-only
 
+# Run the exact Engine 29.7.2 docker_container certification lane
+make test-docker-container-integration
+
+# Run that lane with the integration container already running
+make test-docker-container-integration-only
+
+# Run the exact Engine 29.7.2 image-family certification lane
+make test-docker-image-integration
+
+# Run that lane with the integration container already running
+make test-docker-image-integration-only
+
 # Run only dibra-deploy integration tests
 make test-deploy-integration
 
@@ -234,6 +246,14 @@ by this repository. `github.com/docker/cli v28.5.2` supplies only the OpenSSH
 connection helper compatible with Dibra's Go 1.24 toolchain; it neither bundles
 nor selects the runtime Docker CLI or Compose plugin.
 
+Docker task-module parity targets exact Docker Engine 29.7.2 on rootful Linux.
+Older Engine releases and their removed API branches are intentionally out of
+scope. The integration host runs its own pinned daemon and fails before the
+suite when the server version differs, so a developer's host Docker socket can
+never silently substitute a different Engine. Local-socket and TLS transport
+coverage, where applicable, use this same Engine baseline; this is not a
+cross-version matrix. Compose has its own independent version pin below.
+
 Docker executor side effects are injected through `docker.Dependencies` in
 `internal/modules/docker/dependencies.go`. Every Docker executor keeps the
 production `Execute(req)` entry point and also exposes
@@ -263,9 +283,10 @@ executor.
   embedded `errorDetail` failures even when Docker omits the top-level `error`.
 - `ReadImageArchiveManifest` owns safe, non-extracting `manifest.json` parsing.
   Export idempotency compares image IDs and requested tags, not file existence.
-- `BuildPortBindings` expands matching ranges into individual Engine port keys;
-  mismatched ranges fail validation and a host range for one container port is
-  preserved as Docker's random-available range.
+- `BuildPortBindings` expands ranges into individual Engine port keys. When
+  host and container ranges differ in length, only the shorter range is used;
+  a host range for one container port is preserved as Docker's
+  random-available range.
 - `NormalizeIPAddress`, `NormalizeIPNetwork`, and
   `NormalizeEndpointAddress` own canonical IPv4/IPv6 and CIDR comparisons.
 
@@ -284,6 +305,20 @@ for the pinned `community.docker` baseline. It contains all 38 task modules,
 top-level and nested options (including shared API/CLI/Compose fragments),
 return fields, and check/diff/idempotency/error contracts. Status is recorded
 per feature; module presence never implies parity.
+
+Keep the behavioral reference as a sibling checkout pinned to the audited
+collection commit:
+
+```bash
+git clone https://github.com/ansible-collections/community.docker.git ../community.docker
+git -C ../community.docker checkout 44812d46a5072eec78175a41a1100ee77218c8a2
+git -C ../community.docker describe --tags --always # 5.2.2 / 44812d46
+```
+
+Use `../community.docker/plugins/modules/` and
+`../community.docker/tests/integration/targets/` as behavioral references.
+The checkout is GPL-licensed: inspect documentation, implementation, and tests,
+but reimplement behavior cleanly in Go and do not copy upstream source.
 
 After changing a Docker contract, update the relevant feature rows and run:
 
@@ -557,7 +592,9 @@ A trivial test module to verify SSH connectivity. Returns "pong" on success.
 
 ### docker_container
 
-Manages the lifecycle of Docker containers.
+Manages the lifecycle and configuration of Docker Engine containers. This is
+an Engine API module; the Compose 5.4.0 pin does not select or constrain its
+behavior.
 
 ```yaml
 - name: Start a container
@@ -567,13 +604,19 @@ Manages the lifecycle of Docker containers.
     state: started
     command: ["sleep", "infinity"]
 
-- name: Create a container with port bindings
+- name: Create a container with canonical options
   docker_container:
     name: web
-    image: nginx
+    image: nginx:latest
     state: started
-    ports:
+    published_ports:
       - "8080:80"
+    capabilities:
+      - NET_BIND_SERVICE
+    security_opts:
+      - no-new-privileges:true
+    comparisons:
+      env: strict
 
 - name: Remove a container
   docker_container:
@@ -581,116 +624,155 @@ Manages the lifecycle of Docker containers.
     state: absent
 ```
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `name` | required | Name of the container. |
-| `image` | | Image to use for the container. |
-| `state` | `started` | `started`, `stopped`, `present`, `absent`. |
-| `command` | | Command to execute at startup. |
-| `entrypoint` | | Override default entrypoint. |
-| `ports` | | List of port bindings (`host:container` or `ip:host:container`). |
-| `exposed_ports` | | List of ports to expose without host binding. |
-| `volumes` | | List of volume bindings (`host:container:mode`). |
-| `env` | | Dictionary of environment variables. |
-| `network_mode` | | Network mode (e.g., `host`, `bridge`). |
-| `networks` | | List of networks to connect to (with `name`, `ipv4_address`, `ipv6_address`, `aliases`). |
-| `networks_append` | `false` | If true, don't disconnect from networks not in list. |
-| `pull` | `missing` | Image pull policy: `missing`, `always`, `never`. Also accepts boolean for backward compat. |
-| `recreate` | `auto` | Container recreate policy: `auto`, `always`, `never`. |
-| `restart_policy` | | Restart policy: `no`, `always`, `on-failure[:max]`, `unless-stopped`. |
-| `cap_add` | | List of capabilities to add. |
-| `cap_drop` | | List of capabilities to drop. |
-| `devices` | | Device mappings: `/dev/sda:/dev/xvda:rwm`. |
-| `healthcheck` | | Healthcheck config with `test`, `interval`, `timeout`, `start_period`, `retries`. |
-| `init` | `false` | Run init inside container. |
-| `tmpfs` | | Tmpfs mounts: `/run:rw,noexec,nosuid,size=65536k`. |
-| `shm_size` | | /dev/shm size: `64m`. |
-| `ulimits` | | Ulimit options with `name`, `soft`, `hard`. |
-| `sysctls` | | Sysctl options as key-value pairs. |
-| `security_opt` | | Security options. |
-| `cpus` | | CPU limit (e.g., `1.5`). |
-| `memory` | | Memory limit: `512m`. |
-| `memory_swap` | | Swap limit: `1g` or `-1` for unlimited. |
-| `pids_limit` | | PID limit. |
-| `log_driver` | | Logging driver. |
-| `log_options` | | Logging driver options. |
-| `registry_username` | | Username for registry auth (for private images). |
-| `registry_password` | | Password for registry auth (for private images). |
+The canonical option contract is the pinned `community.docker` 5.2.2
+inventory in [`docs/community-docker-parity.yaml`](docs/community-docker-parity.yaml).
+Important behavior:
+
+- `state` supports `absent`, `present`, `started`, `stopped`, and `healthy`;
+  `healthy_wait_timeout`, `paused`, `restart`, foreground `detach: false`,
+  `cleanup`, `force_kill`, and removal waits participate in lifecycle handling.
+- Omitted booleans and zero values remain omitted. Do not replace pointer fields
+  in the request: `container_default_behavior` and `comparisons` depend on the
+  distinction between omission and explicit `false`/`0`. The registry also
+  records canonical supplied argument keys for `docker_container` and emits
+  only those keys to the agent, preserving explicit empty strings while
+  preventing omitted scalar zero values from becoming accidental settings.
+- Canonical names include `capabilities`, `published_ports`, `security_opts`,
+  string-form `ulimits`, `restart_retries`, `mounts`, and `networks` endpoint
+  options. `cap_add`, `ports`, `security_opt`, mapping-form `ulimits`,
+  `on-failure:<count>`, and `networks_append` remain explicit Dibra
+  compatibility aliases normalized by the registry.
+- `comparisons` controls strict, ignored, or allow-more-present comparisons.
+  Re-creatable fields, live-update resource fields, image-derived defaults,
+  endpoint reconciliation, check mode, and structured diff mode must remain
+  independently tested.
+- `state: present` may omit `image` when the named container already exists;
+  creation still requires an image. Non-positive `healthy_wait_timeout`
+  disables the timeout. Check/debug `actions` remain structured dictionaries,
+  and unequal published-port ranges truncate to the shorter range.
+- Container images may be names, digests, or full image IDs. Image IDs never
+  trigger pulls. Pull policies, registry authentication, image/name/label
+  mismatch policies, platform normalization, and image-derived environment,
+  label, port, volume, and command defaults follow the pinned upstream rules.
+- `mounts` supports the current Engine bind, volume, tmpfs, npipe, cluster, and
+  image forms and validates type-specific options. `tmpfs_options` uses the
+  upstream list-of-one-key-dictionaries shape.
+- The `kernel_memory` argument is accepted and validated but a nonzero value
+  fails explicitly on the Engine 29.7.2 baseline. Engine API 1.42 removed that
+  field, and the pinned upstream test also excludes it on newer API versions.
+- The module uses the shared API connection and injected Docker dependencies.
+  Never call the Docker CLI, construct a separate Moby client, or access the OS
+  filesystem, environment, clock, or subprocesses directly from the executor.
+
+Every contract change needs focused executor/registry tests, a real-daemon
+two-run idempotency scenario with check/diff coverage where applicable, and an
+update to the parity inventory and generated report. Run
+`make test-docker-container-integration` for the exact Engine 29.7.2
+certification lane.
 
 ### docker_image
 
-Manages Docker images with pull, tag, and push operations.
+Implements the pinned `community.docker.docker_image` 5.2.2 compatibility
+module. It combines pull, daemon-API build, archive export, archive load, local
+lookup, tagging, pushing, and removal. New code may prefer the focused image
+modules, but this combined module must preserve its upstream contract.
 
 ```yaml
-# Pull an image (default: pull if missing)
 - name: Pull alpine image
   docker_image:
-    name: alpine
-    tag: latest
-    state: present
+    name: alpine:latest
+    source: pull
+    pull:
+      platform: linux/amd64
 
-# Always pull to check for updates
-- name: Pull latest with update check
-  docker_image:
-    name: nginx
-    tag: latest
-    pull: always
-
-# Never pull (fail if not present locally)
-- name: Use local image only
+- name: Build with the Docker daemon API
   docker_image:
     name: myapp
-    tag: v1.0
-    pull: never
+    source: build
+    build:
+      path: /srv/myapp
+      dockerfile: Dockerfile
+      args:
+        RELEASE: "2026.08"
+      cache_from: [myapp:latest]
+      container_limits:
+        memory: 512MB
+        memswap: 1GB
+        cpushares: 512
+        cpusetcpus: "0-1"
+      etc_hosts:
+        registry.internal: host-gateway
+      labels:
+        release: "2026.08"
+      network: host
+      nocache: false
+      platform: linux/amd64
+      pull: true
+      rm: true
+      shm_size: 128MB
+      target: runtime
 
-# Tag an existing image
-- name: Tag image for registry
+- name: Archive an existing local image
   docker_image:
     name: alpine:latest
     source: local
-    repository: myregistry.com/alpine:prod
+    archive_path: /tmp/alpine.tar
 
-# Tag and push to registry with authentication
-- name: Tag and push image
+- name: Load the requested image from an archive
+  docker_image:
+    name: alpine:latest
+    source: load
+    load_path: /tmp/alpine.tar
+
+- name: Tag and push a local image
   docker_image:
     name: myapp:latest
     source: local
-    repository: docker.io/myuser/myapp:v1.0
+    repository: registry.example.com/team/myapp:v1
     push: true
-    registry_username: myuser
-    registry_password: mypassword
 
-# Remove an image
-- name: Remove old image
-  docker_image:
-    name: alpine
-    tag: 3.14
-    state: absent
-
-# Force remove (even if container uses it)
 - name: Force remove image
   docker_image:
-    name: myapp
-    tag: old
+    name: myapp:old
     state: absent
-    force_remove: true
+    force_absent: true
 ```
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `name` | required | Image name (can include tag like `alpine:3.19`). |
-| `tag` | | Image tag (alternative to including in name). |
-| `state` | `present` | `present` to ensure image exists, `absent` to remove. |
-| `source` | `pull` | `pull` to pull from registry, `local` for tag/push operations. |
-| `pull` | `missing` | Pull policy: `missing`, `always`, `never`. |
-| `repository` | | Target repository for tagging (used with `source: local`). |
-| `push` | `false` | Push image after tagging. |
-| `registry_username` | | Username for registry authentication. |
-| `registry_password` | | Password for registry authentication. |
-| `force_pull` | `false` | Force pull even if image exists (deprecated, use `pull: always`). |
-| `force_remove` | `false` | Force remove image even if containers use it. |
-| `force_tag` | `false` | Force tag even if target already exists with same ID. |
-| `force_source` | `false` | Deprecated: use `force_pull` or `force_remove`. |
+Important behavior:
+
+- `name` is required. `state` defaults to `present`, and `tag` defaults to
+  `latest`; a tag embedded in `name` takes precedence. `source` is required for
+  `state: present` and accepts `build`, `load`, `pull`, or `local`.
+- Image IDs are accepted for `state: absent`, `source: local`, and
+  `source: load`. They are rejected for pull/build and cannot be pushed unless
+  `repository` supplies a name.
+- `force_source` repeats the selected build/load/pull operation and compares the
+  resulting image ID, `force_absent` asks Engine to force removal, and
+  `force_tag` repeats tagging but remains unchanged when the target ID did not
+  change.
+- `pull.platform`, `build.platform`, `build.etc_hosts`, and all common API
+  connection options use the shared Docker resolver. The module targets the
+  exact Engine 29.7.2 baseline; historical API branches are out of scope.
+- Builds use Engine's `/build` API as upstream does. This is the legacy
+  daemon-builder contract, not BuildKit/buildx and not the independently pinned
+  Compose 5.4.0 runtime. `docker_image_build` is the focused BuildKit module.
+- Archive idempotency compares `manifest.json` image IDs and requested tags.
+  Engine 29's containerd image store can produce archives whose manifest config
+  ID differs from the inspect ID, so an unchanged second export is not
+  guaranteed on the pinned baseline, matching the upstream note.
+- Pull and push consume the complete Engine JSON stream and fail on either
+  top-level `error` or `errorDetail`. Registry credentials are read from
+  Docker's `config.json`; `registry_username` and `registry_password` remain a
+  sensitive Dibra compatibility extension.
+- Check mode predicts pull/build/load/tag/push/archive/removal without mutating
+  Engine or files. As upstream documents, a requested pull is assumed changed
+  in check mode. Diff mode is unsupported.
+- Successful results always include `actions` and the raw Engine `image`
+  inspection dictionary. Builds also return `stdout`.
+- Dibra retains `force_remove` → `force_absent`, `force_pull` →
+  `force_source`, top-level `build_path`/`dockerfile`, and
+  `pull: missing|always|never` as explicit compatibility extensions. Canonical
+  playbooks should use the upstream names and dictionary-shaped `pull`.
 
 ### docker_network
 
@@ -1113,6 +1195,26 @@ Execute a command in a running Docker container.
     chdir: /app
 ```
 
+The canonical contract follows `community.docker` 5.2.2 and uses the Engine
+API, not Docker Compose. Exactly one of `command` or `argv` is required.
+`command` uses shell-style argument splitting but does not itself invoke a
+shell; use `argv: [/bin/sh, -c, ...]` for redirects, globbing, or environment
+expansion. Synchronous executions always return `stdout`, `stderr`, and `rc`,
+including empty output and a zero exit code. Detached executions return only
+`exec_id`. The module always reports changed and intentionally supports neither
+check mode nor diff mode.
+
+`stdin_add_newline` and `strip_empty_ends` default to `true`. Attached stdin is
+written while output is consumed and the write side is then closed so commands
+such as `cat` receive EOF, including for large payloads. `env` values must be
+strings. `chdir` requires Engine API 1.35 or newer. Missing and paused
+containers use the pinned upstream error semantics. The shared API connection
+arguments, aliases, environment precedence, TLS behavior, and OpenSSH transport
+apply. As upstream documents, attached stdin does not work over TCP TLS because
+the TLS connection cannot half-close to deliver EOF without closing the read
+side. `privileged` remains a Dibra compatibility extension and is forwarded to
+the Engine exec-create request; it is not an upstream 5.2.2 option.
+
 ### docker_container_copy_into
 
 Copy files or content into a Docker container.
@@ -1135,31 +1237,96 @@ Copy files or content into a Docker container.
 
 ### docker_image_build
 
-Build Docker images using Docker's buildx plugin (BuildKit).
+Implements the pinned `community.docker.docker_image_build` 5.2.2 contract
+through the installed Docker buildx plugin. This is a CLI-backed BuildKit
+module; it does not use the Engine `/build` endpoint, and the Compose 5.4.0 pin
+does not select its behavior.
 
 ```yaml
-- name: Build image
+- name: Build and load an image
   docker_image_build:
-    name: my-app
-    tag: v1.0.0
-    path: /path/to/app
+    name: my-app:v1.0.0
+    path: /srv/my-app
     dockerfile: Dockerfile.prod
     args:
-        VERSION: "1.0.0"
+      VERSION: "1.0.0"
+    cache_from:
+      - my-app:latest
+    etc_hosts:
+      registry.internal: host-gateway
+    labels:
+      release: "1.0.0"
+    platform:
+      - linux/amd64
+    pull: true
+    secrets:
+      - id: npm-token
+        type: env
+        env: NPM_TOKEN
+
+- name: Export a root filesystem and keep the named image
+  docker_image_build:
+    name: my-app:export
+    path: /srv/my-app
+    rebuild: always
+    outputs:
+      - type: tar
+        dest: /tmp/my-app-rootfs.tar
 ```
+
+Important behavior:
+
+- `name` and `path` are required. An embedded tag overrides `tag`, whose
+  default is `latest`. Image IDs and digest references are rejected.
+- `rebuild: never` skips the build when the named image exists;
+  `rebuild: always` always invokes buildx. Check mode performs validation and
+  image lookup but never runs a build.
+- Build arguments, hosts, labels, cache sources, target, network, pull,
+  no-cache, shared-memory size, and one or more platforms map to buildx flags.
+  `shm_size` is converted to bytes as upstream does.
+- Secrets support `file`, `env`, and sensitive inline `value` sources. Inline
+  values are passed through a generated child-process environment variable and
+  are redacted from controller output.
+- Outputs support `local`, `tar`, `oci`, `docker`, and `image`. If outputs do
+  not retain `name:tag`, the module adds an image output for it. Multiple
+  outputs require buildx 0.13.0 or newer; environment/value secrets require
+  buildx 0.6.0 or newer.
+- `docker_cli` selects the executable. The shared CLI connection resolver owns
+  host/context exclusivity, API-version environment, TLS flags and certificate
+  paths. Successful builds return raw image inspection data, the buildx
+  command, stdout, and stderr. Diff mode is unsupported.
 
 ### docker_image_load
 
-Load Docker image(s) from archives.
+Implements the pinned `community.docker.docker_image_load` 5.2.2 Engine API
+contract. It loads every image represented by a Docker archive and inspects
+the names and IDs reported by the daemon.
 
 ```yaml
-- name: Load image from tar
+- name: Load images from a Docker archive
   docker_image_load:
-    path: /tmp/image.tar
+    path: /tmp/images.tar
+  register: loaded
+```
+
+The module consumes the complete Engine load stream with `quiet=false`, as
+upstream does. Both `Loaded image: name:tag` and `Loaded image ID: sha256:...`
+records are preserved in `image_names`, including daemon-dependent duplicates
+and mixed name/ID results. `images` contains a complete Engine inspection
+dictionary for each recognized reference, in matching order, and `stdout`
+contains the load stream text.
+
+Loading is intentionally non-idempotent: every successful invocation reports
+changed, even when the same archive is loaded repeatedly. Check mode and diff
+mode are unsupported; check mode skips execution before opening the archive.
+Missing files, invalid archives, embedded stream errors, and streams reporting
+no loaded images fail with the pinned upstream semantics. All shared API
+connection options and aliases apply.
 
 ### docker_image_export
 
-Export (archive) one or more Docker images to a tarball.
+Implements the pinned `community.docker.docker_image_export` 5.2.2 Engine API
+contract. It saves one or more local image names or IDs to a Docker archive.
 
 ```yaml
 - name: Export an image
@@ -1173,7 +1340,146 @@ Export (archive) one or more Docker images to a tarball.
       - alpine:latest
       - redis:latest
     path: /tmp/images.tar
+
+- name: Export one platform from an image
+  docker_image_export:
+    name: alpine:latest
+    path: /tmp/alpine-amd64.tar
+    platform: linux/amd64
 ```
+
+The `name` alias accepts one value or a list; `names` is canonical. A tag
+embedded in a name wins over the default `tag: latest`. Before exporting, the
+module inspects every requested image and returns the complete Engine
+inspection dictionaries in `images`.
+
+Unless `force: true`, archive idempotency compares `manifest.json` image IDs
+and requested tags without extracting the archive. Docker Engine 29's
+containerd image store can emit config IDs that differ from inspect IDs, and
+multi-platform exports are not idempotent, matching the pinned upstream
+limitations. Check mode predicts the export without writing a file.
+`platform` requires API 1.48 or newer. Diff mode is unsupported, and all
+connections use the shared API resolver.
+
+### docker_image_pull
+
+Implements the pinned `community.docker.docker_image_pull` 5.2.2 Engine API
+contract.
+
+```yaml
+- name: Always check the registry for the requested image
+  docker_image_pull:
+    name: alpine
+    tag: latest
+    platform: linux/amd64
+    pull: always
+
+- name: Pull only when the requested platform is not local
+  docker_image_pull:
+    name: registry.example.com/team/app:v1
+    platform: amd64
+    pull: not_present
+```
+
+An embedded tag or digest takes precedence over `tag`, whose default is
+`latest`; image IDs are rejected. `pull: always` contacts the registry on every
+real run but reports unchanged when the resulting image ID is unchanged.
+`pull: not_present` skips when the local name and requested platform match.
+Architecture-only platform values are completed using daemon information, and
+`platform` requires API 1.32 or newer.
+
+Check mode predicts a required pull without contacting the registry and uses
+`unknown` as the after ID. Diff mode returns only image existence/IDs in
+`before` and `after`. Successful real pulls return the complete Engine
+inspection dictionary in `image`. Docker Engine 29 no longer reliably replaces
+a better host-platform image with a requested foreign platform; the pinned
+upstream suite excludes that cross-architecture transition on Engine 29, and
+Dibra follows the same baseline. Registry credentials come from Docker's
+`config.json`, and embedded stream errors are always surfaced.
+
+### docker_image_push
+
+Implements the pinned `community.docker.docker_image_push` 5.2.2 Engine API
+contract.
+
+```yaml
+- name: Push a tagged local image
+  docker_image_push:
+    name: registry.example.com/team/app
+    tag: v1
+```
+
+The named local image must exist. Embedded tags override `tag`; image IDs and
+digest references cannot be pushed. The module reads matching inline
+credentials from Docker's `config.json` and sends an explicit anonymous auth
+header when none exist, as required by Docker 28.3.3 and newer.
+
+Pushes report changed only when Engine emits `Pushing` or `Pushed` progress.
+Consequently, a repeated push whose layers already exist is unchanged, while a
+new or replaced image is changed. The response contains the original complete
+local Engine inspection in `image` and a structured action. Check and diff
+modes are unsupported; check mode skips the module before registry contact.
+Embedded stream failures and authentication errors fail the task.
+
+### docker_image_remove
+
+Implements the pinned `community.docker.docker_image_remove` 5.2.2 Engine API
+contract.
+
+```yaml
+- name: Remove one image tag
+  docker_image_remove:
+    name: registry.example.com/team/app
+    tag: old
+
+- name: Force-remove an image and all of its aliases
+  docker_image_remove:
+    name: sha256:0123456789abcdef...
+    force: true
+    prune: false
+```
+
+An embedded tag or digest takes precedence over `tag`, whose default is
+`latest`. Names, digest references, and canonical full image IDs are accepted.
+Missing images succeed unchanged. Removing a name normally untags that
+reference and deletes the image only when no references remain; `force` and
+`prune` map directly to Engine's remove options.
+
+Check mode predicts `deleted` and `untagged` without mutating Engine, and diff
+mode reports image existence, ID, sorted tags, and sorted digests before and
+after. The original complete inspection is returned in `image`. Docker 29 can
+report more or fewer digest aliases during a real force-removal by ID than can
+be predicted; this is an acknowledged limitation in the pinned upstream module
+and does not change the predicted or actual final existence state.
+
+### docker_image_tag
+
+Implements the pinned `community.docker.docker_image_tag` 5.2.2 Engine API
+contract.
+
+```yaml
+- name: Add several names to an image
+  docker_image_tag:
+    name: alpine:latest
+    repository:
+      - local/alpine:stable
+      - registry.example.com/team/alpine
+    tag: latest
+    existing_images: overwrite
+```
+
+`name` accepts a name, digest reference, or image ID. `repository` is a required
+list of target names; targets cannot be image IDs or digest references, and a
+target without a tag uses `tag` (default `latest`). An embedded source tag
+overrides `tag` for source lookup but does not change the default applied to
+untagged targets.
+
+`existing_images: keep` preserves targets that point at another image, while
+`overwrite` retags them. Targets already pointing at the requested source are
+unchanged. Check mode predicts each operation without tagging, and the always
+structured diff records each target's name, tag, prior ID or absence, and
+resulting ID. Successful results return the original complete source inspection
+in `image` and list only newly created or overwritten names in `tagged_images`.
 
 ### docker_container_info
 
@@ -1185,19 +1491,49 @@ Inspect a Docker container and return its full configuration. Read-only module.
     name: my-container
 ```
 
-**Returns**: Full container inspection including state, config, network settings, mounts. Sets `exists: false` if container not found (does not fail).
+**Returns**: `exists` and `container` are always present. For an existing
+container, `container` is the complete Engine inspection object with Docker's
+original field names and JSON shapes (for example `Id`, `State`, `Config`,
+`HostConfig`, `NetworkSettings`, and `Mounts`); do not transform it into a
+smaller snake-case summary. For a missing container, the module succeeds with
+`exists: false` and `container: null`.
+
+This is a read-only Engine API module. It supports check mode fully, has no diff
+output, always reports unchanged, and accepts names plus long or short container
+IDs. The shared API connection arguments, aliases, environment precedence, TLS
+behavior, and OpenSSH transport apply. Focused integration coverage compares
+the returned object directly with `docker inspect` on Engine 29.7.2.
 
 ### docker_image_info
 
-Inspect a Docker image and return its full configuration. Read-only module.
+Implements the pinned `community.docker.docker_image_info` 5.2.2 read-only
+contract.
 
 ```yaml
-- name: Get image info
+- name: Inspect one image (latest is implicit)
   docker_image_info:
-    name: alpine:latest
+    name: alpine
+
+- name: Inspect multiple local images
+  docker_image_info:
+    name:
+      - alpine:latest
+      - busybox:latest
+
+- name: Inspect all locally listed images
+  docker_image_info:
 ```
 
-**Returns**: Full image inspection including config, layers, metadata. Sets `exists: false` if image not found (does not fail).
+`name` accepts a scalar or list of names, full IDs, or short IDs. Missing
+requested images are silently omitted while existing results retain request
+order and duplicates. Omitting `name` lists non-intermediate local images and
+fully inspects each one. The module never pulls from a registry.
+
+`images` is always present and contains the complete Engine inspection
+dictionaries with Docker's original field names and JSON shapes. There is no
+separate `exists` field; an empty list means that no requested image exists.
+The module always reports unchanged, supports check mode fully, emits no diff,
+and uses the shared API connection resolver.
 
 ### docker_network_info
 

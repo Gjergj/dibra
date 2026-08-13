@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -55,12 +56,15 @@ func (environment StaticEnvironment) Environ() []string {
 type FileSystem interface {
 	Stat(string) (fs.FileInfo, error)
 	ReadFile(string) ([]byte, error)
+	Readlink(string) (string, error)
 	Open(string) (io.ReadCloser, error)
 	Create(string) (io.WriteCloser, error)
 	MkdirAll(string, fs.FileMode) error
 	WriteFile(string, []byte, fs.FileMode) error
 	UserHomeDir() (string, error)
+	Abs(string) (string, error)
 	EvalSymlinks(string) (string, error)
+	WalkDir(string, fs.WalkDirFunc) error
 }
 
 // OSFileSystem delegates filesystem operations to the operating system.
@@ -68,6 +72,7 @@ type OSFileSystem struct{}
 
 func (OSFileSystem) Stat(path string) (fs.FileInfo, error) { return os.Stat(path) }
 func (OSFileSystem) ReadFile(path string) ([]byte, error)  { return os.ReadFile(path) }
+func (OSFileSystem) Readlink(path string) (string, error)  { return os.Readlink(path) }
 func (OSFileSystem) Open(path string) (io.ReadCloser, error) {
 	return os.Open(path)
 }
@@ -79,8 +84,14 @@ func (OSFileSystem) WriteFile(path string, data []byte, mode fs.FileMode) error 
 	return os.WriteFile(path, data, mode)
 }
 func (OSFileSystem) UserHomeDir() (string, error) { return os.UserHomeDir() }
+func (OSFileSystem) Abs(path string) (string, error) {
+	return filepath.Abs(path)
+}
 func (OSFileSystem) EvalSymlinks(path string) (string, error) {
 	return filepath.EvalSymlinks(path)
+}
+func (OSFileSystem) WalkDir(root string, walk fs.WalkDirFunc) error {
+	return filepath.WalkDir(root, walk)
 }
 
 // Clock contains the wall-clock operations used by Docker executors.
@@ -108,6 +119,8 @@ type CLICommand struct {
 // is -1 when the process could not be started.
 type CLIResult struct {
 	Output   []byte
+	Stdout   []byte
+	Stderr   []byte
 	ExitCode int
 }
 
@@ -125,8 +138,13 @@ func (ExecCLIRunner) Run(ctx context.Context, command CLICommand) (CLIResult, er
 	cmd.Env = command.Env
 	cmd.Stdin = command.Stdin
 
-	output, err := cmd.CombinedOutput()
-	result := CLIResult{Output: output, ExitCode: 0}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	output := append(append([]byte(nil), stdout.Bytes()...), stderr.Bytes()...)
+	result := CLIResult{Output: output, Stdout: stdout.Bytes(), Stderr: stderr.Bytes(), ExitCode: 0}
 	if err == nil {
 		return result, nil
 	}

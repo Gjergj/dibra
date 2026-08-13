@@ -24,6 +24,7 @@ func TestPlaybook_DockerImagePullPolicies(t *testing.T) {
     docker_image:
       name: alpine
       tag: "3.19"
+      source: pull
       pull: never
       state: present
 `
@@ -39,6 +40,7 @@ func TestPlaybook_DockerImagePullPolicies(t *testing.T) {
     docker_image:
       name: alpine
       tag: "3.19"
+      source: pull
       pull: missing
       state: present
 `
@@ -70,6 +72,7 @@ func TestPlaybook_DockerImagePullPolicies(t *testing.T) {
     docker_image:
       name: alpine
       tag: "3.19"
+      source: pull
       pull: always
       state: present
 `
@@ -261,6 +264,7 @@ func TestPlaybook_DockerImageBackwardCompat(t *testing.T) {
     docker_image:
       name: alpine
       tag: "3.18"
+      source: pull
       force_source: true
       state: present
 `

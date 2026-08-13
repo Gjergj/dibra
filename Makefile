@@ -1,4 +1,4 @@
-.PHONY: build build-dev test test lint test-integration test-integration-up test-integration-down test-deploy-integration test-deploy-integration-only test-deploy-integration-up test-deploy-integration-down run-deploy-docker-host run-deploy-docker-host-down test-deploy-docker-host test-deploy-docker-host-down clean snapshot release-dry release-minor release-patch install
+.PHONY: build build-dev test test lint test-integration test-integration-up test-integration-down test-docker-container-integration test-docker-container-integration-only test-docker-image-integration test-docker-image-integration-only test-deploy-integration test-deploy-integration-only test-deploy-integration-up test-deploy-integration-down run-deploy-docker-host run-deploy-docker-host-down test-deploy-docker-host test-deploy-docker-host-down clean snapshot release-dry release-minor release-patch install
 
 # Version info for local builds
 VERSION ?= dev
@@ -42,9 +42,7 @@ lint:
 
 # Start test container
 test-integration-up:
-	docker compose -f test/docker-compose.yaml up -d --build
-	@echo "Waiting for SSH to be ready..."
-	@sleep 3
+	docker compose -f test/docker-compose.yaml up -d --build --wait --wait-timeout 180
 
 # Stop test container
 test-integration-down:
@@ -61,6 +59,26 @@ test-integration: test-integration-up
 test-integration-only:
 	go test -tags=integration -count=1 -v -timeout 20m ./test/integration/...
 	go test -tags=integration -count=1 -v -timeout 10m ./test/deploy_integration/...
+
+# Run the pinned Docker Engine 29.7.2 docker_container certification lane.
+test-docker-container-integration: test-integration-up
+	@echo "Running docker_container integration tests..."
+	go test -tags=integration -count=1 -v -timeout 10m ./test/integration -run '^TestPlaybook_DockerContainer' || (make test-integration-down && exit 1)
+	make test-integration-down
+
+# Run the certification lane against an already-running integration host.
+test-docker-container-integration-only:
+	go test -tags=integration -count=1 -v -timeout 10m ./test/integration -run '^TestPlaybook_DockerContainer'
+
+# Run the pinned Docker Engine 29.7.2 image-family certification lane.
+test-docker-image-integration: test-integration-up
+	@echo "Running Docker image-family integration tests..."
+	go test -tags=integration -count=1 -v -timeout 20m ./test/integration -run '^(TestPlaybook_DockerImageLifecycle|TestPlaybook_DockerImageParity|TestPlaybook_DockerImagePullPolicies|TestPlaybook_DockerImageTagIdempotency|TestPlaybook_DockerImageStreamErrors|TestPlaybook_DockerImageForceRemove|TestPlaybook_DockerImageBackwardCompat|TestPlaybook_DockerImageBuild|TestPlaybook_DockerImageExport|TestPlaybook_DockerImageInfoParity|TestPlaybook_DockerImageLoad|TestPlaybook_DockerImageLoadParity|TestPlaybook_DockerImagePullParity|TestPlaybook_DockerImagePushParity|TestPlaybook_DockerImageRemoveParity|TestPlaybook_DockerImageTagParity)$$' || (make test-integration-down && exit 1)
+	make test-integration-down
+
+# Run the image-family lane against an already-running integration host.
+test-docker-image-integration-only:
+	go test -tags=integration -count=1 -v -timeout 20m ./test/integration -run '^(TestPlaybook_DockerImageLifecycle|TestPlaybook_DockerImageParity|TestPlaybook_DockerImagePullPolicies|TestPlaybook_DockerImageTagIdempotency|TestPlaybook_DockerImageStreamErrors|TestPlaybook_DockerImageForceRemove|TestPlaybook_DockerImageBackwardCompat|TestPlaybook_DockerImageBuild|TestPlaybook_DockerImageExport|TestPlaybook_DockerImageInfoParity|TestPlaybook_DockerImageLoad|TestPlaybook_DockerImageLoadParity|TestPlaybook_DockerImagePullParity|TestPlaybook_DockerImagePushParity|TestPlaybook_DockerImageRemoveParity|TestPlaybook_DockerImageTagParity)$$'
 
 # Start the shared Linux/systemd test container for dibra-deploy tests
 test-deploy-integration-up: test-integration-up

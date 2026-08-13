@@ -1,7 +1,6 @@
 package docker
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/docker/go-connections/nat"
@@ -269,10 +268,18 @@ func TestToNatPortMapExpandsRanges(t *testing.T) {
 	}
 }
 
-func TestExpandPortBindingRejectsMismatchedRanges(t *testing.T) {
-	_, err := ExpandPortBinding(PortBinding{HostPort: "1000-1001", ContainerPort: "2000-2002"})
-	if err == nil || !strings.Contains(err.Error(), "do not match") {
-		t.Fatalf("ExpandPortBinding() error = %v", err)
+func TestExpandPortBindingUsesShorterMismatchedRange(t *testing.T) {
+	for _, binding := range []PortBinding{
+		{HostPort: "1000-1001", ContainerPort: "2000-2002"},
+		{HostPort: "1000-1002", ContainerPort: "2000-2001"},
+	} {
+		got, err := ExpandPortBinding(binding)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 2 || got[0].HostPort != "1000" || got[0].ContainerPort != "2000" || got[1].HostPort != "1001" || got[1].ContainerPort != "2001" {
+			t.Fatalf("ExpandPortBinding(%#v) = %#v", binding, got)
+		}
 	}
 }
 
@@ -369,6 +376,22 @@ func TestComparePortBindings(t *testing.T) {
 				t.Errorf("ComparePortBindings() = %v, want %v", result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestPortBindingsContainAllowsAdditionalContainerPorts(t *testing.T) {
+	desired := nat.PortMap{
+		"80/tcp": []nat.PortBinding{{HostIP: "", HostPort: "8080"}},
+	}
+	current := nat.PortMap{
+		"80/tcp":  []nat.PortBinding{{HostIP: "0.0.0.0", HostPort: "8080"}},
+		"443/tcp": []nat.PortBinding{{HostIP: "0.0.0.0", HostPort: "8443"}},
+	}
+	if !PortBindingsContain(desired, current) {
+		t.Fatal("additional current container port was rejected")
+	}
+	if ComparePortBindings(desired, current) {
+		t.Fatal("strict comparison accepted an additional current container port")
 	}
 }
 
