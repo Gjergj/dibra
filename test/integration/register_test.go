@@ -498,21 +498,27 @@ func TestPlaybook_Register(t *testing.T) {
 
   - name: Check common fields on ping
     copy:
-      content: "stdout={{ ping_common.stdout }} stderr={{ ping_common.stderr }} rc={{ ping_common.rc }} attempts={{ ping_common.attempts }}"
+      content: "ping={{ ping_common.ping }} attempts={{ ping_common.attempts }} failed={{ ping_common.failed }} changed={{ ping_common.changed }}"
       dest: /tmp/dibra-register-ping-common.txt
       mode: "0644"
 `
 		output := runPlaybook(t, playbook)
-		if strings.Contains(output, "FAILED") {
+		if strings.Contains(output, "FAILED") || strings.Contains(output, "could not execute task") {
 			t.Fatalf("expected no failures, got: %s", output)
 		}
 
 		content := remoteFileContent(t, client, "/tmp/dibra-register-ping-common.txt")
+		if !strings.Contains(content, "ping=pong") {
+			t.Errorf("expected ping=pong, got: %s", content)
+		}
 		if !strings.Contains(content, "attempts=1") {
 			t.Errorf("expected attempts=1, got: %s", content)
 		}
-		if !strings.Contains(content, "rc=0") {
-			t.Errorf("expected rc=0, got: %s", content)
+		if !strings.Contains(content, "failed=false") {
+			t.Errorf("expected failed=false, got: %s", content)
+		}
+		if !strings.Contains(content, "changed=false") {
+			t.Errorf("expected changed=false, got: %s", content)
 		}
 	})
 }

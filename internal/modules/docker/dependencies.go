@@ -55,6 +55,7 @@ func (environment StaticEnvironment) Environ() []string {
 // Tests can provide an in-memory or recording implementation.
 type FileSystem interface {
 	Stat(string) (fs.FileInfo, error)
+	Lstat(string) (fs.FileInfo, error)
 	ReadFile(string) ([]byte, error)
 	Readlink(string) (string, error)
 	Open(string) (io.ReadCloser, error)
@@ -65,14 +66,19 @@ type FileSystem interface {
 	Abs(string) (string, error)
 	EvalSymlinks(string) (string, error)
 	WalkDir(string, fs.WalkDirFunc) error
+	RemoveAll(string) error
+	TempDir() string
 }
 
 // OSFileSystem delegates filesystem operations to the operating system.
 type OSFileSystem struct{}
 
 func (OSFileSystem) Stat(path string) (fs.FileInfo, error) { return os.Stat(path) }
-func (OSFileSystem) ReadFile(path string) ([]byte, error)  { return os.ReadFile(path) }
-func (OSFileSystem) Readlink(path string) (string, error)  { return os.Readlink(path) }
+func (OSFileSystem) Lstat(path string) (fs.FileInfo, error) {
+	return os.Lstat(path)
+}
+func (OSFileSystem) ReadFile(path string) ([]byte, error) { return os.ReadFile(path) }
+func (OSFileSystem) Readlink(path string) (string, error) { return os.Readlink(path) }
 func (OSFileSystem) Open(path string) (io.ReadCloser, error) {
 	return os.Open(path)
 }
@@ -93,6 +99,8 @@ func (OSFileSystem) EvalSymlinks(path string) (string, error) {
 func (OSFileSystem) WalkDir(root string, walk fs.WalkDirFunc) error {
 	return filepath.WalkDir(root, walk)
 }
+func (OSFileSystem) RemoveAll(path string) error { return os.RemoveAll(path) }
+func (OSFileSystem) TempDir() string             { return os.TempDir() }
 
 // Clock contains the wall-clock operations used by Docker executors.
 type Clock interface {

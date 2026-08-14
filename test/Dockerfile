@@ -2,6 +2,7 @@ FROM ubuntu:22.04
 
 ARG DOCKER_ENGINE_VERSION=29.7.2
 ARG COMPOSE_VERSION=5.4.0
+ARG BUILDX_VERSION=0.30.0
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV container=docker
@@ -39,7 +40,7 @@ COPY docker.service /etc/systemd/system/docker.service
 # Install Docker Plugins manually
 RUN mkdir -p /usr/local/lib/docker/cli-plugins && \
     curl -fSL https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/docker-compose-linux-$(uname -m) -o /usr/local/lib/docker/cli-plugins/docker-compose && \
-    curl -SL https://github.com/docker/buildx/releases/download/v0.13.1/buildx-v0.13.1.linux-$(uname -m | sed s/x86_64/amd64/ | sed s/aarch64/arm64/) -o /usr/local/lib/docker/cli-plugins/docker-buildx && \
+    curl -SL https://github.com/docker/buildx/releases/download/v${BUILDX_VERSION}/buildx-v${BUILDX_VERSION}.linux-$(uname -m | sed s/x86_64/amd64/ | sed s/aarch64/arm64/) -o /usr/local/lib/docker/cli-plugins/docker-buildx && \
     chmod +x /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/lib/docker/cli-plugins/docker-buildx
 
 RUN cd /lib/systemd/system/sysinit.target.wants/ && \

@@ -57,10 +57,10 @@ func TestPlaybook_DockerVolume(t *testing.T) {
 		t.Error("Expected no changes on idempotency run")
 	}
 
-	// 3. Try to change driver options (should fail gracefully)
-	t.Log("Step 3: Change driver options (should fail)")
+	// 3. Change driver options with recreate=never leaves the existing volume unchanged
+	t.Log("Step 3: Change driver options (recreate=never leaves mismatch)")
 	playbookChangeOpts := playbookHeader + `
-  - name: Change driver options (should fail)
+  - name: Change driver options without recreate
     docker_volume:
       name: ` + volName + `
       state: present
@@ -74,9 +74,11 @@ func TestPlaybook_DockerVolume(t *testing.T) {
         phase: "7"
 `
 	output3 := runPlaybook(t, playbookChangeOpts)
-	// Should fail because driver options differ and recreate is not set
-	if !strings.Contains(output3, "FAILED") {
-		t.Error("Expected FAILED when driver options differ without recreate=always")
+	if strings.Contains(output3, "FAILED") {
+		t.Fatalf("Mismatch with recreate=never should succeed unchanged: %s", output3)
+	}
+	if strings.Contains(output3, "CHANGED") {
+		t.Error("Expected no changes when driver options differ and recreate=never")
 	}
 
 	// 4. Recreate=always should allow changing options
@@ -225,9 +227,9 @@ func TestPlaybook_DockerConfigHashIdempotency(t *testing.T) {
 	}
 
 	// Verify hash label
-	hashLabel := remoteExec(t, client, "docker config inspect "+configName+" --format '{{index .Spec.Labels \"dibra.data_hash\"}}'")
+	hashLabel := remoteExec(t, client, "docker config inspect "+configName+" --format '{{index .Spec.Labels \"ansible_key\"}}'")
 	if strings.TrimSpace(hashLabel) == "" {
-		t.Error("Expected dibra.data_hash label to be set")
+		t.Error("Expected ansible_key label to be set")
 	}
 
 	// 2. Same data - should NOT change

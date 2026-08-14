@@ -6,7 +6,12 @@ import (
 	"testing"
 
 	"github.com/gjergjiramku/dibra/internal/execution"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_compose"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_compose_v2_exec"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_compose_v2_pull"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_compose_v2_run"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_container"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_container_copy_into"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_container_exec"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_container_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_image"
@@ -18,11 +23,18 @@ import (
 	"github.com/gjergjiramku/dibra/internal/modules/docker_image_push"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_image_remove"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_image_tag"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_login"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_network"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_node"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_node_info"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_prune"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_swarm_info"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_volume"
 )
 
 func TestDefinitionsAreCompleteAndResolvable(t *testing.T) {
 	entries := Definitions()
-	if got, want := len(entries), 31; got != want {
+	if got, want := len(entries), 36; got != want {
 		t.Fatalf("Definitions() has %d entries, want %d", got, want)
 	}
 
@@ -83,6 +95,37 @@ func TestDecodeUsesRegisteredConcreteRequestType(t *testing.T) {
 	}
 	if request.Name != "web" || request.Image != "nginx:alpine" || request.ValidateCerts == nil || !*request.ValidateCerts {
 		t.Fatalf("decoded request = %#v", request)
+	}
+}
+
+func TestDockerContainerCopyIntoDecodesCanonicalArgumentsAndAliases(t *testing.T) {
+	invocation, err := Decode("community.docker.docker_container_copy_into", json.RawMessage(`{
+		"container":"web",
+		"content":"",
+		"container_path":"tmp/empty",
+		"mode":"0600",
+		"mode_parse":"modern",
+		"local_follow":false,
+		"force":false,
+		"docker_url":"unix:///explicit.sock",
+		"tls_verify":false
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, ok := invocation.Arguments.(docker_container_copy_into.Request)
+	if !ok {
+		t.Fatalf("arguments type = %T", invocation.Arguments)
+	}
+	if request.Content == nil || *request.Content != "" || request.Path != nil ||
+		request.LocalFollow == nil || *request.LocalFollow ||
+		request.Force == nil || *request.Force ||
+		string(request.Mode) != `"0600"` || request.ModeParse != "modern" {
+		t.Fatalf("request = %#v", request)
+	}
+	if request.DockerHost == nil || *request.DockerHost != "unix:///explicit.sock" ||
+		request.ValidateCerts == nil || *request.ValidateCerts {
+		t.Fatalf("connection arguments = %#v", request.CommonArgs)
 	}
 }
 
@@ -303,8 +346,8 @@ func TestExecuteDefinitionPassesExecutionStateToHandler(t *testing.T) {
 
 func TestCheckModeSkipsModuleWithoutImplementedSupport(t *testing.T) {
 	response, err := Execute(
-		"docker_compose_v2",
-		json.RawMessage(`{"project_src":"/path/that/must/not/be-accessed"}`),
+		"docker_compose_v2_run",
+		json.RawMessage(`{"project_src":"/path/that/must/not/be-accessed","service":"web"}`),
 		execution.State{CheckMode: true},
 	)
 	if err != nil {
@@ -321,21 +364,34 @@ func TestCheckModeSkipsModuleWithoutImplementedSupport(t *testing.T) {
 
 func TestModulesWithImplementedCheckModeAreDeclared(t *testing.T) {
 	implemented := map[string]bool{
-		"docker_container":          true,
-		"docker_image":              true,
-		"docker_image_build":        true,
-		"docker_image_export":       true,
-		"docker_image_pull":         true,
-		"docker_image_remove":       true,
-		"docker_image_tag":          true,
-		"docker_container_info":     true,
-		"docker_image_info":         true,
-		"docker_network_info":       true,
-		"docker_volume_info":        true,
-		"docker_host_info":          true,
-		"docker_swarm_info":         true,
-		"docker_swarm_service_info": true,
-		"docker_node_info":          true,
+		"docker_container":           true,
+		"docker_image":               true,
+		"docker_image_build":         true,
+		"docker_image_export":        true,
+		"docker_image_pull":          true,
+		"docker_image_remove":        true,
+		"docker_image_tag":           true,
+		"docker_network":             true,
+		"docker_volume":              true,
+		"docker_login":               true,
+		"docker_plugin":              true,
+		"docker_swarm":               true,
+		"docker_swarm_service":       true,
+		"docker_node":                true,
+		"docker_config":              true,
+		"docker_compose_v2":          true,
+		"docker_compose_v2_pull":     true,
+		"docker_container_copy_into": true,
+		"docker_container_info":      true,
+		"docker_image_info":          true,
+		"docker_network_info":        true,
+		"docker_volume_info":         true,
+		"docker_host_info":           true,
+		"docker_context_info":        true,
+		"current_container_facts":    true,
+		"docker_swarm_info":          true,
+		"docker_swarm_service_info":  true,
+		"docker_node_info":           true,
 	}
 	for _, definition := range Definitions() {
 		want := implemented[definition.ShortName()]
@@ -669,9 +725,10 @@ func TestSensitiveArgumentsAreDeclared(t *testing.T) {
 		"docker_login":               {"password"},
 		"docker_secret":              {"data"},
 		"docker_config":              {"data"},
-		"docker_swarm":               {"join_token"},
+		"docker_swarm":               {"join_token", "signing_ca_key"},
 		"docker_container_exec":      {"stdin"},
 		"docker_compose_v2_run":      {"stdin"},
+		"docker_compose_v2_exec":     {"stdin"},
 		"docker_container_copy_into": {"content"},
 		"docker_image_build":         {"args"},
 	}
@@ -690,9 +747,9 @@ func TestSensitiveArgumentsAreDeclared(t *testing.T) {
 
 func TestSensitiveResultsAreDeclared(t *testing.T) {
 	tests := map[string][]string{
-		"docker_login":      {"token"},
-		"docker_swarm":      {"join_tokens"},
-		"docker_swarm_info": {"swarm_info.join_tokens"},
+		"docker_login":      {"token", "login_result.IdentityToken"},
+		"docker_swarm":      {"swarm_facts.JoinTokens", "swarm_facts.UnlockKey"},
+		"docker_swarm_info": {"swarm_facts.JoinTokens", "swarm_unlock_key"},
 	}
 	for moduleName, fields := range tests {
 		definition, ok := Lookup(moduleName)
@@ -771,17 +828,21 @@ func TestRedactNestedSwarmJoinTokens(t *testing.T) {
 		"changed": false,
 		"failed":  false,
 		"msg":     "worker-token",
-		"swarm_info": map[string]any{
-			"join_tokens": map[string]any{"worker": "worker-token", "manager": "manager-token"},
+		"swarm_facts": map[string]any{
+			"JoinTokens": map[string]any{"Worker": "worker-token", "Manager": "manager-token"},
 		},
+		"swarm_unlock_key": "SWMKEY-1-secret",
 	}
 	redacted, err := RedactResult("docker_swarm_info", map[string]any{}, result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	swarmInfo := redacted["swarm_info"].(map[string]any)
-	if swarmInfo["join_tokens"] != execution.RedactedValue {
-		t.Fatalf("join tokens = %#v", swarmInfo["join_tokens"])
+	facts := redacted["swarm_facts"].(map[string]any)
+	if facts["JoinTokens"] != execution.RedactedValue {
+		t.Fatalf("join tokens = %#v", facts["JoinTokens"])
+	}
+	if redacted["swarm_unlock_key"] != execution.RedactedValue {
+		t.Fatalf("unlock key = %#v", redacted["swarm_unlock_key"])
 	}
 	if strings.Contains(redacted["msg"].(string), "worker-token") {
 		t.Fatalf("join token echo was not scrubbed: %#v", redacted)
@@ -796,11 +857,14 @@ func TestCapabilitiesMatchUpstreamDeclarations(t *testing.T) {
 		"docker_volume":              {SupportFull, SupportFull},
 		"docker_prune":               {SupportNone, SupportNone},
 		"docker_login":               {SupportFull, SupportNone},
+		"docker_plugin":              {SupportFull, SupportFull},
 		"docker_swarm":               {SupportFull, SupportFull},
 		"docker_swarm_service":       {SupportFull, SupportFull},
 		"docker_node":                {SupportFull, SupportNone},
 		"docker_compose_v2":          {SupportFull, SupportNone},
+		"docker_compose_v2_pull":     {SupportFull, SupportNone},
 		"docker_compose_v2_run":      {SupportNone, SupportNone},
+		"docker_compose_v2_exec":     {SupportNone, SupportNone},
 		"docker_secret":              {SupportFull, SupportNone},
 		"docker_config":              {SupportFull, SupportNone},
 		"docker_stack":               {SupportNone, SupportNone},
@@ -818,6 +882,8 @@ func TestCapabilitiesMatchUpstreamDeclarations(t *testing.T) {
 		"docker_network_info":        {SupportFull, SupportNA},
 		"docker_volume_info":         {SupportFull, SupportNA},
 		"docker_host_info":           {SupportFull, SupportNA},
+		"docker_context_info":        {SupportFull, SupportNA},
+		"current_container_facts":    {SupportFull, SupportNA},
 		"docker_swarm_info":          {SupportFull, SupportNA},
 		"docker_swarm_service_info":  {SupportFull, SupportNA},
 		"docker_node_info":           {SupportFull, SupportNA},
@@ -841,4 +907,198 @@ func contains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestMilestone6AliasesDecodeToCanonicalFields(t *testing.T) {
+	networkInvocation, err := Decode("docker_network", json.RawMessage(`{
+		"network_name":"app-net",
+		"incremental":true,
+		"containers":["web"],
+		"options":{"com.docker.network.bridge.enable_icc":false}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	network := networkInvocation.Arguments.(docker_network.Request)
+	if network.Name != "app-net" || !network.Appends || len(network.Connected) != 1 || network.DriverOptions["com.docker.network.bridge.enable_icc"] != false {
+		t.Fatalf("network = %#v", network)
+	}
+
+	volumeInvocation, err := Decode("docker_volume", json.RawMessage(`{"name":"data","recreate":"never"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	volume := volumeInvocation.Arguments.(docker_volume.Request)
+	if volume.VolumeName != "data" || volume.Name != "" {
+		t.Fatalf("volume = %#v", volume)
+	}
+
+	loginInvocation, err := Decode("docker_login", json.RawMessage(`{
+		"username":"alice",
+		"password":"secret",
+		"registry":"localhost:5000",
+		"relogin":true,
+		"dockercfg_path":"/tmp/config.json"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := loginInvocation.Arguments.(docker_login.Request)
+	if login.RegistryURL != "localhost:5000" || !login.Reauthorize || login.ConfigPath != "/tmp/config.json" {
+		t.Fatalf("login = %#v", login)
+	}
+
+	pruneInvocation, err := Decode("docker_prune", json.RawMessage(`{"builder":true,"builder_cache_keep_storage":"1MB"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prune := pruneInvocation.Arguments.(docker_prune.Request)
+	if !prune.BuilderCache || prune.BuilderCacheKeepStorage != "1MB" {
+		t.Fatalf("prune = %#v", prune)
+	}
+
+	if _, err := Decode("docker_network", json.RawMessage(`{"name":"a","network_name":"b"}`)); err == nil {
+		t.Fatal("expected duplicate alias error")
+	}
+	if _, err := Decode("docker_context_info", json.RawMessage(`{"docker_host":"unix:///var/run/docker.sock"}`)); err == nil {
+		t.Fatal("expected unknown connection argument")
+	}
+
+	composeInvocation, err := Decode("docker_compose_v2", json.RawMessage(`{
+		"project_src":"/srv/app",
+		"stop_timeout":15,
+		"build":true,
+		"pull":false,
+		"docker_url":"unix:///tmp/docker.sock"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compose := composeInvocation.Arguments.(docker_compose.Request)
+	if compose.ProjectSrc != "/srv/app" || compose.Timeout == nil || *compose.Timeout != 15 {
+		t.Fatalf("compose timeout = %#v", compose)
+	}
+	if compose.Build != "always" || compose.Pull != "policy" {
+		t.Fatalf("compose policies = build %q pull %q", compose.Build, compose.Pull)
+	}
+	if compose.DockerHost == nil || *compose.DockerHost != "unix:///tmp/docker.sock" {
+		t.Fatalf("compose docker_host = %#v", compose.DockerHost)
+	}
+
+	pullInvocation, err := Decode("docker_compose_v2_pull", json.RawMessage(`{
+		"project_src":"/srv/flask",
+		"policy":"missing",
+		"ignore_pull_failures":true,
+		"docker_api_version":"1.44"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pull := pullInvocation.Arguments.(docker_compose_v2_pull.Request)
+	if pull.ProjectSrc != "/srv/flask" || pull.Policy != "missing" || !pull.IgnorePullFailures {
+		t.Fatalf("pull = %#v", pull)
+	}
+	if pull.APIVersion == nil || *pull.APIVersion != "1.44" {
+		t.Fatalf("pull api_version = %#v", pull.APIVersion)
+	}
+
+	runInvocation, err := Decode("docker_compose_v2_run", json.RawMessage(`{
+		"project_src":"/srv/flask",
+		"service":"web",
+		"command":"echo ok",
+		"env":{"BOOL_STRING":"true"},
+		"docker_url":"unix:///tmp/docker.sock"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := runInvocation.Arguments.(docker_compose_v2_run.Request)
+	if run.ProjectSrc != "/srv/flask" || run.Service != "web" || run.Command == nil || *run.Command != "echo ok" {
+		t.Fatalf("run = %#v", run)
+	}
+	if run.Env["BOOL_STRING"] != "true" || run.DockerHost == nil || *run.DockerHost != "unix:///tmp/docker.sock" {
+		t.Fatalf("run options = %#v", run)
+	}
+
+	execInvocation, err := Decode("docker_compose_v2_exec", json.RawMessage(`{
+		"project_src":"/srv/flask",
+		"service":"web",
+		"argv":["id"],
+		"index":2,
+		"privileged":true,
+		"docker_url":"unix:///tmp/docker.sock"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	execRequest := execInvocation.Arguments.(docker_compose_v2_exec.Request)
+	if execRequest.ProjectSrc != "/srv/flask" || execRequest.Service != "web" || execRequest.Index == nil || *execRequest.Index != 2 || !execRequest.Privileged {
+		t.Fatalf("exec = %#v", execRequest)
+	}
+	if execRequest.DockerHost == nil || *execRequest.DockerHost != "unix:///tmp/docker.sock" {
+		t.Fatalf("exec docker_host = %#v", execRequest.DockerHost)
+	}
+}
+
+func TestDockerSwarmInfoVerboseAliasAndFiltersDecode(t *testing.T) {
+	invocation, err := Decode("docker_swarm_info", json.RawMessage(`{
+		"nodes":true,
+		"verbose":true,
+		"nodes_filters":{"name":"manager-1"},
+		"services":true,
+		"services_filters":{"label":["env=test"]},
+		"unlock_key":true
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := invocation.Arguments.(docker_swarm_info.Request)
+	if !request.Nodes || !request.VerboseOutput || !request.Services || !request.UnlockKey {
+		t.Fatalf("request = %#v", request)
+	}
+	if got := request.NodesFilters["name"]; len(got) != 1 || got[0] != "manager-1" {
+		t.Fatalf("nodes_filters = %#v", request.NodesFilters)
+	}
+	if got := request.ServicesFilters["label"]; len(got) != 1 || got[0] != "env=test" {
+		t.Fatalf("services_filters = %#v", request.ServicesFilters)
+	}
+}
+
+func TestDockerNodeAndNodeInfoDecode(t *testing.T) {
+	nodeInvocation, err := Decode("community.docker.docker_node", json.RawMessage(`{
+		"hostname":"testhost",
+		"availability":"drain",
+		"labels":{"count":1,"tier":"frontend"},
+		"labels_state":"merge",
+		"labels_to_remove":["old"],
+		"docker_url":"unix:///run/docker.sock"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := nodeInvocation.Arguments.(docker_node.Request)
+	if node.Hostname != "testhost" || node.Availability != "drain" || node.Labels["count"] != "1" || node.Labels["tier"] != "frontend" {
+		t.Fatalf("node = %#v", node)
+	}
+	if node.LabelsState != "merge" || len(node.LabelsToRemove) != 1 || node.DockerHost == nil || *node.DockerHost != "unix:///run/docker.sock" {
+		t.Fatalf("node options = %#v", node)
+	}
+
+	listInvocation, err := Decode("docker_node_info", json.RawMessage(`{"name":["testhost","missing"],"docker_url":"unix:///run/docker.sock"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := listInvocation.Arguments.(docker_node_info.Request)
+	if len(list.Name) != 2 || list.Name[0] != "testhost" || list.DockerHost == nil || *list.DockerHost != "unix:///run/docker.sock" {
+		t.Fatalf("list = %#v", list)
+	}
+
+	scalarInvocation, err := Decode("community.docker.docker_node_info", json.RawMessage(`{"name":"testhost","self":false}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	scalar := scalarInvocation.Arguments.(docker_node_info.Request)
+	if len(scalar.Name) != 1 || scalar.Name[0] != "testhost" || scalar.Self {
+		t.Fatalf("scalar = %#v", scalar)
+	}
 }

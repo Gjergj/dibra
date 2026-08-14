@@ -1,9 +1,15 @@
 package docker_swarm_service_info
 
 import (
+	"fmt"
+	"strings"
+
+	"github.com/containerd/errdefs"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 	"github.com/moby/moby/client"
 )
+
+const cannotInspectServiceMsg = "Cannot inspect service: To inspect service execute module on Swarm Manager"
 
 func Execute(req Request) Response {
 	return ExecuteWithDependencies(req, docker.Dependencies{})
@@ -11,58 +17,52 @@ func Execute(req Request) Response {
 
 func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
 	dependencies = dependencies.Resolve()
+	if strings.TrimSpace(req.Name) == "" {
+		return failed("missing required arguments: name")
+	}
+
 	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("create docker client", "", err).Error()}
+		return failed(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
 	}
 	defer cli.Close()
 
 	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
-	if req.Name == "" {
-		return Response{Failed: true, Msg: "service name is required"}
+	if _, err := cli.SwarmInspect(ctx, client.SwarmInspectOptions{}); err != nil {
+		return failed(docker.NotSwarmManagerMsg)
 	}
 
-	// Inspect service
-	serviceResult, err := cli.ServiceInspect(ctx, req.Name, client.ServiceInspectOptions{})
+	result, err := cli.ServiceInspect(ctx, req.Name, client.ServiceInspectOptions{})
 	if err != nil {
 		if docker.IsNotFoundError(err) {
-			return Response{
-				Changed: false,
-				Exists:  false,
-				Msg:     "service not found",
-			}
+			return Response{Changed: false, Exists: false, Service: nil}
 		}
-		return Response{Failed: true, Msg: docker.WrapError("inspect service", req.Name, err).Error()}
+		if errdefs.IsUnavailable(err) || strings.Contains(err.Error(), "503") {
+			return failed(cannotInspectServiceMsg)
+		}
+		return failed(fmt.Sprintf("Error inspecting swarm service: %v", err))
 	}
-	service := serviceResult.Service
 
-	// Get tasks for this service
-	taskFilter := client.Filters{}
-	taskFilter.Add("service", service.ID)
-	tasks, err := cli.TaskList(ctx, client.TaskListOptions{Filters: taskFilter})
+	service, err := inspectionFromResult(result)
 	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("list tasks", req.Name, err).Error()}
+		return failed(fmt.Sprintf("Error inspecting swarm service: %v", err))
 	}
-
-	// Convert tasks to TaskInfo
-	taskInfos := make([]TaskInfo, 0, len(tasks.Items))
-	for _, task := range tasks.Items {
-		taskInfos = append(taskInfos, TaskInfo{
-			ID:           task.ID,
-			NodeID:       task.NodeID,
-			Status:       task.Status,
-			DesiredState: task.DesiredState,
-			Slot:         task.Slot,
-		})
-	}
-
 	return Response{
-		Changed:   false,
-		Exists:    true,
-		ServiceID: service.ID,
-		Service:   service,
-		Tasks:     taskInfos,
+		Changed: false,
+		Exists:  true,
+		Service: service,
 	}
+}
+
+func inspectionFromResult(result client.ServiceInspectResult) (map[string]any, error) {
+	if len(result.Raw) > 0 {
+		return docker.DecodeInspection(result.Raw)
+	}
+	return docker.InspectionMap(result.Service)
+}
+
+func failed(msg string) Response {
+	return Response{Failed: true, Msg: msg}
 }

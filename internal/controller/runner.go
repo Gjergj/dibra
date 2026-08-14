@@ -1205,6 +1205,11 @@ func splitToInterfaceSlice(s string) []interface{} {
 	if s == "" {
 		return []interface{}{}
 	}
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.TrimSuffix(s, "\n")
+	if s == "" {
+		return []interface{}{}
+	}
 	parts := strings.Split(s, "\n")
 	out := make([]interface{}, len(parts))
 	for i, p := range parts {
@@ -1226,15 +1231,6 @@ func normalizeRegisteredResult(result map[string]interface{}) map[string]interfa
 	if _, ok := result["msg"]; !ok {
 		result["msg"] = ""
 	}
-	if _, ok := result["stdout"]; !ok {
-		result["stdout"] = ""
-	}
-	if _, ok := result["stderr"]; !ok {
-		result["stderr"] = ""
-	}
-	if _, ok := result["rc"]; !ok {
-		result["rc"] = 0
-	}
 	if rc, ok := result["rc"].(float64); ok {
 		result["rc"] = int(rc)
 	}
@@ -1245,12 +1241,14 @@ func normalizeRegisteredResult(result map[string]interface{}) map[string]interfa
 		result["retries"] = 0
 	}
 	if _, ok := result["stdout_lines"]; !ok {
-		stdout, _ := result["stdout"].(string)
-		result["stdout_lines"] = splitToInterfaceSlice(stdout)
+		if stdout, present := result["stdout"].(string); present {
+			result["stdout_lines"] = splitToInterfaceSlice(stdout)
+		}
 	}
 	if _, ok := result["stderr_lines"]; !ok {
-		stderr, _ := result["stderr"].(string)
-		result["stderr_lines"] = splitToInterfaceSlice(stderr)
+		if stderr, present := result["stderr"].(string); present {
+			result["stderr_lines"] = splitToInterfaceSlice(stderr)
+		}
 	}
 	return result
 }

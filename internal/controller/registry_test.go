@@ -28,3 +28,35 @@ func TestRenderRegisteredModuleUsesCanonicalNameAndTypedArguments(t *testing.T) 
 		t.Fatalf("name = %#v", arguments["name"])
 	}
 }
+
+func TestNormalizeRegisteredResultPreservesConditionalReturnFields(t *testing.T) {
+	detached := normalizeRegisteredResult(map[string]interface{}{"container_id": "abc"})
+	for _, field := range []string{"rc", "stdout", "stderr", "stdout_lines", "stderr_lines"} {
+		if _, found := detached[field]; found {
+			t.Errorf("detached result unexpectedly contains %s: %#v", field, detached)
+		}
+	}
+
+	synchronous := normalizeRegisteredResult(map[string]interface{}{
+		"rc": 0, "stdout": "one\ntwo", "stderr": "",
+	})
+	if _, found := synchronous["rc"]; !found {
+		t.Fatal("synchronous result lost rc")
+	}
+	if lines, ok := synchronous["stdout_lines"].([]interface{}); !ok || len(lines) != 2 {
+		t.Fatalf("stdout_lines = %#v", synchronous["stdout_lines"])
+	}
+	if lines, ok := synchronous["stderr_lines"].([]interface{}); !ok || len(lines) != 0 {
+		t.Fatalf("stderr_lines = %#v", synchronous["stderr_lines"])
+	}
+
+	trailing := normalizeRegisteredResult(map[string]interface{}{
+		"rc": 0, "stdout": "Hello world!\n", "stderr": "Detach worked.\n",
+	})
+	if lines, ok := trailing["stdout_lines"].([]interface{}); !ok || len(lines) != 1 || lines[0] != "Hello world!" {
+		t.Fatalf("trailing stdout_lines = %#v", trailing["stdout_lines"])
+	}
+	if lines, ok := trailing["stderr_lines"].([]interface{}); !ok || len(lines) != 1 || lines[0] != "Detach worked." {
+		t.Fatalf("trailing stderr_lines = %#v", trailing["stderr_lines"])
+	}
+}

@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
 	"github.com/gjergjiramku/dibra/internal/ssh"
 )
 
@@ -21,11 +23,12 @@ func getProjectRoot() string {
 }
 
 const (
-	testHost                = "127.0.0.1"
-	testPort                = 2222
-	testUser                = "root"
-	testPassword            = "rootpass"
-	testDockerEngineVersion = "29.7.2"
+	testHost                 = "127.0.0.1"
+	testPort                 = 2222
+	testUser                 = "root"
+	testPassword             = "rootpass"
+	testDockerEngineVersion  = "29.7.2"
+	testDockerComposeVersion = docker.SupportedComposeVersion
 )
 
 func TestMain(m *testing.M) {
@@ -35,6 +38,10 @@ func TestMain(m *testing.M) {
 	}
 	if err := requireDockerEngineVersion(); err != nil {
 		println("Docker Engine baseline unavailable:", err.Error())
+		os.Exit(1)
+	}
+	if err := requireDockerComposeVersion(); err != nil {
+		println("Docker Compose baseline unavailable:", err.Error())
 		os.Exit(1)
 	}
 	os.Exit(m.Run())
@@ -54,6 +61,30 @@ func requireDockerEngineVersion() error {
 	}
 	if actual := strings.TrimSpace(stdout); actual != testDockerEngineVersion {
 		return fmt.Errorf("got %s, require exact %s", actual, testDockerEngineVersion)
+	}
+	return nil
+}
+
+func requireDockerComposeVersion() error {
+	client, err := ssh.Connect(ssh.Config{
+		Host: testHost, Port: testPort, User: testUser, Password: testPassword,
+	})
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	stdout, stderr, err := client.Run("docker compose version --format json")
+	if err != nil {
+		return fmt.Errorf("inspect Docker Compose version: %w (%s)", err, strings.TrimSpace(stderr))
+	}
+	var response struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &response); err != nil || response.Version == "" {
+		return fmt.Errorf("parse Docker Compose version output %q", strings.TrimSpace(stdout))
+	}
+	if actual := strings.TrimPrefix(strings.TrimSpace(response.Version), "v"); actual != testDockerComposeVersion {
+		return fmt.Errorf("got %s, require exact %s", actual, testDockerComposeVersion)
 	}
 	return nil
 }

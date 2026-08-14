@@ -1,8 +1,10 @@
 package docker_node_info
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
-	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 )
 
@@ -14,105 +16,88 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 	dependencies = dependencies.Resolve()
 	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("create docker client", "", err).Error()}
+		return failedResponse(fmt.Sprintf("An unexpected docker error occurred: %v", err))
 	}
 	defer cli.Close()
 
 	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
-	// Get docker info for self lookup and manager check
-	infoResult, err := cli.Info(ctx, client.InfoOptions{})
+	if _, err := cli.SwarmInspect(ctx, client.SwarmInspectOptions{}); err != nil {
+		return failedResponse(docker.NotSwarmManagerMsg)
+	}
+
+	nodes, err := collectNodes(ctx, cli, req)
 	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("get docker info", "", err).Error()}
+		return failedResponse(err.Error())
 	}
-	info := infoResult.Info
-
-	if info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
-		return Response{
-			Changed: false,
-			Exists:  false,
-			Msg:     "not part of a swarm",
-		}
+	if nodes == nil {
+		nodes = []map[string]any{}
 	}
+	return Response{Nodes: nodes}
+}
 
-	var targetNodeID string
-
+func collectNodes(ctx context.Context, cli client.APIClient, req Request) ([]map[string]any, error) {
 	if req.Self {
-		targetNodeID = info.Swarm.NodeID
-	} else if req.Name != "" {
-		// Need to be a manager to look up other nodes
-		if !info.Swarm.ControlAvailable {
-			return Response{
-				Failed: true,
-				Msg:    "looking up nodes by name requires manager access",
-			}
-		}
-
-		// Find node by hostname or ID
-		nodes, err := cli.NodeList(ctx, client.NodeListOptions{})
+		infoResult, err := cli.Info(ctx, client.InfoOptions{})
 		if err != nil {
-			return Response{Failed: true, Msg: docker.WrapError("list nodes", "", err).Error()}
+			return nil, fmt.Errorf("Failed to get node information for %v", err)
 		}
-
-		for _, node := range nodes.Items {
-			if node.Description.Hostname == req.Name || node.ID == req.Name {
-				targetNodeID = node.ID
-				break
-			}
+		nodeID := infoResult.Info.Swarm.NodeID
+		if nodeID == "" {
+			return nil, fmt.Errorf("Failed to get node information.")
 		}
-
-		if targetNodeID == "" {
-			return Response{
-				Changed: false,
-				Exists:  false,
-				Msg:     "node not found",
-			}
+		node, err := inspectNode(ctx, cli, nodeID, false)
+		if err != nil {
+			return nil, err
 		}
-	} else {
-		// Default to self
-		targetNodeID = info.Swarm.NodeID
+		return []map[string]any{node}, nil
 	}
 
-	// Inspect node
-	nodeResult, err := cli.NodeInspect(ctx, targetNodeID, client.NodeInspectOptions{})
+	if req.Name == nil {
+		listed, err := cli.NodeList(ctx, client.NodeListOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("Error while reading from Swarm manager: %v", err)
+		}
+		nodes := make([]map[string]any, 0, len(listed.Items))
+		for _, item := range listed.Items {
+			node, err := inspectNode(ctx, cli, item.ID, false)
+			if err != nil {
+				return nil, err
+			}
+			nodes = append(nodes, node)
+		}
+		return nodes, nil
+	}
+
+	nodes := make([]map[string]any, 0, len(req.Name))
+	for _, name := range req.Name {
+		node, err := inspectNode(ctx, cli, name, true)
+		if err != nil {
+			return nil, err
+		}
+		if node != nil {
+			nodes = append(nodes, node)
+		}
+	}
+	return nodes, nil
+}
+
+func inspectNode(ctx context.Context, cli client.APIClient, id string, skipMissing bool) (map[string]any, error) {
+	result, err := cli.NodeInspect(ctx, id, client.NodeInspectOptions{})
 	if err != nil {
-		if docker.IsNotFoundError(err) {
-			return Response{
-				Changed: false,
-				Exists:  false,
-				Msg:     "node not found",
-			}
+		if skipMissing && docker.IsNotFoundError(err) {
+			return nil, nil
 		}
-		return Response{Failed: true, Msg: docker.WrapError("inspect node", targetNodeID, err).Error()}
+		return nil, fmt.Errorf("Error while reading from Swarm manager: %v", err)
 	}
-	node := nodeResult.Node
+	node, err := docker.NodeInspection(result)
+	if err != nil {
+		return nil, fmt.Errorf("Error inspecting swarm node: %v", err)
+	}
+	return node, nil
+}
 
-	// Get tasks for this node (only if we're a manager)
-	var taskInfos []TaskInfo
-	if info.Swarm.ControlAvailable {
-		taskFilter := client.Filters{}
-		taskFilter.Add("node", targetNodeID)
-		tasks, err := cli.TaskList(ctx, client.TaskListOptions{Filters: taskFilter})
-		if err == nil {
-			taskInfos = make([]TaskInfo, 0, len(tasks.Items))
-			for _, task := range tasks.Items {
-				taskInfos = append(taskInfos, TaskInfo{
-					ID:           task.ID,
-					ServiceID:    task.ServiceID,
-					Status:       task.Status,
-					DesiredState: task.DesiredState,
-					Slot:         task.Slot,
-				})
-			}
-		}
-	}
-
-	return Response{
-		Changed: false,
-		Exists:  true,
-		NodeID:  node.ID,
-		Node:    node,
-		Tasks:   taskInfos,
-	}
+func failedResponse(msg string) Response {
+	return Response{Failed: true, Msg: msg, Nodes: []map[string]any{}}
 }

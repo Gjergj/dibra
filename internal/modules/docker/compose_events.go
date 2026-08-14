@@ -37,12 +37,6 @@ type composeProgressLine struct {
 	Error    bool   `json:"error"`
 }
 
-var composeChangeStatuses = map[string]bool{
-	"Building": true, "Creating": true, "Killing": true, "Pulling": true,
-	"Recreate": true, "Removing": true, "Restarting": true, "Starting": true,
-	"Stopping": true, "Working": true,
-}
-
 var composeKnownStatuses = map[string]bool{
 	"Built": true, "Building": true, "Created": true, "Creating": true,
 	"Done": true, "Error": true, "Exited": true, "Healthy": true,
@@ -111,6 +105,12 @@ func ParseComposeJSONEvents(output []byte) ComposeEventResult {
 		}
 
 		event := ComposeEvent{ResourceType: "unknown", ResourceID: progress.ID, Status: progress.Status, Message: progress.Text}
+		if event.Message == "" {
+			event.Message = progress.Message
+		}
+		if event.Message == "" {
+			event.Message = progress.Msg
+		}
 		if (progress.Status == "Working" || progress.Status == "Done") && strings.HasPrefix(progress.ParentID, "Image ") {
 			event.ResourceType = "image-layer"
 			event.ResourceID = strings.TrimPrefix(progress.ParentID, "Image ")
@@ -147,9 +147,49 @@ func isComposeLayerStatus(status string) bool {
 	}
 }
 
+var composeWorkingStatuses = map[string]bool{
+	"Building": true, "Creating": true, "Killing": true, "Pulling": true,
+	"Recreate": true, "Removing": true, "Restarting": true, "Starting": true,
+	"Stopping": true,
+}
+
+var composePullStatuses = map[string]bool{"Pulled": true, "Pulling": true}
+var composeBuildStatuses = map[string]bool{"Built": true, "Building": true}
+var composeErrorStatuses = map[string]bool{"Error": true}
+var composePullProgressWorking = map[string]bool{
+	"Downloading": true, "Extracting": true, "Pulling fs layer": true,
+	"Verifying Checksum": true, "Waiting": true, "Working": true,
+}
+
+// ComposeChangeOptions controls which Compose progress events count as a change.
+type ComposeChangeOptions struct {
+	IgnoreServicePullEvents bool
+	IgnoreBuildEvents       bool
+}
+
+// ComposeAction is the upstream `{what,id,status}` action record.
+type ComposeAction struct {
+	What   string `json:"what"`
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
 func ComposeEventsChanged(events []ComposeEvent) bool {
+	return ComposeHasChanges(events, ComposeChangeOptions{})
+}
+
+func ComposeHasChanges(events []ComposeEvent, options ComposeChangeOptions) bool {
 	for _, event := range events {
-		if composeChangeStatuses[event.Status] {
+		if composeWorkingStatuses[event.Status] {
+			if options.IgnoreServicePullEvents && composePullStatuses[event.Status] {
+				continue
+			}
+			if options.IgnoreBuildEvents && composeBuildStatuses[event.Status] {
+				continue
+			}
+			return true
+		}
+		if event.ResourceType == "image-layer" && composePullProgressWorking[event.Status] {
 			return true
 		}
 	}
@@ -157,19 +197,62 @@ func ComposeEventsChanged(events []ComposeEvent) bool {
 }
 
 func ComposeEventActions(events []ComposeEvent) []string {
-	result := make([]string, 0)
-	seen := make(map[string]bool)
-	for _, event := range events {
-		if !composeChangeStatuses[event.Status] {
-			continue
-		}
-		action := strings.TrimSpace(strings.Join([]string{event.ResourceType, event.ResourceID, event.Status}, " "))
+	records := ComposeEventActionRecords(events)
+	result := make([]string, 0, len(records))
+	seen := map[string]bool{}
+	for _, record := range records {
+		action := strings.TrimSpace(strings.Join([]string{record.What, record.ID, record.Status}, " "))
 		if !seen[action] {
 			seen[action] = true
 			result = append(result, action)
 		}
 	}
 	return result
+}
+
+func ComposeEventActionRecords(events []ComposeEvent) []ComposeAction {
+	actions := make([]ComposeAction, 0)
+	pullSeen := map[string]bool{}
+	for _, event := range events {
+		if event.ResourceType == "image-layer" && composePullProgressWorking[event.Status] {
+			key := event.ResourceID + "\x00" + event.Status
+			if !pullSeen[key] {
+				pullSeen[key] = true
+				actions = append(actions, ComposeAction{What: event.ResourceType, ID: event.ResourceID, Status: event.Status})
+			}
+		}
+		if event.ResourceType != "image-layer" && composeWorkingStatuses[event.Status] {
+			actions = append(actions, ComposeAction{What: event.ResourceType, ID: event.ResourceID, Status: event.Status})
+		}
+	}
+	return actions
+}
+
+func ComposeFailureMessage(events []ComposeEvent, rc int) string {
+	var errors []string
+	for _, event := range events {
+		if !composeErrorStatuses[event.Status] {
+			continue
+		}
+		message := event.Status
+		if event.Message != "" {
+			message = event.Message
+		}
+		prefix := "General error: "
+		switch {
+		case event.ResourceType != "unknown" && event.ResourceID != "":
+			prefix = fmt.Sprintf("Error when processing %s %s: ", event.ResourceType, event.ResourceID)
+		case event.ResourceType != "unknown":
+			prefix = fmt.Sprintf("Error when processing %s: ", event.ResourceType)
+		case event.ResourceID != "":
+			prefix = fmt.Sprintf("Error when processing %s: ", event.ResourceID)
+		}
+		errors = append(errors, prefix+message)
+	}
+	if len(errors) == 0 {
+		return fmt.Sprintf("Return code %d is non-zero", rc)
+	}
+	return strings.Join(errors, "\n")
 }
 
 // ValidateComposeVersion accepts only the pinned Compose baseline. Moving to
@@ -207,6 +290,13 @@ func parseNumericVersion(version string) ([3]int, error) {
 // CheckComposeVersion performs the supported-baseline check through the
 // injected Docker CLI runner.
 func CheckComposeVersion(ctx context.Context, runner CLIRunner, common CommonArgs, environment Environment) (string, error) {
+	return CheckComposeVersionWithCLI(ctx, runner, common, environment, "docker")
+}
+
+func CheckComposeVersionWithCLI(ctx context.Context, runner CLIRunner, common CommonArgs, environment Environment, dockerCLI string) (string, error) {
+	if dockerCLI == "" {
+		dockerCLI = "docker"
+	}
 	args, err := DockerCLIArgsWithEnvironment(common, environment, "compose", "version", "--format", "json")
 	if err != nil {
 		return "", err
@@ -215,7 +305,7 @@ func CheckComposeVersion(ctx context.Context, runner CLIRunner, common CommonArg
 	if err != nil {
 		return "", err
 	}
-	result, err := runner.Run(ctx, CLICommand{Name: "docker", Args: args, Env: commandEnvironment})
+	result, err := runner.Run(ctx, CLICommand{Name: dockerCLI, Args: args, Env: commandEnvironment})
 	if err != nil {
 		return "", fmt.Errorf("query Docker Compose version: %w", err)
 	}

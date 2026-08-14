@@ -57,6 +57,8 @@ func TestPlaybook_DockerCopyOwnership(t *testing.T) {
       container: ` + containerName + `
       content: "Ownership test"
       container_path: /tmp/owned.txt
+      mode: "0644"
+      mode_parse: modern
 `
 	output := runPlaybook(t, playbook)
 	if strings.Contains(output, "FAILED") {

@@ -15,114 +15,114 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 	dependencies = dependencies.Resolve()
 	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
-		return Response{Failed: true, Msg: fmt.Sprintf("failed to create docker client: %v", err)}
+		return failedResponse(fmt.Sprintf("failed to create docker client: %v", err))
 	}
 	defer cli.Close()
 
 	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
-	resp := Response{}
-	var reclaimed uint64
 
-	// Prune Containers
+	response := Response{}
+	changed := false
+
 	if req.Containers {
-		f := buildFilters(req.ContainersFilters)
-		result, err := cli.ContainerPrune(ctx, client.ContainerPruneOptions{Filters: f})
+		result, err := cli.ContainerPrune(ctx, client.ContainerPruneOptions{Filters: req.ContainersFilters.ToClientFilters()})
 		if err != nil {
-			return Response{Failed: true, Msg: docker.WrapError("prune containers", "", err).Error()}
+			return failedResponse(docker.WrapError("prune containers", "", err).Error())
 		}
-		pruneReport := result.Report
-		if len(pruneReport.ContainersDeleted) > 0 {
-			resp.Changed = true
-			resp.ContainersDeleted = pruneReport.ContainersDeleted
-			reclaimed += pruneReport.SpaceReclaimed
+		deleted := result.Report.ContainersDeleted
+		if deleted == nil {
+			deleted = []string{}
+		}
+		response.Containers = &deleted
+		reclaimed := result.Report.SpaceReclaimed
+		response.ContainersSpaceReclaimed = &reclaimed
+		if len(deleted) > 0 || reclaimed > 0 {
+			changed = true
 		}
 	}
 
-	// Prune Images
 	if req.Images {
-		f := buildFilters(req.ImagesFilters)
-		result, err := cli.ImagePrune(ctx, client.ImagePruneOptions{Filters: f})
+		result, err := cli.ImagePrune(ctx, client.ImagePruneOptions{Filters: req.ImagesFilters.ToClientFilters()})
 		if err != nil {
-			return Response{Failed: true, Msg: docker.WrapError("prune images", "", err).Error()}
+			return failedResponse(docker.WrapError("prune images", "", err).Error())
 		}
-		pruneReport := result.Report
-		if len(pruneReport.ImagesDeleted) > 0 {
-			resp.Changed = true
-			for _, img := range pruneReport.ImagesDeleted {
-				if img.Deleted != "" {
-					resp.ImagesDeleted = append(resp.ImagesDeleted, img.Deleted)
-				}
-			}
-			reclaimed += pruneReport.SpaceReclaimed
+		images, err := docker.InspectionSlice(result.Report.ImagesDeleted)
+		if err != nil {
+			return failedResponse(fmt.Sprintf("encode pruned images: %v", err))
+		}
+		response.Images = &images
+		reclaimed := result.Report.SpaceReclaimed
+		response.ImagesSpaceReclaimed = &reclaimed
+		if len(images) > 0 || reclaimed > 0 {
+			changed = true
 		}
 	}
 
-	// Prune Networks
 	if req.Networks {
-		f := buildFilters(req.NetworksFilters)
-		result, err := cli.NetworkPrune(ctx, client.NetworkPruneOptions{Filters: f})
+		result, err := cli.NetworkPrune(ctx, client.NetworkPruneOptions{Filters: req.NetworksFilters.ToClientFilters()})
 		if err != nil {
-			return Response{Failed: true, Msg: docker.WrapError("prune networks", "", err).Error()}
+			return failedResponse(docker.WrapError("prune networks", "", err).Error())
 		}
-		pruneReport := result.Report
-		if len(pruneReport.NetworksDeleted) > 0 {
-			resp.Changed = true
-			resp.NetworksDeleted = pruneReport.NetworksDeleted
+		deleted := result.Report.NetworksDeleted
+		if deleted == nil {
+			deleted = []string{}
+		}
+		response.Networks = &deleted
+		if len(deleted) > 0 {
+			changed = true
 		}
 	}
 
-	// Prune Volumes
 	if req.Volumes {
-		f := buildFilters(req.VolumesFilters)
-		result, err := cli.VolumePrune(ctx, client.VolumePruneOptions{Filters: f})
+		result, err := cli.VolumePrune(ctx, client.VolumePruneOptions{Filters: req.VolumesFilters.ToClientFilters()})
 		if err != nil {
-			return Response{Failed: true, Msg: docker.WrapError("prune volumes", "", err).Error()}
+			return failedResponse(docker.WrapError("prune volumes", "", err).Error())
 		}
-		pruneReport := result.Report
-		if len(pruneReport.VolumesDeleted) > 0 {
-			resp.Changed = true
-			resp.VolumesDeleted = pruneReport.VolumesDeleted
-			reclaimed += pruneReport.SpaceReclaimed
+		deleted := result.Report.VolumesDeleted
+		if deleted == nil {
+			deleted = []string{}
+		}
+		response.Volumes = &deleted
+		reclaimed := result.Report.SpaceReclaimed
+		response.VolumesSpaceReclaimed = &reclaimed
+		if len(deleted) > 0 || reclaimed > 0 {
+			changed = true
 		}
 	}
 
-	// Prune Builder
-	if req.Builder {
-		opts := client.BuildCachePruneOptions{
-			All: req.BuilderCacheAll,
+	if req.pruneBuilderCache() {
+		options := client.BuildCachePruneOptions{
+			All:     req.BuilderCacheAll,
+			Filters: req.BuilderCacheFilters.ToClientFilters(),
 		}
-		if req.BuilderCacheFilters != nil {
-			opts.Filters = buildFilters(req.BuilderCacheFilters)
+		if req.BuilderCacheKeepStorage != "" {
+			reserved, err := docker.ParseHumanBytes(req.BuilderCacheKeepStorage)
+			if err != nil {
+				return failedResponse(err.Error())
+			}
+			options.ReservedSpace = reserved
 		}
-		pruneReport, err := cli.BuildCachePrune(ctx, opts)
+		result, err := cli.BuildCachePrune(ctx, options)
 		if err != nil {
-			// Some older daemons may not support this; treat as soft error
-			return Response{Failed: true, Msg: docker.WrapError("prune builder cache", "", err).Error()}
+			return failedResponse(docker.WrapError("prune builder cache", "", err).Error())
 		}
-		report := pruneReport.Report
-		if report.SpaceReclaimed > 0 || len(report.CachesDeleted) > 0 {
-			resp.Changed = true
-			resp.BuildCacheItemsUsed = len(report.CachesDeleted)
-			reclaimed += report.SpaceReclaimed
+		reclaimed := result.Report.SpaceReclaimed
+		response.BuilderCacheSpaceReclaimed = &reclaimed
+		deleted := result.Report.CachesDeleted
+		if deleted == nil {
+			deleted = []string{}
+		}
+		response.BuilderCacheCachesDeleted = &deleted
+		if reclaimed > 0 || len(deleted) > 0 {
+			changed = true
 		}
 	}
 
-	resp.SpaceReclaimed = reclaimed
-	if resp.Changed {
-		resp.Msg = "Pruned requested resources"
-	} else {
-		resp.Msg = "Nothing to prune"
-	}
-
-	return resp
+	response.Changed = changed
+	return response
 }
 
-// buildFilters converts a map of filter key-value pairs to Docker filters.Args
-func buildFilters(filterMap map[string]string) client.Filters {
-	f := client.Filters{}
-	for k, v := range filterMap {
-		f.Add(k, v)
-	}
-	return f
+func failedResponse(message string) Response {
+	return Response{Failed: true, Msg: message}
 }

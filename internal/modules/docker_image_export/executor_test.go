@@ -139,6 +139,41 @@ func TestPlatformRequiresAPI148(t *testing.T) {
 	}
 }
 
+func TestExportsMissingImageAndEmptyNames(t *testing.T) {
+	fake := &exportClient{images: map[string]client.ImageInspectResult{}}
+	missing := ExecuteWithDependencies(Request{Names: []string{"missing"}, Path: "/tmp/missing.tar"}, exportDependencies(fake))
+	if !missing.Failed || !strings.Contains(missing.Msg, "Image missing:latest not found") {
+		t.Fatalf("missing = %#v", missing)
+	}
+
+	empty := ExecuteWithDependencies(Request{Path: "/tmp/empty.tar"}, docker.Dependencies{Environment: docker.StaticEnvironment{}})
+	if !empty.Failed || !strings.Contains(strings.ToLower(empty.Msg), "at least one") {
+		t.Fatalf("empty = %#v", empty)
+	}
+}
+
+func TestPlatformRequiresAPI148AndRejectsEmptyArchitecture(t *testing.T) {
+	fake := &exportClient{images: map[string]client.ImageInspectResult{
+		"alpine:latest": exportInspect("sha256:abc", "alpine:latest"),
+	}}
+	oldAPI := ExecuteWithDependencies(Request{
+		Names: []string{"alpine"}, Path: "/tmp/old.tar", Platform: "linux/amd64",
+		CommonArgs: docker.CommonArgs{APIVersion: strPtr("1.47")},
+	}, exportDependencies(fake))
+	if !oldAPI.Failed || !strings.Contains(oldAPI.Msg, "1.48") {
+		t.Fatalf("old API = %#v", oldAPI)
+	}
+
+	invalid := ExecuteWithDependencies(Request{
+		Names: []string{"alpine"}, Path: "/tmp/bad.tar", Platform: "linux/",
+	}, exportDependencies(fake))
+	if !invalid.Failed || !strings.Contains(strings.ToLower(invalid.Msg), "platform") {
+		t.Fatalf("invalid platform = %#v", invalid)
+	}
+}
+
+func strPtr(value string) *string { return &value }
+
 func TestForceAlwaysPredictsChange(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "image.tar")
 	if err := os.WriteFile(path, archiveManifest(t, "abc", []string{"alpine:latest"}), 0o600); err != nil {

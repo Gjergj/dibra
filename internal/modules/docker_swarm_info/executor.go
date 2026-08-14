@@ -1,12 +1,16 @@
 package docker_swarm_info
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 )
 
-// Execute retrieves Docker Swarm information
+const notSwarmManagerMsg = "Error running docker swarm module: must run on swarm manager node"
+
 func Execute(req Request) Response {
 	return ExecuteWithDependencies(req, docker.Dependencies{})
 }
@@ -15,171 +19,267 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 	dependencies = dependencies.Resolve()
 	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("create docker client", "", err).Error()}
+		return failed(false, false, false, docker.WrapError("create docker client", "", err).Error())
 	}
 	defer cli.Close()
 
 	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
-	// Get server info to check swarm status
 	infoResult, err := cli.Info(ctx, client.InfoOptions{})
 	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("get docker info", "", err).Error()}
+		return failed(false, false, false, docker.WrapError("get docker info", "", err).Error())
 	}
-	info := infoResult.Info
+	active := swarmNodeActive(infoResult.Info.Swarm)
 
-	// Check if in swarm mode
-	if info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
-		return Response{
-			Changed:   false,
-			InSwarm:   false,
-			IsManager: false,
-			Msg:       "not part of a swarm",
-		}
+	inspectResult, err := cli.SwarmInspect(ctx, client.SwarmInspectOptions{})
+	if err != nil {
+		return failed(true, active, false, notSwarmManagerMsg)
 	}
 
-	resp := Response{
-		Changed:   false,
-		InSwarm:   true,
-		IsManager: info.Swarm.ControlAvailable,
+	facts, err := docker.InspectionMap(inspectResult.Swarm)
+	if err != nil {
+		return failed(true, true, true, fmt.Sprintf("Error inspecting docker swarm: %v", err))
 	}
 
-	// Basic swarm info from docker info
-	swarmInfo := map[string]interface{}{
-		"node_id":           info.Swarm.NodeID,
-		"node_addr":         info.Swarm.NodeAddr,
-		"local_node_state":  string(info.Swarm.LocalNodeState),
-		"control_available": info.Swarm.ControlAvailable,
-		"managers":          info.Swarm.Managers,
-		"nodes":             info.Swarm.Nodes,
+	response := Response{
+		CanTalkToDocker:    true,
+		DockerSwarmActive:  true,
+		DockerSwarmManager: true,
+		SwarmFacts:         facts,
 	}
 
-	// If manager, get detailed swarm inspect
-	if info.Swarm.ControlAvailable {
-		swarmInspectResult, err := cli.SwarmInspect(ctx, client.SwarmInspectOptions{})
+	if req.Nodes {
+		items, err := listNodes(ctx, cli, req)
 		if err != nil {
-			return Response{Failed: true, Msg: docker.WrapError("inspect swarm", "", err).Error()}
+			return listFailed(response, "nodes", err)
 		}
-		swarmInspect := swarmInspectResult.Swarm
-
-		swarmInfo["id"] = swarmInspect.ID
-		swarmInfo["created_at"] = swarmInspect.CreatedAt
-		swarmInfo["updated_at"] = swarmInspect.UpdatedAt
-		swarmInfo["version"] = swarmInspect.Version.Index
-		swarmInfo["spec"] = map[string]interface{}{
-			"name":   swarmInspect.Spec.Annotations.Name,
-			"labels": swarmInspect.Spec.Annotations.Labels,
-			"orchestration": map[string]interface{}{
-				"task_history_retention_limit": swarmInspect.Spec.Orchestration.TaskHistoryRetentionLimit,
-			},
-			"raft": map[string]interface{}{
-				"snapshot_interval":              swarmInspect.Spec.Raft.SnapshotInterval,
-				"keep_old_snapshots":             swarmInspect.Spec.Raft.KeepOldSnapshots,
-				"log_entries_for_slow_followers": swarmInspect.Spec.Raft.LogEntriesForSlowFollowers,
-				"election_tick":                  swarmInspect.Spec.Raft.ElectionTick,
-				"heartbeat_tick":                 swarmInspect.Spec.Raft.HeartbeatTick,
-			},
-			"dispatcher": map[string]interface{}{
-				"heartbeat_period": swarmInspect.Spec.Dispatcher.HeartbeatPeriod,
-			},
-			"ca_config": map[string]interface{}{
-				"node_cert_expiry": swarmInspect.Spec.CAConfig.NodeCertExpiry,
-			},
-			"encryption_config": map[string]interface{}{
-				"auto_lock_managers": swarmInspect.Spec.EncryptionConfig.AutoLockManagers,
-			},
+		response.Nodes = &items
+	}
+	if req.Services {
+		items, err := listServices(ctx, cli, req)
+		if err != nil {
+			return listFailed(response, "services", err)
 		}
-
-		// Join tokens (only for managers)
-		swarmInfo["join_tokens"] = map[string]interface{}{
-			"worker":  swarmInspect.JoinTokens.Worker,
-			"manager": swarmInspect.JoinTokens.Manager,
+		response.Services = &items
+	}
+	if req.Tasks {
+		items, err := listTasks(ctx, cli, req)
+		if err != nil {
+			return listFailed(response, "tasks", err)
 		}
-
-		// TLS info
-		if swarmInspect.TLSInfo.TrustRoot != "" {
-			swarmInfo["tls_info"] = map[string]interface{}{
-				"trust_root":             swarmInspect.TLSInfo.TrustRoot,
-				"cert_issuer_subject":    swarmInspect.TLSInfo.CertIssuerSubject,
-				"cert_issuer_public_key": swarmInspect.TLSInfo.CertIssuerPublicKey,
-			}
+		response.Tasks = &items
+	}
+	if req.UnlockKey {
+		key, err := cli.SwarmGetUnlockKey(ctx)
+		if err != nil {
+			return failed(true, true, true, fmt.Sprintf("Error inspecting docker swarm: %v", err))
 		}
-
-		// Root rotation status
-		if swarmInspect.RootRotationInProgress {
-			swarmInfo["root_rotation_in_progress"] = true
-		}
-
-		// Get nodes if requested
-		if req.Nodes {
-			nodes, err := cli.NodeList(ctx, client.NodeListOptions{})
-			if err != nil {
-				return Response{Failed: true, Msg: docker.WrapError("list nodes", "", err).Error()}
-			}
-
-			nodeList := make([]map[string]interface{}, len(nodes.Items))
-			for i, node := range nodes.Items {
-				nodeList[i] = convertNodeToMap(node, req.Verbose)
-			}
-			resp.Nodes = nodeList
+		if key.Key == "" {
+			response.SwarmUnlockKey = (*string)(nil)
+		} else {
+			response.SwarmUnlockKey = key.Key
 		}
 	}
-
-	resp.SwarmInfo = swarmInfo
-	return resp
+	return response
 }
 
-func convertNodeToMap(node swarm.Node, verbose bool) map[string]interface{} {
-	nodeMap := map[string]interface{}{
-		"id":           node.ID,
-		"hostname":     node.Description.Hostname,
-		"role":         string(node.Spec.Role),
-		"availability": string(node.Spec.Availability),
-		"status": map[string]interface{}{
-			"state":   string(node.Status.State),
-			"message": node.Status.Message,
-			"addr":    node.Status.Addr,
-		},
-		"manager_status": nil,
+func listNodes(ctx context.Context, cli client.APIClient, req Request) ([]map[string]any, error) {
+	result, err := cli.NodeList(ctx, client.NodeListOptions{Filters: req.NodesFilters.ToClientFilters()})
+	if err != nil {
+		return nil, err
 	}
+	items, err := inspectItems(result.Items)
+	if err != nil || req.VerboseOutput {
+		return items, err
+	}
+	records := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		records = append(records, essentialNode(item))
+	}
+	return records, nil
+}
 
-	if node.ManagerStatus != nil {
-		nodeMap["manager_status"] = map[string]interface{}{
-			"leader":       node.ManagerStatus.Leader,
-			"reachability": string(node.ManagerStatus.Reachability),
-			"addr":         node.ManagerStatus.Addr,
+func listServices(ctx context.Context, cli client.APIClient, req Request) ([]map[string]any, error) {
+	result, err := cli.ServiceList(ctx, client.ServiceListOptions{Filters: req.ServicesFilters.ToClientFilters()})
+	if err != nil {
+		return nil, err
+	}
+	items, err := inspectItems(result.Items)
+	if err != nil || req.VerboseOutput {
+		return items, err
+	}
+	records := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		record := essentialService(item)
+		if record["Mode"] == "Global" {
+			record["Replicas"] = len(items)
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+func listTasks(ctx context.Context, cli client.APIClient, req Request) ([]map[string]any, error) {
+	result, err := cli.TaskList(ctx, client.TaskListOptions{Filters: req.TasksFilters.ToClientFilters()})
+	if err != nil {
+		return nil, err
+	}
+	items, err := inspectItems(result.Items)
+	if err != nil || req.VerboseOutput {
+		return items, err
+	}
+	hostnames, err := nodeHostnameIndex(ctx, cli)
+	if err != nil {
+		return nil, err
+	}
+	records := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		records = append(records, essentialTask(item, hostnames))
+	}
+	return records, nil
+}
+
+func inspectItems(value any) ([]map[string]any, error) {
+	items, err := docker.InspectionSlice(value)
+	if err != nil {
+		return nil, err
+	}
+	if items == nil {
+		return []map[string]any{}, nil
+	}
+	return items, nil
+}
+
+func essentialNode(item map[string]any) map[string]any {
+	managerStatus := any(nil)
+	if status := nestedMap(item, "ManagerStatus"); status != nil {
+		managerStatus = status["Reachability"]
+		if leader, _ := status["Leader"].(bool); leader {
+			managerStatus = "Leader"
 		}
 	}
+	return map[string]any{
+		"ID":            item["ID"],
+		"Hostname":      nestedValue(item, "Description", "Hostname"),
+		"Status":        nestedValue(item, "Status", "State"),
+		"Availability":  nestedValue(item, "Spec", "Availability"),
+		"ManagerStatus": managerStatus,
+		"EngineVersion": nestedValue(item, "Description", "Engine", "EngineVersion"),
+	}
+}
 
-	if verbose {
-		nodeMap["version"] = node.Version.Index
-		nodeMap["created_at"] = node.CreatedAt
-		nodeMap["updated_at"] = node.UpdatedAt
-		nodeMap["labels"] = node.Spec.Labels
-		nodeMap["description"] = map[string]interface{}{
-			"platform": map[string]interface{}{
-				"architecture": node.Description.Platform.Architecture,
-				"os":           node.Description.Platform.OS,
-			},
-			"resources": map[string]interface{}{
-				"nano_cpus":    node.Description.Resources.NanoCPUs,
-				"memory_bytes": node.Description.Resources.MemoryBytes,
-			},
-			"engine": map[string]interface{}{
-				"engine_version": node.Description.Engine.EngineVersion,
-				"labels":         node.Description.Engine.Labels,
-				"plugins":        node.Description.Engine.Plugins,
-			},
-		}
-		if node.Description.TLSInfo.TrustRoot != "" {
-			nodeMap["tls_info"] = map[string]interface{}{
-				"trust_root":             node.Description.TLSInfo.TrustRoot,
-				"cert_issuer_subject":    node.Description.TLSInfo.CertIssuerSubject,
-				"cert_issuer_public_key": node.Description.TLSInfo.CertIssuerPublicKey,
-			}
+func essentialService(item map[string]any) map[string]any {
+	mode := nestedMap(item, "Spec", "Mode")
+	record := map[string]any{
+		"ID":       item["ID"],
+		"Name":     nestedValue(item, "Spec", "Name"),
+		"Image":    nestedValue(item, "Spec", "TaskTemplate", "ContainerSpec", "Image"),
+		"Replicas": nil,
+	}
+	switch {
+	case nestedMap(mode, "Replicated") != nil:
+		record["Mode"] = "Replicated"
+		record["Replicas"] = nestedValue(mode, "Replicated", "Replicas")
+	case nestedMap(mode, "Global") != nil:
+		record["Mode"] = "Global"
+	}
+	ports := nestedValue(item, "Spec", "EndpointSpec", "Ports")
+	if ports == nil {
+		ports = []any{}
+	}
+	record["Ports"] = ports
+	return record
+}
+
+func essentialTask(item map[string]any, hostnames map[string]string) map[string]any {
+	nodeID, _ := item["NodeID"].(string)
+	hostname := hostnames[nodeID]
+	status := nestedMap(item, "Status")
+	containerID := nestedValue(status, "ContainerStatus", "ContainerID")
+	if containerID == nil {
+		containerID = ""
+	}
+	var taskError any
+	if status != nil {
+		if _, found := status["Err"]; found {
+			taskError = status["Err"]
 		}
 	}
+	return map[string]any{
+		"ID":           item["ID"],
+		"ContainerID":  containerID,
+		"Image":        nestedValue(item, "Spec", "ContainerSpec", "Image"),
+		"Node":         hostname,
+		"DesiredState": item["DesiredState"],
+		"CurrentState": nestedValue(status, "State"),
+		"Error":        taskError,
+	}
+}
 
-	return nodeMap
+func nodeHostnameIndex(ctx context.Context, cli client.APIClient) (map[string]string, error) {
+	result, err := cli.NodeList(ctx, client.NodeListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	hostnames := make(map[string]string, len(result.Items))
+	for _, node := range result.Items {
+		hostnames[node.ID] = node.Description.Hostname
+	}
+	return hostnames, nil
+}
+
+func swarmNodeActive(info swarm.Info) bool {
+	if info.NodeID != "" {
+		return true
+	}
+	switch info.LocalNodeState {
+	case swarm.LocalNodeStateActive, swarm.LocalNodeStatePending, swarm.LocalNodeStateLocked:
+		return true
+	default:
+		return false
+	}
+}
+
+func failed(canTalk, active, manager bool, msg string) Response {
+	return Response{
+		Failed:             true,
+		Msg:                msg,
+		CanTalkToDocker:    canTalk,
+		DockerSwarmActive:  active,
+		DockerSwarmManager: manager,
+	}
+}
+
+func listFailed(response Response, object string, err error) Response {
+	response.Failed = true
+	response.Msg = fmt.Sprintf("Error inspecting docker swarm for object '%s': %v", object, err)
+	response.SwarmFacts = nil
+	response.Nodes = nil
+	response.Services = nil
+	response.Tasks = nil
+	response.SwarmUnlockKey = nil
+	return response
+}
+
+func nestedMap(value any, keys ...string) map[string]any {
+	current, _ := value.(map[string]any)
+	for _, key := range keys {
+		if current == nil {
+			return nil
+		}
+		current, _ = current[key].(map[string]any)
+	}
+	return current
+}
+
+func nestedValue(value any, keys ...string) any {
+	if len(keys) == 0 {
+		return value
+	}
+	parent := nestedMap(value, keys[:len(keys)-1]...)
+	if parent == nil {
+		return nil
+	}
+	return parent[keys[len(keys)-1]]
 }

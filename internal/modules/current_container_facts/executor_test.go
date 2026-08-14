@@ -1,0 +1,80 @@
+package current_container_facts
+
+import (
+	"io/fs"
+	"strings"
+	"testing"
+
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
+)
+
+type memoryFS struct {
+	docker.FileSystem
+	files map[string][]byte
+}
+
+func (fileSystem memoryFS) ReadFile(path string) ([]byte, error) {
+	data, found := fileSystem.files[path]
+	if !found {
+		return nil, fs.ErrNotExist
+	}
+	return append([]byte(nil), data...), nil
+}
+
+func facts(files map[string][]byte) Response {
+	return ExecuteWithDependencies(Request{}, docker.Dependencies{FileSystem: memoryFS{files: files}})
+}
+
+func TestFactsDetectDockerFromCpuset(t *testing.T) {
+	id := strings.Repeat("a", 64)
+	response := facts(map[string][]byte{
+		"/proc/self/cpuset": []byte("/docker/" + id + "\n"),
+	})
+	if response.Failed || response.Changed || response.AnsibleFacts["ansible_module_container_type"] != "docker" {
+		t.Fatalf("response = %#v", response)
+	}
+	if response.AnsibleFacts["ansible_module_running_in_container"] != true || response.AnsibleFacts["ansible_module_container_id"] != id {
+		t.Fatalf("facts = %#v", response.AnsibleFacts)
+	}
+}
+
+func TestFactsDetectGitHubActionsAndAzure(t *testing.T) {
+	id := strings.Repeat("b", 64)
+	github := facts(map[string][]byte{"/proc/self/cpuset": []byte("/actions_job/" + id)})
+	if github.AnsibleFacts["ansible_module_container_type"] != "github_actions" {
+		t.Fatalf("github = %#v", github.AnsibleFacts)
+	}
+	azure := facts(map[string][]byte{"/proc/self/cpuset": []byte("/azpl_job/" + id)})
+	if azure.AnsibleFacts["ansible_module_container_type"] != "azure_pipelines" {
+		t.Fatalf("azure = %#v", azure.AnsibleFacts)
+	}
+}
+
+func TestFactsFallsBackToMountinfoForDockerAndPodman(t *testing.T) {
+	id := strings.Repeat("c", 64)
+	dockerFacts := facts(map[string][]byte{
+		"/proc/self/cpuset":    []byte("/\n"),
+		"/proc/self/mountinfo": []byte("1 0 0:0 / / rw - overlay overlay rw\n22 1 0:21 /docker/" + id + "/hostname /etc/hostname rw - ext4 /dev/sda1 rw\n"),
+	})
+	if dockerFacts.AnsibleFacts["ansible_module_container_type"] != "docker" || dockerFacts.AnsibleFacts["ansible_module_container_id"] != id {
+		t.Fatalf("docker mountinfo = %#v", dockerFacts.AnsibleFacts)
+	}
+
+	podmanID := strings.Repeat("d", 64)
+	podman := facts(map[string][]byte{
+		"/proc/self/mountinfo": []byte("22 1 0:21 /containers/storage/" + podmanID + "/userdata/hostname /etc/hostname rw - ext4 /dev/sda1 rw\n"),
+	})
+	if podman.AnsibleFacts["ansible_module_container_type"] != "podman" || podman.AnsibleFacts["ansible_module_container_id"] != podmanID {
+		t.Fatalf("podman = %#v", podman.AnsibleFacts)
+	}
+}
+
+func TestFactsOutsideContainer(t *testing.T) {
+	response := facts(map[string][]byte{
+		"/proc/self/cpuset":    []byte("/\n"),
+		"/proc/self/mountinfo": []byte("1 0 0:0 / / rw - overlay overlay rw\n"),
+	})
+	if response.AnsibleFacts["ansible_module_running_in_container"] != false || response.AnsibleFacts["ansible_module_container_id"] != "" || response.AnsibleFacts["ansible_module_container_type"] != "" {
+		t.Fatalf("facts = %#v", response.AnsibleFacts)
+	}
+}

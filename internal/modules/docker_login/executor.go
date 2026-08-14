@@ -1,232 +1,266 @@
 package docker_login
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
+	"io/fs"
 	"path/filepath"
+	"strings"
 	"sync"
 
+	"github.com/gjergjiramku/dibra/internal/execution"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 	"github.com/moby/moby/client"
 )
 
-// DockerConfig represents the full docker config.json structure
-type DockerConfig struct {
-	Auths       map[string]DockerAuth `json:"auths,omitempty"`
-	CredsStore  string                `json:"credsStore,omitempty"`
-	CredHelpers map[string]string     `json:"credHelpers,omitempty"`
-	// Preserve other fields
-	HttpHeaders       map[string]string          `json:"HttpHeaders,omitempty"`
-	Psformat          string                     `json:"psFormat,omitempty"`
-	ImagesFormat      string                     `json:"imagesFormat,omitempty"`
-	NetworksFormat    string                     `json:"networksFormat,omitempty"`
-	VolumesFormat     string                     `json:"volumesFormat,omitempty"`
-	StatsFormat       string                     `json:"statsFormat,omitempty"`
-	Detachkeys        string                     `json:"detachKeys,omitempty"`
-	CredentialsStore  string                     `json:"credentialsStore,omitempty"`
-	Stackorchestrator string                     `json:"stackOrchestrator,omitempty"`
-	CurrentContext    string                     `json:"currentContext,omitempty"`
-	Plugins           json.RawMessage            `json:"plugins,omitempty"`
-	Aliases           json.RawMessage            `json:"aliases,omitempty"`
-	ExtraFields       map[string]json.RawMessage `json:"-"`
-}
-
-type DockerAuth struct {
-	Auth          string `json:"auth,omitempty"`
-	Email         string `json:"email,omitempty"`
-	Username      string `json:"username,omitempty"`
-	Password      string `json:"password,omitempty"`
-	ServerAddress string `json:"serveraddress,omitempty"`
-	IdentityToken string `json:"identitytoken,omitempty"`
-	RegistryToken string `json:"registrytoken,omitempty"`
-}
-
-// configFileMutex prevents concurrent writes to config.json
 var configFileMutex sync.Mutex
 
 func Execute(req Request) Response {
-	return ExecuteWithDependencies(req, docker.Dependencies{})
+	return ExecuteWithDependenciesAndState(req, docker.Dependencies{}, execution.State{})
+}
+
+func ExecuteWithState(req Request, state execution.State) Response {
+	return ExecuteWithDependenciesAndState(req, docker.Dependencies{}, state)
 }
 
 func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	return ExecuteWithDependenciesAndState(req, dependencies, execution.State{})
+}
+
+func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependencies, state execution.State) Response {
 	dependencies = dependencies.Resolve()
-	cli, err := dependencies.NewClient(req.CommonArgs)
-	if err != nil {
-		return Response{Failed: true, Msg: fmt.Sprintf("failed to create docker client: %v", err)}
+
+	stateName := req.State
+	if stateName == "" {
+		stateName = "present"
 	}
-	defer cli.Close()
+	if stateName != "present" && stateName != "absent" {
+		return failedResponse(fmt.Sprintf("state must be present or absent, got %q", stateName))
+	}
+
+	registryURL := req.registryURL()
+	configPath, err := expandUserPath(dependencies.FileSystem, req.ConfigPath)
+	if err != nil {
+		return failedResponse(fmt.Sprintf("could not find home dir: %v", err))
+	}
+
+	apiClient, err := dependencies.NewClient(req.CommonArgs)
+	if err != nil {
+		return failedResponse(fmt.Sprintf("failed to create docker client: %v", err))
+	}
+	defer apiClient.Close()
 
 	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
-	state := req.State
-	if state == "" {
-		state = "present"
-	}
-
-	reg := req.Registry
-	if reg == "" {
-		reg = "https://index.docker.io/v1/"
-	}
-
-	configPath := req.ConfigPath
-	if configPath == "" {
-		home, err := dependencies.FileSystem.UserHomeDir()
-		if err != nil {
-			return Response{Failed: true, Msg: fmt.Sprintf("could not find home dir: %v", err)}
-		}
-		configPath = filepath.Join(home, ".docker", "config.json")
-	}
-
-	// Acquire lock for file operations
 	configFileMutex.Lock()
 	defer configFileMutex.Unlock()
 
-	// Read existing config (preserve structure)
-	cfg, rawData, err := readConfig(dependencies.FileSystem, configPath)
-	if err != nil && !os.IsNotExist(err) {
-		return Response{Failed: true, Msg: fmt.Sprintf("failed to read config: %v", err)}
+	cfg, err := readConfig(dependencies.FileSystem, configPath)
+	if err != nil {
+		return failedResponse(fmt.Sprintf("failed to read config: %v", err))
 	}
-	if cfg.Auths == nil {
-		cfg.Auths = make(map[string]DockerAuth)
-	}
-
-	// Check for credential helpers
-	if cfg.CredsStore != "" || (cfg.CredHelpers != nil && cfg.CredHelpers[reg] != "") {
-		helper := cfg.CredsStore
-		if cfg.CredHelpers != nil && cfg.CredHelpers[reg] != "" {
-			helper = cfg.CredHelpers[reg]
-		}
-		return Response{
-			Failed: true,
-			Msg:    fmt.Sprintf("credential helper '%s' is configured for this registry; docker_login module cannot manage credentials stored in external helpers - use docker login CLI or manage the helper directly", helper),
-		}
+	if helper := credentialHelper(cfg, registryURL); helper != "" {
+		return failedResponse(fmt.Sprintf("credential helper %q is configured for this registry; docker_login cannot manage credentials stored in external helpers — use the Docker CLI or manage the helper directly", helper))
 	}
 
-	if state == "absent" {
-		if _, ok := cfg.Auths[reg]; !ok {
-			return Response{Changed: false, Msg: "not logged in", Registry: reg}
-		}
-		delete(cfg.Auths, reg)
-		if err := writeConfig(dependencies.FileSystem, configPath, cfg, rawData); err != nil {
-			return Response{Failed: true, Msg: fmt.Sprintf("failed to write config: %v", err)}
-		}
-		return Response{Changed: true, Msg: "logged out", Registry: reg}
+	if stateName == "absent" {
+		return logout(dependencies.FileSystem, cfg, configPath, registryURL, state.CheckMode)
 	}
-
-	if state == "present" {
-		// Calculate auth string
-		authStr := base64.StdEncoding.EncodeToString([]byte(req.Username + ":" + req.Password))
-
-		// Check if already logged in with same credentials
-		if existing, ok := cfg.Auths[reg]; ok && !req.Relogin {
-			if existing.Auth == authStr {
-				return Response{Changed: false, Msg: "already logged in", Registry: reg}
-			}
-		}
-
-		// Validate credentials via registry login (default: true)
-		validate := true
-		if !req.Validate && req.State != "" {
-			// Only skip validation if explicitly set to false
-			// Note: Go unmarshals missing bool as false, so we check if State was provided
-			// to distinguish between explicit false and default
-			validate = req.Validate
-		}
-
-		if validate {
-			authConfig := client.RegistryLoginOptions{
-				Username:      req.Username,
-				Password:      req.Password,
-				ServerAddress: reg,
-			}
-
-			resp, err := cli.RegistryLogin(ctx, authConfig)
-			if err != nil {
-				return Response{Failed: true, Msg: fmt.Sprintf("login failed: %v", err), Registry: reg}
-			}
-
-			// Update config
-			cfg.Auths[reg] = DockerAuth{
-				Auth:  authStr,
-				Email: req.Email,
-			}
-
-			if err := writeConfig(dependencies.FileSystem, configPath, cfg, rawData); err != nil {
-				return Response{Failed: true, Msg: fmt.Sprintf("failed to write config: %v", err)}
-			}
-
-			return Response{Changed: true, Msg: "login succeeded", Token: resp.Auth.IdentityToken, Registry: reg}
-		}
-
-		// Skip validation, just store credentials
-		cfg.Auths[reg] = DockerAuth{
-			Auth:  authStr,
-			Email: req.Email,
-		}
-
-		if err := writeConfig(dependencies.FileSystem, configPath, cfg, rawData); err != nil {
-			return Response{Failed: true, Msg: fmt.Sprintf("failed to write config: %v", err)}
-		}
-
-		return Response{Changed: true, Msg: "credentials stored (validation skipped)", Registry: reg}
-	}
-
-	return Response{Failed: true, Msg: fmt.Sprintf("unknown state: %s", state)}
+	return login(ctx, req, dependencies.FileSystem, apiClient, cfg, configPath, registryURL, state.CheckMode)
 }
 
-// readConfig reads and parses the docker config.json, also returning raw data
-// for preserving unknown fields
-func readConfig(fileSystem docker.FileSystem, path string) (DockerConfig, []byte, error) {
-	cfg := DockerConfig{Auths: make(map[string]DockerAuth)}
+func login(ctx context.Context, req Request, fileSystem docker.FileSystem, apiClient client.APIClient, cfg map[string]any, configPath, registryURL string, checkMode bool) Response {
+	if req.Username == "" || req.Password == "" {
+		return failedResponse("username and password are required when state=present")
+	}
+
+	auth, err := apiClient.RegistryLogin(ctx, client.RegistryLoginOptions{
+		Username:      req.Username,
+		Password:      req.Password,
+		ServerAddress: registryURL,
+	})
+	if err != nil {
+		return failedResponse(fmt.Sprintf("Logging into %s for user %s failed - %v", registryURL, req.Username, err))
+	}
+
+	result, err := loginResult(auth, req.Username, registryURL)
+	if err != nil {
+		return failedResponse(fmt.Sprintf("encode login result: %v", err))
+	}
+
+	auths := authsMap(cfg)
+	if matchingCredentials(auths, registryURL, req.Username, req.Password) && !req.reauthorize() {
+		return Response{LoginResult: result, Msg: "already logged in"}
+	}
+
+	if !checkMode {
+		auths[registryURL] = map[string]any{"auth": encodedAuth(req.Username, req.Password)}
+		cfg["auths"] = auths
+		if err := writeConfig(fileSystem, configPath, cfg); err != nil {
+			return failedResponse(fmt.Sprintf("failed to write config: %v", err))
+		}
+	}
+	return Response{Changed: true, LoginResult: result, Msg: "login succeeded"}
+}
+
+func logout(fileSystem docker.FileSystem, cfg map[string]any, configPath, registryURL string, checkMode bool) Response {
+	auths := authsMap(cfg)
+	if !hasCredentials(auths, registryURL) {
+		return Response{Msg: "not logged in"}
+	}
+	if !checkMode {
+		delete(auths, registryURL)
+		cfg["auths"] = auths
+		if err := writeConfig(fileSystem, configPath, cfg); err != nil {
+			return failedResponse(fmt.Sprintf("failed to write config: %v", err))
+		}
+	}
+	return Response{Changed: true, Msg: "logged out"}
+}
+
+func failedResponse(message string) Response {
+	return Response{Failed: true, Msg: message}
+}
+
+func expandUserPath(fileSystem docker.FileSystem, path string) (string, error) {
+	if path == "" {
+		path = defaultConfigPath
+	}
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path, nil
+	}
+	home, err := fileSystem.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	if path == "~" {
+		return home, nil
+	}
+	return filepath.Join(home, strings.TrimPrefix(path, "~/")), nil
+}
+
+func readConfig(fileSystem docker.FileSystem, path string) (map[string]any, error) {
 	data, err := fileSystem.ReadFile(path)
 	if err != nil {
-		return cfg, nil, err
+		if errors.Is(err, fs.ErrNotExist) {
+			return map[string]any{"auths": map[string]any{}}, nil
+		}
+		return nil, err
 	}
+	var cfg map[string]any
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return cfg, data, err
+		return nil, err
 	}
-	return cfg, data, nil
+	if cfg == nil {
+		cfg = map[string]any{}
+	}
+	if _, found := cfg["auths"]; !found {
+		cfg["auths"] = map[string]any{}
+	}
+	return cfg, nil
 }
 
-// writeConfig writes the docker config.json, preserving existing structure
-func writeConfig(fileSystem docker.FileSystem, path string, cfg DockerConfig, rawData []byte) error {
-	dir := filepath.Dir(path)
-	if err := fileSystem.MkdirAll(dir, 0700); err != nil {
+func writeConfig(fileSystem docker.FileSystem, path string, cfg map[string]any) error {
+	if err := fileSystem.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
+	output, err := json.MarshalIndent(cfg, "", "    ")
+	if err != nil {
+		return err
+	}
+	output = append(output, '\n')
+	return fileSystem.WriteFile(path, output, 0o600)
+}
 
-	// If we have raw data, try to preserve unknown fields
-	var output []byte
-	var err error
-	if rawData != nil {
-		// Parse raw data, update only what we changed
-		var rawMap map[string]json.RawMessage
-		if err := json.Unmarshal(rawData, &rawMap); err == nil {
-			// Update auths
-			authsData, _ := json.Marshal(cfg.Auths)
-			rawMap["auths"] = authsData
+func authsMap(cfg map[string]any) map[string]any {
+	raw, ok := cfg["auths"]
+	if !ok || raw == nil {
+		auths := map[string]any{}
+		cfg["auths"] = auths
+		return auths
+	}
+	auths, ok := raw.(map[string]any)
+	if !ok {
+		auths = map[string]any{}
+		cfg["auths"] = auths
+		return auths
+	}
+	return auths
+}
 
-			output, err = json.MarshalIndent(rawMap, "", "\t")
-			if err != nil {
-				return err
-			}
-		} else {
-			// Fall back to normal marshal
-			output, err = json.MarshalIndent(cfg, "", "\t")
-			if err != nil {
-				return err
-			}
-		}
-	} else {
-		output, err = json.MarshalIndent(cfg, "", "\t")
-		if err != nil {
-			return err
+func hasCredentials(auths map[string]any, registryURL string) bool {
+	entry, found := auths[registryURL]
+	if !found || entry == nil {
+		return false
+	}
+	object, ok := entry.(map[string]any)
+	if !ok {
+		return true
+	}
+	return len(object) > 0
+}
+
+func credentialHelper(cfg map[string]any, registryURL string) string {
+	if helpers, ok := cfg["credHelpers"].(map[string]any); ok {
+		if name, ok := helpers[registryURL].(string); ok && name != "" {
+			return name
 		}
 	}
+	if store, ok := cfg["credsStore"].(string); ok && store != "" {
+		return store
+	}
+	return ""
+}
 
-	// Write with proper permissions (600 for config files)
-	return fileSystem.WriteFile(path, output, 0600)
+func encodedAuth(username, password string) string {
+	return base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+}
+
+func decodedCredentials(entry any) (username, password string, ok bool) {
+	object, isObject := entry.(map[string]any)
+	if !isObject {
+		return "", "", false
+	}
+	if auth, _ := object["auth"].(string); auth != "" {
+		decoded, err := base64.StdEncoding.DecodeString(auth)
+		if err != nil {
+			return "", "", false
+		}
+		user, secret, found := strings.Cut(string(decoded), ":")
+		if !found {
+			return "", "", false
+		}
+		return user, secret, true
+	}
+	username, _ = object["username"].(string)
+	password, _ = object["password"].(string)
+	if username == "" && password == "" {
+		return "", "", false
+	}
+	return username, password, true
+}
+
+func matchingCredentials(auths map[string]any, registryURL, username, password string) bool {
+	entry, found := auths[registryURL]
+	if !found {
+		return false
+	}
+	existingUser, existingPassword, ok := decodedCredentials(entry)
+	return ok && existingUser == username && existingPassword == password
+}
+
+func loginResult(auth client.RegistryLoginResult, username, registryURL string) (map[string]any, error) {
+	result, err := docker.InspectionMap(auth.Auth)
+	if err != nil {
+		return nil, err
+	}
+	result["username"] = username
+	result["serveraddress"] = registryURL
+	delete(result, "password")
+	delete(result, "Password")
+	return result, nil
 }

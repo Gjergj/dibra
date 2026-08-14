@@ -345,6 +345,25 @@ func TestGetClientBuildsOpenSSHTransport(t *testing.T) {
 	}
 }
 
+func TestGetClientTLSUsesTCPHostWithoutConnecting(t *testing.T) {
+	clearDockerEnvironment(t)
+
+	cli, err := GetClient(CommonArgs{
+		DockerHost:    pointer("tcp://127.0.0.1:1"),
+		TLS:           pointer(true),
+		ValidateCerts: pointer(false),
+		TLSHostname:   pointer("daemon-tls.ansible.com"),
+		Timeout:       pointer(1),
+	})
+	if err != nil {
+		t.Fatalf("GetClient() error = %v", err)
+	}
+	defer cli.Close()
+	if cli.DaemonHost() != "tcp://127.0.0.1:1" {
+		t.Errorf("DaemonHost() = %q", cli.DaemonHost())
+	}
+}
+
 func TestNewTLSConfigUsesResolvedHostname(t *testing.T) {
 	config, err := newTLSConfig(ConnectionOptions{TLS: true, TLSHostname: "daemon.example"})
 	if err != nil {

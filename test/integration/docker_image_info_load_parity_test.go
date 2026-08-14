@@ -4,6 +4,7 @@ package integration
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -109,12 +110,22 @@ func TestPlaybook_DockerImageInfoParity(t *testing.T) {
 		images := resultList(t, result, "images")
 		actualByID := make(map[string]map[string]any, len(images))
 		for _, value := range images {
-			image := value.(map[string]any)
-			actualByID[image["Id"].(string)] = image
+			if value == nil {
+				continue
+			}
+			image, ok := value.(map[string]any)
+			if !ok {
+				t.Fatalf("images entry = %T, want object or null", value)
+			}
+			id, _ := image["Id"].(string)
+			if id == "" {
+				t.Fatalf("listed image missing Id: %#v", image)
+			}
+			actualByID[id] = image
 		}
-		expectedIDs := uniqueNonemptyLines(remoteExec(t, client, "docker image ls --no-trunc --format '{{.ID}}'"))
+		expectedIDs := engineListedImageIDs(t, client)
 		if len(actualByID) != len(expectedIDs) {
-			t.Fatalf("module returned %d images, docker image ls returned %d: %#v", len(actualByID), len(expectedIDs), expectedIDs)
+			t.Fatalf("module returned %d images, Engine ImageList returned %d\nmodule: %v\nengine: %v", len(actualByID), len(expectedIDs), sortedStrings(mapKeys(actualByID)), expectedIDs)
 		}
 		for _, id := range expectedIDs {
 			actual, found := actualByID[id]
@@ -122,6 +133,15 @@ func TestPlaybook_DockerImageInfoParity(t *testing.T) {
 				t.Fatalf("module result is missing image %s", id)
 			}
 			assertRawImageInspection(t, actual, dockerInspectImage(t, client, id))
+		}
+		for _, reference := range []string{alpine, busybox} {
+			inspected := dockerInspectImage(t, client, reference)
+			id, _ := inspected["Id"].(string)
+			actual, found := actualByID[id]
+			if !found {
+				t.Fatalf("omitted-name list is missing fixture %s (%s)", reference, id)
+			}
+			assertRawImageInspection(t, actual, inspected)
 		}
 	})
 
@@ -352,8 +372,41 @@ func assertRawImageInspection(t *testing.T, actual any, expected map[string]any)
 	t.Helper()
 	actualMap, ok := actual.(map[string]any)
 	if !ok || !reflect.DeepEqual(actualMap, expected) {
-		t.Fatalf("module inspection does not match docker inspect\nmodule: %#v\ndocker: %#v", actual, expected)
+		t.Fatalf("module inspection does not match docker inspect\ndiff: %s\nmodule keys: %v\ndocker keys: %v", inspectionDiff(actualMap, expected), sortedMapKeys(actualMap), sortedMapKeys(expected))
 	}
+}
+
+func inspectionDiff(actual, expected map[string]any) string {
+	if actual == nil {
+		return "module result is not an object"
+	}
+	var parts []string
+	for _, key := range sortedMapKeys(expected) {
+		if !reflect.DeepEqual(actual[key], expected[key]) {
+			parts = append(parts, fmt.Sprintf("%s: module=%T docker=%T", key, actual[key], expected[key]))
+		}
+	}
+	for _, key := range sortedMapKeys(actual) {
+		if _, found := expected[key]; !found {
+			parts = append(parts, fmt.Sprintf("%s: extra in module", key))
+		}
+	}
+	if len(parts) > 12 {
+		parts = append(parts[:12], "...")
+	}
+	return strings.Join(parts, "; ")
+}
+
+func sortedMapKeys(values map[string]any) []string {
+	if values == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func resultList(t *testing.T, result map[string]any, key string) []any {
@@ -390,6 +443,14 @@ func sortedStrings(values []string) []string {
 	return result
 }
 
+func mapKeys(values map[string]map[string]any) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
 func containsStringList(options [][]string, value []string) bool {
 	for _, option := range options {
 		if reflect.DeepEqual(option, value) {
@@ -422,6 +483,27 @@ func uniqueNonemptyLines(output string) []string {
 		}
 	}
 	return result
+}
+
+func engineListedImageIDs(t *testing.T, client *ssh.Client) []string {
+	t.Helper()
+	raw := remoteExec(t, client, "curl -sS --unix-socket /var/run/docker.sock http://localhost/images/json")
+	var summaries []struct {
+		ID string `json:"Id"`
+	}
+	if err := json.Unmarshal([]byte(raw), &summaries); err != nil {
+		t.Fatalf("decode Engine image list: %v\n%s", err, raw)
+	}
+	ids := make([]string, 0, len(summaries))
+	seen := map[string]bool{}
+	for _, summary := range summaries {
+		if summary.ID == "" || seen[summary.ID] {
+			continue
+		}
+		seen[summary.ID] = true
+		ids = append(ids, summary.ID)
+	}
+	return ids
 }
 
 func imageExists(t *testing.T, client *ssh.Client, reference string) bool {

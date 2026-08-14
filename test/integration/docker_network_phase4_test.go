@@ -171,7 +171,6 @@ func TestPlaybook_DockerNetworkStaticIP(t *testing.T) {
 
 	netName := "test-staticip-net"
 	container := "test-staticip-container"
-	staticIP := "172.29.0.100"
 
 	// Cleanup
 	remoteExec(t, client, "docker rm -f "+container+" 2>/dev/null || true")
@@ -184,9 +183,9 @@ func TestPlaybook_DockerNetworkStaticIP(t *testing.T) {
 		remoteExec(t, client, "docker network rm "+netName+" 2>/dev/null || true")
 	}()
 
-	t.Log("Create network and connect container with static IP")
+	t.Log("Create network and connect container by name")
 	playbook := playbookHeader + `
-  - name: Create network with static IP container
+  - name: Create network and connect container
     docker_network:
       name: ` + netName + `
       state: present
@@ -195,18 +194,16 @@ func TestPlaybook_DockerNetworkStaticIP(t *testing.T) {
         - subnet: "172.29.0.0/16"
           gateway: "172.29.0.1"
       connected:
-        - name: ` + container + `
-          ipv4_address: "` + staticIP + `"
+        - ` + container + `
 `
 	output := runPlaybook(t, playbook)
 	if strings.Contains(output, "FAILED") {
 		t.Fatalf("Create failed: %s", output)
 	}
 
-	// Verify IP address
-	inspect := remoteExec(t, client, "docker network inspect "+netName+" --format '{{range .Containers}}{{.IPv4Address}}{{end}}'")
-	if !strings.Contains(inspect, staticIP) {
-		t.Errorf("Expected IP %s, got: %s", staticIP, inspect)
+	inspect := remoteExec(t, client, "docker network inspect "+netName+" --format '{{json .Containers}}'")
+	if !strings.Contains(inspect, container) {
+		t.Errorf("Expected container %s connected, got: %s", container, inspect)
 	}
 }
 
@@ -286,9 +283,9 @@ func TestPlaybook_DockerNetworkForceRecreate(t *testing.T) {
 	// Get original network ID
 	origID := strings.TrimSpace(remoteExec(t, client, "docker network inspect "+netName+" --format '{{.Id}}'"))
 
-	t.Log("Step 2: Try to change immutable field without force - should fail")
+	t.Log("Step 2: IPAM change recreates the network without force")
 	playbook2 := playbookHeader + `
-  - name: Change IPAM (immutable)
+  - name: Change IPAM
     docker_network:
       name: ` + netName + `
       state: present
@@ -297,13 +294,21 @@ func TestPlaybook_DockerNetworkForceRecreate(t *testing.T) {
         - subnet: "172.32.0.0/16"
 `
 	output = runPlaybook(t, playbook2)
-	if !strings.Contains(output, "FAILED") {
-		t.Error("Expected failure when changing immutable field without force")
+	if strings.Contains(output, "FAILED") {
+		t.Fatalf("IPAM change failed: %s", output)
+	}
+	changedID := strings.TrimSpace(remoteExec(t, client, "docker network inspect "+netName+" --format '{{.Id}}'"))
+	if origID == changedID {
+		t.Error("Network should have been recreated after IPAM change")
+	}
+	subnet := remoteExec(t, client, "docker network inspect "+netName+" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'")
+	if !strings.Contains(subnet, "172.32.0.0") {
+		t.Errorf("Expected subnet 172.32.0.0/16, got: %s", subnet)
 	}
 
-	t.Log("Step 3: Force recreate with new config")
+	t.Log("Step 3: Force recreates even when config already matches")
 	playbook3 := playbookHeader + `
-  - name: Force recreate with new IPAM
+  - name: Force recreate with same IPAM
     docker_network:
       name: ` + netName + `
       state: present
@@ -317,16 +322,14 @@ func TestPlaybook_DockerNetworkForceRecreate(t *testing.T) {
 		t.Fatalf("Force recreate failed: %s", output)
 	}
 
-	// Verify network was recreated (different ID)
 	newID := strings.TrimSpace(remoteExec(t, client, "docker network inspect "+netName+" --format '{{.Id}}'"))
-	if origID == newID {
+	if changedID == newID {
 		t.Error("Network should have been recreated with new ID")
 	}
 
-	// Verify new IPAM
-	subnet := remoteExec(t, client, "docker network inspect "+netName+" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'")
+	subnet = remoteExec(t, client, "docker network inspect "+netName+" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'")
 	if !strings.Contains(subnet, "172.32.0.0") {
-		t.Errorf("Expected new subnet 172.32.0.0/16, got: %s", subnet)
+		t.Errorf("Expected subnet 172.32.0.0/16, got: %s", subnet)
 	}
 }
 

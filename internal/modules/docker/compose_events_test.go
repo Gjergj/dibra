@@ -39,6 +39,40 @@ func TestParseComposeJSONEventsLegacyShapeStillEmittedByComposeFive(t *testing.T
 	}
 }
 
+func TestParseComposeJSONEventsErrorMessage(t *testing.T) {
+	result := ParseComposeJSONEvents([]byte(`{"id":"web","status":"Error","message":"container web exited (0)"}`))
+	if len(result.Events) != 1 || result.Events[0].Message != "container web exited (0)" {
+		t.Fatalf("events = %#v", result.Events)
+	}
+	if got := ComposeFailureMessage(result.Events, 1); got != "Error when processing web: container web exited (0)" {
+		t.Fatalf("message = %q", got)
+	}
+}
+
+func TestComposeHasChangesIgnoresPullAndBuild(t *testing.T) {
+	events := []ComposeEvent{
+		{ResourceType: "image", ResourceID: "alpine", Status: "Pulling"},
+		{ResourceType: "image", ResourceID: "app", Status: "Building"},
+	}
+	if !ComposeHasChanges(events, ComposeChangeOptions{}) {
+		t.Fatal("expected changes")
+	}
+	if ComposeHasChanges(events, ComposeChangeOptions{IgnoreServicePullEvents: true, IgnoreBuildEvents: true}) {
+		t.Fatal("ignored pull and build should be unchanged")
+	}
+	records := ComposeEventActionRecords(events)
+	if len(records) != 2 || records[0].Status != "Pulling" || records[1].Status != "Building" {
+		t.Fatalf("actions = %#v", records)
+	}
+}
+
+func TestComposeFailureMessage(t *testing.T) {
+	message := ComposeFailureMessage([]ComposeEvent{{ResourceType: "unknown", ResourceID: "web", Status: "Error", Message: "container web exited (0)"}}, 1)
+	if message != "Error when processing web: container web exited (0)" {
+		t.Fatalf("message = %q", message)
+	}
+}
+
 func TestValidateComposeVersion(t *testing.T) {
 	for _, version := range []string{"5.4.0", "v5.4.0", "5.4.0-desktop.1"} {
 		if err := ValidateComposeVersion(version); err != nil {

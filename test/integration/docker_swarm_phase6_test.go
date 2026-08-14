@@ -379,12 +379,11 @@ func TestPlaybook_DockerSwarmServiceInfo(t *testing.T) {
       name: non-existent-service-xyz
 `
 		output := runPlaybook(t, playbook)
-		// Should succeed with 'not found' message
 		if strings.Contains(output, "FAILED") {
 			t.Errorf("Expected success (not failure) for non-existent service: %s", output)
 		}
-		if !strings.Contains(output, "not found") {
-			t.Errorf("Expected 'not found' message in output: %s", output)
+		if !strings.Contains(output, "OK") {
+			t.Errorf("Expected OK in output: %s", output)
 		}
 	})
 }
@@ -436,12 +435,11 @@ func TestPlaybook_DockerNodeInfo(t *testing.T) {
       name: non-existent-node-xyz
 `
 		output := runPlaybook(t, playbook)
-		// Should succeed with 'not found' message
 		if strings.Contains(output, "FAILED") {
-			t.Errorf("Expected success (not failure) for non-existent node: %s", output)
+			t.Errorf("Expected success (empty nodes list) for non-existent node: %s", output)
 		}
-		if !strings.Contains(output, "not found") {
-			t.Errorf("Expected 'not found' message in output: %s", output)
+		if !strings.Contains(output, "OK") {
+			t.Errorf("Expected OK in output: %s", output)
 		}
 	})
 }

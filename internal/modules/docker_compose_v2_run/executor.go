@@ -3,7 +3,8 @@ package docker_compose_v2_run
 import (
 	"context"
 	"fmt"
-	"os"
+	"io"
+	"sort"
 	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
@@ -16,23 +17,38 @@ func Execute(req Request) Response {
 
 func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
 	dependencies = dependencies.Resolve()
-	// Check if directory exists
-	if _, err := dependencies.FileSystem.Stat(req.ProjectSrc); os.IsNotExist(err) {
-		return Response{Failed: true, Msg: fmt.Sprintf("project_src does not exist: %s", req.ProjectSrc)}
+	if err := validateRequest(req); err != nil {
+		return failedResponse(err.Error())
 	}
-	if _, err := docker.CheckComposeVersion(context.Background(), dependencies.CLIRunner, req.CommonArgs, dependencies.Environment); err != nil {
-		return Response{Failed: true, Msg: err.Error()}
+
+	projectSrc, cleanupDir, err := docker.PrepareComposeProject(req.ComposeCommonArgs, dependencies.FileSystem, dependencies.Clock)
+	if err != nil {
+		return failedResponse(err.Error())
+	}
+	if cleanupDir != "" {
+		defer func() { _ = dependencies.FileSystem.RemoveAll(cleanupDir) }()
+	}
+	req.ProjectSrc = projectSrc
+	if absolute, absErr := dependencies.FileSystem.Abs(projectSrc); absErr == nil {
+		req.ProjectSrc = absolute
+		projectSrc = absolute
+	}
+
+	dockerCLI := req.DockerCLI
+	if dockerCLI == "" {
+		dockerCLI = "docker"
+	}
+	if _, err := docker.CheckComposeVersionWithCLI(context.Background(), dependencies.CLIRunner, req.CommonArgs, dependencies.Environment, dockerCLI); err != nil {
+		return failedResponse(err.Error())
 	}
 
 	cmdEnv, err := docker.GetComposeEnvWithEnvironment(req.ComposeCommonArgs, req.CommonArgs, dependencies.Environment)
 	if err != nil {
-		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
+		return failedResponse(fmt.Sprintf("invalid Docker connection options: %v", err))
 	}
-
-	// Base args
-	args, err := docker.GetComposeBaseArgsWithEnvironment(req.ComposeCommonArgs, req.CommonArgs, dependencies.Environment)
+	args, err := docker.GetComposeProjectArgsWithProgressEnvironment(req.ComposeCommonArgs, req.CommonArgs, dependencies.Environment, "plain")
 	if err != nil {
-		return Response{Failed: true, Msg: fmt.Sprintf("invalid Docker connection options: %v", err)}
+		return failedResponse(fmt.Sprintf("invalid Docker connection options: %v", err))
 	}
 	args = append(args, "run")
 
@@ -45,17 +61,17 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 	for _, cap := range req.CapDrop {
 		args = append(args, "--cap-drop", cap)
 	}
-	if req.EntryPoint != "" {
-		args = append(args, "--entrypoint", req.EntryPoint)
+	if req.EntryPoint != nil {
+		args = append(args, "--entrypoint", *req.EntryPoint)
 	}
-	if req.Interactive != nil && !*req.Interactive {
-		args = append(args, "--no-interactive")
+	if !boolDefault(req.Interactive, true) {
+		args = append(args, "--interactive=false")
 	}
 	for _, label := range req.Labels {
 		args = append(args, "--label", label)
 	}
-	if req.Name != "" {
-		args = append(args, "--name", req.Name)
+	if req.Name != nil {
+		args = append(args, "--name", *req.Name)
 	}
 	if req.NoDeps {
 		args = append(args, "--no-deps")
@@ -81,89 +97,128 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 	for _, volume := range req.Volumes {
 		args = append(args, "--volume", volume)
 	}
-	if req.Chdir != "" {
-		args = append(args, "--workdir", req.Chdir)
+	if req.Chdir != nil {
+		args = append(args, "--workdir", *req.Chdir)
 	}
 	if req.Detach {
 		args = append(args, "--detach")
 	}
-	if req.User != "" {
-		args = append(args, "--user", req.User)
+	if req.User != nil {
+		args = append(args, "--user", *req.User)
 	}
-	if req.TTY != nil && !*req.TTY {
-		args = append(args, "--no-TTY")
+	if !boolDefault(req.TTY, true) {
+		args = append(args, "--no-tty")
 	}
 
-	// Environment variables for the container
-	for k, v := range req.Env {
-		args = append(args, "--env", fmt.Sprintf("%s=%s", k, v))
+	envNames := make([]string, 0, len(req.Env))
+	for name := range req.Env {
+		envNames = append(envNames, name)
+	}
+	sort.Strings(envNames)
+	for _, name := range envNames {
+		args = append(args, "--env", fmt.Sprintf("%s=%s", name, req.Env[name]))
 	}
 
 	args = append(args, "--", req.Service)
 
-	// Command
 	argv := req.Argv
-	if len(argv) == 0 && req.Command != "" {
-		var err error
-		argv, err = shlex.Split(req.Command)
+	if req.Command != nil {
+		argv, err = shlex.Split(*req.Command)
 		if err != nil {
-			return Response{Failed: true, Msg: fmt.Sprintf("failed to parse command: %v", err)}
+			return failedResponse(fmt.Sprintf("failed to parse command: %v", err))
 		}
 	}
 	args = append(args, argv...)
 
-	var stdin *strings.Reader
-	if req.Stdin != "" && !req.Detach {
-		stdinValue := req.Stdin
-		if req.StdinAddNewline {
+	var stdin io.Reader
+	if req.Stdin != nil {
+		stdinValue := *req.Stdin
+		if boolDefault(req.StdinAddNewline, true) {
 			stdinValue += "\n"
 		}
 		stdin = strings.NewReader(stdinValue)
 	}
 
 	result, err := dependencies.CLIRunner.Run(context.Background(), docker.CLICommand{
-		Name:  "docker",
+		Name:  dockerCLI,
 		Args:  args,
-		Dir:   req.ProjectSrc,
+		Dir:   projectSrc,
 		Env:   cmdEnv,
 		Stdin: stdin,
 	})
-	outputStr := string(result.Output)
 
-	if err != nil {
-		if result.ExitCode >= 0 {
-			return Response{
-				Failed:  false, // It didn't fail to run, the command just returned non-zero
-				Changed: true,
-				RC:      result.ExitCode,
-				Stdout:  outputStr,
-				Msg:     "command executed with non-zero exit code",
-			}
-		}
-		return Response{
-			Failed: true,
-			Msg:    fmt.Sprintf("failed to execute command: %v", err),
-			Stdout: outputStr,
-		}
+	if err != nil && result.ExitCode < 0 {
+		return failedResponse(fmt.Sprintf("failed to execute command: %v", err))
 	}
 
 	if req.Detach {
+		if result.ExitCode != 0 {
+			message := strings.TrimSpace(string(result.Stderr))
+			if message == "" {
+				message = fmt.Sprintf("Return code %d is non-zero", result.ExitCode)
+			}
+			return failedResponse(message)
+		}
 		return Response{
-			Changed:     true,
-			ContainerID: strings.TrimSpace(outputStr),
-			Msg:         "command started in detached mode",
+			ContainerID: strings.TrimSpace(string(result.Stdout)),
 		}
 	}
 
-	stdout := outputStr
-	if req.StripEmptyEnds {
+	stdout := string(result.Stdout)
+	stderr := string(result.Stderr)
+	if boolDefault(req.StripEmptyEnds, true) {
 		stdout = strings.TrimRight(stdout, "\r\n")
+		stderr = strings.TrimRight(stderr, "\r\n")
 	}
-
+	rc := result.ExitCode
 	return Response{
 		Changed: true,
-		Stdout:  stdout,
-		RC:      0,
-		Msg:     "command executed successfully",
+		Stdout:  &stdout,
+		Stderr:  &stderr,
+		RC:      &rc,
 	}
+}
+
+func validateRequest(req Request) error {
+	if len(req.Definition) > 0 && req.ProjectSrc != "" {
+		return fmt.Errorf("parameters are mutually exclusive: definition|project_src")
+	}
+	if len(req.Definition) > 0 && len(req.Files) > 0 {
+		return fmt.Errorf("parameters are mutually exclusive: definition|files")
+	}
+	if len(req.Definition) == 0 && req.ProjectSrc == "" {
+		return fmt.Errorf("one of the following is required: definition, project_src")
+	}
+	if len(req.Definition) > 0 && req.ProjectName == "" {
+		return fmt.Errorf("project_name is required when definition is used")
+	}
+	if req.Service == "" {
+		return fmt.Errorf("service is required")
+	}
+	if req.Command != nil && len(req.Argv) > 0 {
+		return fmt.Errorf("parameters are mutually exclusive: argv|command")
+	}
+	if req.Detach && req.Stdin != nil {
+		return fmt.Errorf("If detach=true, stdin cannot be provided.")
+	}
+	for name, value := range req.Env {
+		if _, ok := value.(string); !ok {
+			return fmt.Errorf(
+				"Non-string value found for env option. Ambiguous env options must be wrapped in quotes to avoid them being interpreted when directly specified in YAML, or explicitly converted to strings when the option is templated. Key: %s",
+				name,
+			)
+		}
+	}
+	return nil
+}
+
+func boolDefault(value *bool, fallback bool) bool {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+
+func failedResponse(message string) Response {
+	return Response{Failed: true, Msg: message}
 }

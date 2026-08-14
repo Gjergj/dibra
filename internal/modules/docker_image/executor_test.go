@@ -2,6 +2,7 @@ package docker_image
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -28,6 +29,7 @@ type imageClient struct {
 	removeOptions client.ImageRemoveOptions
 	removed       []string
 	tagged        []client.ImageTagOptions
+	archive       []byte
 	closed        bool
 }
 
@@ -58,6 +60,10 @@ func (fake *imageClient) ImageTag(_ context.Context, options client.ImageTagOpti
 	fake.tagged = append(fake.tagged, options)
 	fake.images[options.Target] = fake.images[options.Source]
 	return client.ImageTagResult{}, nil
+}
+
+func (fake *imageClient) ImageSave(_ context.Context, _ []string, _ ...client.ImageSaveOption) (client.ImageSaveResult, error) {
+	return io.NopCloser(bytes.NewReader(fake.archive)), nil
 }
 
 func (fake *imageClient) Close() error {
@@ -289,4 +295,108 @@ func TestBuildContextArchiveHonorsDockerIgnore(t *testing.T) {
 	if !names["Dockerfile"] || !names[".dockerignore"] || !names["included.txt"] || names["ignored.txt"] {
 		t.Fatalf("archive names = %#v", names)
 	}
+}
+
+func TestValidationRejectsImageIDsForPullBuildRepositoryAndPush(t *testing.T) {
+	id := "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	tests := []struct {
+		name string
+		req  Request
+		want string
+	}{
+		{name: "pull", req: Request{Name: id, Source: "pull", ForceSource: true}, want: "Image name must not be an image ID for source=pull"},
+		{name: "build", req: Request{Name: id, Source: "build", ForceSource: true, Build: &BuildOptions{Path: t.TempDir()}}, want: "Image name must not be an image ID for source=build"},
+		{name: "repository", req: Request{Name: "alpine:latest", Source: "local", Repository: id}, want: "`repository` must not be an image ID"},
+		{name: "push", req: Request{Name: id, Source: "local", Push: true}, want: "Cannot push an image"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fake := &imageClient{images: map[string]client.ImageInspectResult{
+				id:              imageInspect(id),
+				"alpine:latest": imageInspect("sha256:abc", "alpine:latest"),
+			}}
+			response := ExecuteWithDependencies(test.req, docker.Dependencies{
+				Environment: docker.StaticEnvironment{},
+				NewClient:   func(docker.CommonArgs) (client.APIClient, error) { return fake, nil },
+			})
+			if !response.Failed || !strings.Contains(response.Msg, test.want) {
+				t.Fatalf("ExecuteWithDependencies() = %#v, want %q", response, test.want)
+			}
+		})
+	}
+}
+
+func TestArchivedImageActionMatchesPinnedUpstreamCases(t *testing.T) {
+	root := t.TempDir()
+	fake := &imageClient{
+		images: map[string]client.ImageInspectResult{
+			"a:latest": imageInspect("sha256:a1", "a:latest"),
+			"b:latest": imageInspect("sha256:b2", "b:latest"),
+			"c:1.2.3":  imageInspect("sha256:c3", "c:1.2.3"),
+			"d:0.0.1":  imageInspect("sha256:d4", "d:0.0.1"),
+		},
+	}
+	dependencies := docker.Dependencies{
+		Environment: docker.StaticEnvironment{},
+		NewClient:   func(docker.CommonArgs) (client.APIClient, error) { return fake, nil },
+	}
+
+	missingPath := filepath.Join(root, "missing.tar")
+	missing := ExecuteWithDependencies(Request{Name: "a:latest", Source: "local", ArchivePath: missingPath}, dependencies)
+	if missing.Failed || !missing.Changed || !strings.Contains(strings.Join(missing.Actions, "\n"), "since none present") {
+		t.Fatalf("missing archive = %#v", missing)
+	}
+
+	currentPath := filepath.Join(root, "current.tar")
+	if err := os.WriteFile(currentPath, imageArchiveManifest(t, "b2", []string{"b:latest"}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	current := ExecuteWithDependencies(Request{Name: "b:latest", Source: "local", ArchivePath: currentPath}, dependencies)
+	if current.Failed || current.Changed {
+		t.Fatalf("current archive = %#v", current)
+	}
+
+	invalidPath := filepath.Join(root, "invalid.tar")
+	if err := os.WriteFile(invalidPath, []byte("not an archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	invalid := ExecuteWithDependencies(Request{Name: "c:1.2.3", Source: "local", ArchivePath: invalidPath}, dependencies)
+	if invalid.Failed || !invalid.Changed || !strings.Contains(strings.Join(invalid.Actions, "\n"), "overwriting an unreadable archive file") {
+		t.Fatalf("invalid archive = %#v", invalid)
+	}
+
+	obsoleteIDPath := filepath.Join(root, "obsolete-id.tar")
+	if err := os.WriteFile(obsoleteIDPath, imageArchiveManifest(t, "e5", []string{"d:0.0.1"}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	obsoleteID := ExecuteWithDependencies(Request{Name: "d:0.0.1", Source: "local", ArchivePath: obsoleteIDPath}, dependencies)
+	if obsoleteID.Failed || !obsoleteID.Changed || !strings.Contains(strings.Join(obsoleteID.Actions, "\n"), "overwriting archive with image e5 named d:0.0.1") {
+		t.Fatalf("obsolete id archive = %#v", obsoleteID)
+	}
+
+	obsoleteNamePath := filepath.Join(root, "obsolete-name.tar")
+	if err := os.WriteFile(obsoleteNamePath, imageArchiveManifest(t, "d4", []string{"hi"}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	obsoleteName := ExecuteWithDependencies(Request{Name: "d:0.0.1", Source: "local", ArchivePath: obsoleteNamePath}, dependencies)
+	if obsoleteName.Failed || !obsoleteName.Changed || !strings.Contains(strings.Join(obsoleteName.Actions, "\n"), "overwriting archive with image d4 named hi") {
+		t.Fatalf("obsolete name archive = %#v", obsoleteName)
+	}
+}
+
+func imageArchiveManifest(t *testing.T, imageID string, tags []string) []byte {
+	t.Helper()
+	manifest := fmt.Sprintf(`[{"Config":"%s.json","RepoTags":["%s"],"Layers":[]}]`, imageID, strings.Join(tags, `","`))
+	var buffer bytes.Buffer
+	writer := tar.NewWriter(&buffer)
+	if err := writer.WriteHeader(&tar.Header{Name: "manifest.json", Mode: 0o600, Size: int64(len(manifest))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Write([]byte(manifest)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
 }

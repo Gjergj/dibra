@@ -1,7 +1,8 @@
 package docker_image_info
 
 import (
-	"encoding/json"
+	"bytes"
+	"context"
 	"fmt"
 	"strings"
 
@@ -31,17 +32,13 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 		}
 		images := make([]map[string]any, 0, len(summaries.Items))
 		for _, summary := range summaries.Items {
-			inspection, err := apiClient.ImageInspect(ctx, summary.ID)
-			if err != nil {
-				if docker.IsNotFoundError(err) {
-					images = append(images, nil)
-					continue
-				}
-				return failedResponse(fmt.Sprintf("Error inspecting image %s - %v", summary.ID, err))
+			image, found, inspectErr := inspectImageMap(ctx, apiClient, summary.ID)
+			if inspectErr != nil {
+				return failedResponse(fmt.Sprintf("Error inspecting image %s - %v", summary.ID, inspectErr))
 			}
-			image, err := inspectionMap(inspection)
-			if err != nil {
-				return failedResponse(err.Error())
+			if !found {
+				images = append(images, nil)
+				continue
 			}
 			images = append(images, image)
 		}
@@ -57,32 +54,33 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 				return failedResponse(fmt.Sprintf("invalid image name %q: %v", requestedName, err))
 			}
 		}
-		inspection, inspectErr := apiClient.ImageInspect(ctx, reference)
+		image, found, inspectErr := inspectImageMap(ctx, apiClient, reference)
 		if inspectErr != nil {
-			if docker.IsNotFoundError(inspectErr) {
-				continue
-			}
 			return failedResponse(docker.WrapError("inspect image", reference, inspectErr).Error())
 		}
-		image, err := inspectionMap(inspection)
-		if err != nil {
-			return failedResponse(err.Error())
+		if !found {
+			continue
 		}
 		images = append(images, image)
 	}
 	return Response{Images: images}
 }
 
-func inspectionMap(value client.ImageInspectResult) (map[string]any, error) {
-	encoded, err := json.Marshal(value)
+func inspectImageMap(ctx context.Context, apiClient client.APIClient, reference string) (map[string]any, bool, error) {
+	var raw bytes.Buffer
+	inspection, err := apiClient.ImageInspect(ctx, reference, client.ImageInspectWithRawResponse(&raw))
 	if err != nil {
-		return nil, fmt.Errorf("encode image inspection: %w", err)
+		if docker.IsNotFoundError(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
 	}
-	var result map[string]any
-	if err := json.Unmarshal(encoded, &result); err != nil {
-		return nil, fmt.Errorf("decode image inspection: %w", err)
+	if raw.Len() > 0 {
+		image, err := docker.DecodeInspection(raw.Bytes())
+		return image, true, err
 	}
-	return result, nil
+	image, err := docker.InspectionMap(inspection)
+	return image, true, err
 }
 
 func isImageID(value string) bool {

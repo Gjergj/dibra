@@ -6,175 +6,365 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 
+	"github.com/gjergjiramku/dibra/internal/execution"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
-	return ExecuteWithDependencies(req, docker.Dependencies{})
+	return ExecuteWithDependenciesAndState(req, docker.Dependencies{}, execution.State{})
+}
+
+func ExecuteWithState(req Request, state execution.State) Response {
+	return ExecuteWithDependenciesAndState(req, docker.Dependencies{}, state)
 }
 
 func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	return ExecuteWithDependenciesAndState(req, dependencies, execution.State{})
+}
+
+func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependencies, state execution.State) Response {
 	dependencies = dependencies.Resolve()
+	if strings.TrimSpace(req.Name) == "" {
+		return failed("missing required arguments: name")
+	}
+	stateName := req.State
+	if stateName == "" {
+		stateName = "present"
+	}
+	switch stateName {
+	case "present", "absent":
+	default:
+		return failed(fmt.Sprintf("value of state must be one of: absent, present, got: %s", stateName))
+	}
+	if req.TemplateDriver != "" && req.TemplateDriver != "golang" {
+		return failed(fmt.Sprintf("value of template_driver must be one of: golang, got: %s", req.TemplateDriver))
+	}
+	if req.Data != nil && req.DataSrc != "" {
+		return failed("parameters are mutually exclusive: data, data_src")
+	}
+	if stateName == "present" && req.Data == nil && req.DataSrc == "" {
+		return failed("state is present but any of the following are missing: data, data_src")
+	}
+
 	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("create client", "", err).Error()}
+		return failed(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
 	}
 	defer cli.Close()
 
 	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
-	// List configs to find existing one
-	configs, err := cli.ConfigList(ctx, client.ConfigListOptions{})
-	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("list configs", "", err).Error()}
+	manager := &configManager{
+		req:            req,
+		checkMode:      state.CheckMode,
+		cli:            cli,
+		ctx:            ctx,
+		fs:             dependencies.FileSystem,
+		baseName:       req.Name,
+		name:           req.Name,
+		rolling:        req.RollingVersions,
+		templateDriver: req.TemplateDriver,
+		versionsToKeep: defaultVersionsKeep,
 	}
-
-	var existingConfig *swarm.Config
-	for _, c := range configs.Items {
-		if c.Spec.Name == req.Name {
-			configCopy := c
-			existingConfig = &configCopy
-			break
-		}
+	if req.VersionsToKeep != nil {
+		manager.versionsToKeep = *req.VersionsToKeep
 	}
-
-	state := req.State
-	if state == "" {
-		state = "present"
-	}
-
-	if state == "absent" {
-		if existingConfig != nil {
-			_, err := cli.ConfigRemove(ctx, existingConfig.ID, client.ConfigRemoveOptions{})
-			if err != nil {
-				return Response{Failed: true, Msg: docker.WrapError("remove config", req.Name, err).Error()}
-			}
-			return Response{Changed: true, Msg: "config removed"}
-		}
-		return Response{Changed: false, Msg: "config already absent"}
-	}
-
-	// State present - decode data
-	var data []byte
-	if req.Data != "" {
-		if req.DataIsB64 {
-			decoded, err := base64.StdEncoding.DecodeString(req.Data)
-			if err != nil {
-				return Response{Failed: true, Msg: fmt.Sprintf("failed to decode base64 data: %v", err)}
-			}
-			data = decoded
-		} else {
-			data = []byte(req.Data)
-		}
-	}
-
-	// Calculate hash for idempotency
-	dataHash := computeHash(data)
-
-	// Merge labels with hash label
-	labels := make(map[string]string)
-	for k, v := range req.Labels {
-		labels[k] = v
-	}
-	labels[DataHashLabel] = dataHash
-
-	if existingConfig == nil {
-		if req.Data == "" {
-			return Response{Failed: true, Msg: "data is required when creating a config"}
-		}
-
-		spec := swarm.ConfigSpec{
-			Annotations: swarm.Annotations{
-				Name:   req.Name,
-				Labels: labels,
-			},
-			Data: data,
-		}
-
-		resp, err := cli.ConfigCreate(ctx, client.ConfigCreateOptions{Spec: spec})
-		if err != nil {
-			return Response{Failed: true, Msg: docker.WrapError("create config", req.Name, err).Error()}
-		}
-		return Response{Changed: true, Msg: "config created", ConfigID: resp.ID, DataHash: dataHash}
-	}
-
-	// Config exists - check if update needed
-	// Docker configs are immutable, but we can check hash to see if data would change
-
-	existingHash := existingConfig.Spec.Labels[DataHashLabel]
-	labelsMatch := compareLabelsIgnoringHash(existingConfig.Spec.Labels, labels)
-
-	// If force is set, always recreate
-	if req.Force {
-		return recreateConfig(ctx, cli, existingConfig, req.Name, labels, data, dataHash)
-	}
-
-	// If data hash matches and labels match, no change needed
-	if existingHash == dataHash && labelsMatch {
-		return Response{Changed: false, Msg: "config already present (data and labels unchanged)", ConfigID: existingConfig.ID, DataHash: dataHash}
-	}
-
-	// If only labels differ (not data), we can update in place
-	if existingHash == dataHash && !labelsMatch {
-		spec := existingConfig.Spec
-		spec.Labels = labels
-
-		_, err = cli.ConfigUpdate(ctx, existingConfig.ID, client.ConfigUpdateOptions{Version: existingConfig.Version, Spec: spec})
-		if err != nil {
-			return Response{Failed: true, Msg: docker.WrapError("update config labels", req.Name, err).Error()}
-		}
-		return Response{Changed: true, Msg: "config labels updated", ConfigID: existingConfig.ID, DataHash: dataHash}
-	}
-
-	// Data differs - must recreate
-	return recreateConfig(ctx, cli, existingConfig, req.Name, labels, data, dataHash)
+	return manager.run()
 }
 
-// recreateConfig removes and recreates a config (required for data changes since configs are immutable)
-func recreateConfig(ctx context.Context, cli client.APIClient, existingConfig *swarm.Config, name string, labels map[string]string, data []byte, dataHash string) Response {
-	_, err := cli.ConfigRemove(ctx, existingConfig.ID, client.ConfigRemoveOptions{})
-	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("remove config for recreation", name, err).Error()}
-	}
+type configManager struct {
+	req            Request
+	checkMode      bool
+	cli            client.APIClient
+	ctx            context.Context
+	fs             docker.FileSystem
+	baseName       string
+	name           string
+	rolling        bool
+	templateDriver string
+	versionsToKeep int
+	version        int
+	data           []byte
+	dataKey        string
+	configs        []swarm.Config
+	results        Response
+}
 
+func (m *configManager) run() Response {
+	if err := m.loadData(); err != nil {
+		return failed(err.Error())
+	}
+	if err := m.getConfigs(); err != nil {
+		return failed(err.Error())
+	}
+	switch m.req.State {
+	case "", "present":
+		m.dataKey = sha224Hex(m.data)
+		if err := m.present(); err != nil {
+			return failed(err.Error())
+		}
+		if err := m.removeOldVersions(); err != nil {
+			return failed(err.Error())
+		}
+	case "absent":
+		if err := m.absent(); err != nil {
+			return failed(err.Error())
+		}
+	}
+	return m.results
+}
+
+func (m *configManager) loadData() error {
+	if m.req.State == "absent" && m.req.Data == nil && m.req.DataSrc == "" {
+		return nil
+	}
+	if m.req.DataSrc != "" {
+		raw, err := m.fs.ReadFile(m.req.DataSrc)
+		if err != nil {
+			return fmt.Errorf("Error while reading %s: %v", m.req.DataSrc, err)
+		}
+		m.data = raw
+		return nil
+	}
+	if m.req.Data == nil {
+		return nil
+	}
+	if m.req.DataIsB64 {
+		decoded, err := decodeConfigData(*m.req.Data)
+		if err != nil {
+			return fmt.Errorf("Error while decoding base64 data: %v", err)
+		}
+		m.data = decoded
+		return nil
+	}
+	m.data = []byte(*m.req.Data)
+	return nil
+}
+
+func (m *configManager) getConfigs() error {
+	filters := make(client.Filters)
+	filters.Add("name", m.baseName)
+	listed, err := m.cli.ConfigList(m.ctx, client.ConfigListOptions{Filters: filters})
+	if err != nil {
+		return fmt.Errorf("Error accessing config %s: %v", m.baseName, err)
+	}
+	prefix := m.baseName + "_v"
+	for _, item := range listed.Items {
+		if m.rolling {
+			if strings.HasPrefix(item.Spec.Name, prefix) {
+				m.configs = append(m.configs, item)
+			}
+			continue
+		}
+		if item.Spec.Name == m.baseName {
+			m.configs = append(m.configs, item)
+		}
+	}
+	if m.rolling {
+		sort.SliceStable(m.configs, func(i, j int) bool {
+			return configVersion(m.configs[i]) < configVersion(m.configs[j])
+		})
+	}
+	return nil
+}
+
+func (m *configManager) present() error {
+	if len(m.configs) > 0 {
+		current := m.configs[len(m.configs)-1]
+		m.results.ConfigID = current.ID
+		m.results.ConfigName = current.Spec.Name
+		dataChanged := false
+		templateChanged := false
+		labels := current.Spec.Labels
+		if labels == nil {
+			labels = map[string]string{}
+		}
+		if existingKey, found := labels[ansibleKeyLabel]; found {
+			if existingKey != m.dataKey {
+				dataChanged = true
+			}
+		}
+		existingTemplate := ""
+		if current.Spec.Templating != nil {
+			existingTemplate = current.Spec.Templating.Name
+		}
+		if existingTemplate != "" {
+			if existingTemplate != m.templateDriver {
+				templateChanged = true
+			}
+		} else if m.templateDriver != "" {
+			templateChanged = true
+		}
+		labelsChanged := !labelsAllowMorePresent(m.req.Labels, labels)
+		if m.rolling {
+			m.version = configVersion(current)
+		}
+		if dataChanged || templateChanged || labelsChanged || m.req.Force {
+			if !m.rolling {
+				if err := m.absent(); err != nil {
+					return err
+				}
+			}
+			id, err := m.createConfig()
+			if err != nil {
+				return err
+			}
+			m.results.Changed = true
+			m.results.ConfigID = id
+			m.results.ConfigName = m.name
+		}
+		return nil
+	}
+	m.results.Changed = true
+	id, err := m.createConfig()
+	if err != nil {
+		return err
+	}
+	m.results.ConfigID = id
+	m.results.ConfigName = m.name
+	return nil
+}
+
+func (m *configManager) createConfig() (string, error) {
+	labels := map[string]string{ansibleKeyLabel: m.dataKey}
+	if m.rolling {
+		m.version++
+		labels[ansibleVersionLabel] = strconv.Itoa(m.version)
+		m.name = fmt.Sprintf("%s_v%d", m.baseName, m.version)
+	}
+	for key, value := range m.req.Labels {
+		labels[key] = value
+	}
+	if m.checkMode {
+		return "", nil
+	}
 	spec := swarm.ConfigSpec{
 		Annotations: swarm.Annotations{
-			Name:   name,
+			Name:   m.name,
 			Labels: labels,
 		},
-		Data: data,
+		Data: m.data,
 	}
-	resp, err := cli.ConfigCreate(ctx, client.ConfigCreateOptions{Spec: spec})
+	if m.templateDriver != "" {
+		spec.Templating = &swarm.Driver{Name: m.templateDriver}
+	}
+	created, err := m.cli.ConfigCreate(m.ctx, client.ConfigCreateOptions{Spec: spec})
 	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("recreate config", name, err).Error()}
+		return "", fmt.Errorf("Error creating config: %v", err)
 	}
-	return Response{Changed: true, Msg: "config recreated (data changed)", ConfigID: resp.ID, DataHash: dataHash}
+	idFilters := make(client.Filters)
+	idFilters.Add("id", created.ID)
+	listed, err := m.cli.ConfigList(m.ctx, client.ConfigListOptions{Filters: idFilters})
+	if err == nil && len(listed.Items) > 0 {
+		m.configs = append(m.configs, listed.Items...)
+	} else {
+		m.configs = append(m.configs, swarm.Config{
+			ID:   created.ID,
+			Spec: spec,
+		})
+	}
+	return created.ID, nil
 }
 
-// computeHash returns SHA256 hash of data
-func computeHash(data []byte) string {
-	h := sha256.Sum256(data)
-	return hex.EncodeToString(h[:])
+func (m *configManager) removeOldVersions() error {
+	if !m.rolling || m.versionsToKeep < 0 || m.checkMode {
+		return nil
+	}
+	keep := m.versionsToKeep
+	if keep < 1 {
+		keep = 1
+	}
+	for len(m.configs) > keep {
+		oldest := m.configs[0]
+		m.configs = m.configs[1:]
+		if err := m.removeConfig(oldest); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// compareLabelsIgnoringHash compares labels ignoring the data hash label
-func compareLabelsIgnoringHash(existing, desired map[string]string) bool {
-	// Copy maps without hash label
-	e := make(map[string]string)
-	d := make(map[string]string)
-	for k, v := range existing {
-		if k != DataHashLabel {
-			e[k] = v
+func (m *configManager) absent() error {
+	if len(m.configs) == 0 {
+		return nil
+	}
+	for _, item := range m.configs {
+		if err := m.removeConfig(item); err != nil {
+			return err
 		}
 	}
-	for k, v := range desired {
-		if k != DataHashLabel {
-			d[k] = v
+	m.configs = nil
+	m.results.Changed = true
+	return nil
+}
+
+func (m *configManager) removeConfig(item swarm.Config) error {
+	if m.checkMode {
+		return nil
+	}
+	if _, err := m.cli.ConfigRemove(m.ctx, item.ID, client.ConfigRemoveOptions{}); err != nil {
+		return fmt.Errorf("Error removing config %s: %v", item.Spec.Name, err)
+	}
+	return nil
+}
+
+func configVersion(item swarm.Config) int {
+	if item.Spec.Labels == nil {
+		return 0
+	}
+	raw, ok := item.Spec.Labels[ansibleVersionLabel]
+	if !ok {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func labelsAllowMorePresent(desired LabelMap, current map[string]string) bool {
+	if desired == nil {
+		return true
+	}
+	if current == nil {
+		current = map[string]string{}
+	}
+	for key, value := range desired {
+		existing, found := current[key]
+		if !found || existing != value {
+			return false
 		}
 	}
-	return docker.CompareMaps(e, d)
+	return true
+}
+
+func sha224Hex(data []byte) string {
+	sum := sha256.Sum224(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func decodeConfigData(value string) ([]byte, error) {
+	if decoded, err := base64.StdEncoding.DecodeString(value); err == nil {
+		return decoded, nil
+	}
+	if decoded, err := base64.RawStdEncoding.DecodeString(value); err == nil {
+		return decoded, nil
+	}
+	decoded, err := base64.URLEncoding.DecodeString(value)
+	if err != nil {
+		return nil, err
+	}
+	return decoded, nil
+}
+
+func failed(msg string) Response {
+	return Response{Failed: true, Msg: msg}
 }

@@ -234,12 +234,11 @@ tasks:
       name: non-existent-network-xyz
 `
 		output := runPlaybook(t, playbook)
-		// Should succeed with msg about not found
 		if strings.Contains(output, "FAILED") {
 			t.Errorf("Expected success (not failure) for non-existent network: %s", output)
 		}
-		if !strings.Contains(output, "not found") {
-			t.Errorf("Expected 'not found' message in output: %s", output)
+		if !strings.Contains(output, "OK") {
+			t.Errorf("Expected OK for missing network: %s", output)
 		}
 	})
 }
@@ -318,12 +317,11 @@ tasks:
       name: non-existent-volume-xyz
 `
 		output := runPlaybook(t, playbook)
-		// Should succeed with msg about not found
 		if strings.Contains(output, "FAILED") {
 			t.Errorf("Expected success (not failure) for non-existent volume: %s", output)
 		}
-		if !strings.Contains(output, "not found") {
-			t.Errorf("Expected 'not found' message in output: %s", output)
+		if !strings.Contains(output, "OK") {
+			t.Errorf("Expected OK for missing volume: %s", output)
 		}
 	})
 }
@@ -411,8 +409,9 @@ tasks:
 // TestPlaybook_DockerSwarmInfo tests the docker_swarm_info module
 func TestPlaybook_DockerSwarmInfo(t *testing.T) {
 	t.Run("GetSwarmInfo_NotInSwarm", func(t *testing.T) {
-		// Most test environments won't be in swarm mode
-		// Note: Need at least one field set (even false) because YAML parses empty value as nil
+		client := getClient(t)
+		defer client.Close()
+		mustRemote(t, client, "docker swarm leave --force >/dev/null 2>&1 || true")
 		playbook := `
 hosts:
   - name: testhost
@@ -427,26 +426,8 @@ tasks:
       nodes: false
 `
 		output := runPlaybook(t, playbook)
-		if strings.Contains(output, `"failed":true`) || strings.Contains(output, `"failed": true`) {
-			t.Errorf("Expected success (even if not in swarm), got failure: %s", output)
-		}
-		// Parse response to check in_swarm field
-		var resp map[string]interface{}
-		// Find JSON in output
-		lines := strings.Split(output, "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(strings.TrimSpace(line), "{") {
-				if err := json.Unmarshal([]byte(line), &resp); err == nil {
-					break
-				}
-			}
-		}
-		// Either in_swarm is present, or we got a valid response
-		if resp != nil {
-			_, hasInSwarm := resp["in_swarm"]
-			if !hasInSwarm {
-				t.Logf("Response does not contain in_swarm field: %v", resp)
-			}
+		if !strings.Contains(output, "FAILED") || !strings.Contains(output, "must run on swarm manager node") {
+			t.Errorf("Expected manager-node failure, got: %s", output)
 		}
 	})
 }

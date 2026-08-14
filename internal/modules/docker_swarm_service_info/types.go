@@ -1,31 +1,17 @@
 package docker_swarm_service_info
 
-import (
-	"github.com/gjergjiramku/dibra/internal/modules/docker"
-	"github.com/moby/moby/api/types/swarm"
-)
+import "github.com/gjergjiramku/dibra/internal/modules/docker"
 
 type Request struct {
 	docker.CommonArgs
 
-	Name string `json:"name"` // Service name or ID
+	Name string `json:"name"`
 }
 
 type Response struct {
-	Changed   bool        `json:"changed"`
-	Failed    bool        `json:"failed"`
-	Msg       string      `json:"msg,omitempty"`
-	Exists    bool        `json:"exists"`
-	Service   interface{} `json:"service,omitempty"`
-	ServiceID string      `json:"service_id,omitempty"`
-	Tasks     []TaskInfo  `json:"tasks,omitempty"`
-}
-
-// TaskInfo contains summarized task information
-type TaskInfo struct {
-	ID           string           `json:"id"`
-	NodeID       string           `json:"node_id"`
-	Status       swarm.TaskStatus `json:"status"`
-	DesiredState swarm.TaskState  `json:"desired_state"`
-	Slot         int              `json:"slot"`
+	Changed bool           `json:"changed"`
+	Failed  bool           `json:"failed"`
+	Msg     string         `json:"msg,omitempty"`
+	Exists  bool           `json:"exists"`
+	Service map[string]any `json:"service"`
 }

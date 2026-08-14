@@ -4,482 +4,733 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
-	"sort"
+	"reflect"
+	"regexp"
+	"time"
 
+	"github.com/gjergjiramku/dibra/internal/execution"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 )
 
+var (
+	cidrIPv4 = regexp.MustCompile(`^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$`)
+	cidrIPv6 = regexp.MustCompile(`^[0-9a-fA-F:]+/([0-9]|[1-9][0-9]|1[0-2][0-9])$`)
+)
+
 func Execute(req Request) Response {
-	return ExecuteWithDependencies(req, docker.Dependencies{})
+	return ExecuteWithDependenciesAndState(req, docker.Dependencies{}, execution.State{})
+}
+
+func ExecuteWithState(req Request, state execution.State) Response {
+	return ExecuteWithDependenciesAndState(req, docker.Dependencies{}, state)
 }
 
 func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	return ExecuteWithDependenciesAndState(req, dependencies, execution.State{})
+}
+
+func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependencies, state execution.State) Response {
 	dependencies = dependencies.Resolve()
+	req, err := normalizeRequest(req)
+	if err != nil {
+		return failedResponse(err.Error())
+	}
+
 	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("create docker client", "", err).Error()}
+		return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
 	}
 	defer cli.Close()
 
 	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
-	state := req.State
-	if state == "" {
-		state = "present"
-	}
-
-	// Find network by name
-	existing, exists, err := findNetwork(cli, ctx, req.Name)
+	raw, inspect, exists, err := inspectNetwork(ctx, cli, req.Name)
 	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("inspect network", req.Name, err).Error()}
+		return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
 	}
 
-	if state == "absent" {
-		return handleAbsent(cli, ctx, req.Name, existing, exists)
+	manager := &networkManager{
+		cli:         cli,
+		ctx:         ctx,
+		req:         req,
+		state:       state,
+		clock:       dependencies.Clock,
+		existing:    inspect,
+		existingRaw: raw,
+		exists:      exists,
+		tracker:     &diffTracker{},
+		debug:       req.Debug != nil && *req.Debug,
+	}
+	if len(req.Connected) == 0 && exists {
+		manager.req.Connected = containerNamesInNetwork(inspect)
 	}
 
-	if state == "present" {
-		return handlePresent(cli, ctx, req, existing, exists)
+	if manager.req.State == "absent" {
+		return manager.absent()
 	}
-
-	return Response{Failed: true, Msg: fmt.Sprintf("unknown state: %s", state)}
+	return manager.present()
 }
 
-// findNetwork looks up a network by name
-func findNetwork(cli client.APIClient, ctx context.Context, name string) (network.Inspect, bool, error) {
-	result, err := cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{Verbose: true})
+func normalizeRequest(req Request) (Request, error) {
+	if req.Name == "" {
+		return req, fmt.Errorf("name is required")
+	}
+	switch req.State {
+	case "", "present":
+		req.State = "present"
+	case "absent":
+	default:
+		return req, fmt.Errorf("state must be present or absent")
+	}
+	if req.Driver == "" && (req.providedArguments == nil || !req.argumentProvided("driver")) {
+		req.Driver = "bridge"
+	}
+	if req.ConfigOnly != nil && *req.ConfigOnly {
+		req.Driver = "null"
+	}
+	if req.DriverOptions == nil && req.Options != nil {
+		req.DriverOptions = req.Options
+	}
+	if len(req.DriverOptions) > 0 {
+		stringified, err := docker.StringifyAPIMap(req.DriverOptions)
+		if err != nil {
+			return req, err
+		}
+		req.DriverOptions = map[string]any{}
+		for key, value := range stringified {
+			req.DriverOptions[key] = value
+		}
+	}
+	if req.IPAMDriverOptions != nil {
+		stringified, err := docker.StringifyAPIMap(req.IPAMDriverOptions)
+		if err != nil {
+			return req, err
+		}
+		req.IPAMDriverOptions = map[string]any{}
+		for key, value := range stringified {
+			req.IPAMDriverOptions[key] = value
+		}
+	}
+	if len(req.IPAMConfig) > 0 {
+		for _, config := range req.IPAMConfig {
+			if config.Subnet == "" {
+				continue
+			}
+			if err := validateCIDR(config.Subnet); err != nil {
+				return req, err
+			}
+		}
+	}
+	return req, nil
+}
+
+func validateCIDR(cidr string) error {
+	if cidrIPv4.MatchString(cidr) || cidrIPv6.MatchString(cidr) {
+		return nil
+	}
+	return fmt.Errorf("%q is not a valid CIDR", cidr)
+}
+
+type networkManager struct {
+	cli         client.APIClient
+	ctx         context.Context
+	req         Request
+	state       execution.State
+	clock       docker.Clock
+	existing    network.Inspect
+	existingRaw map[string]any
+	exists      bool
+	changed     bool
+	actions     []string
+	tracker     *diffTracker
+	debug       bool
+}
+
+func (manager *networkManager) present() Response {
+	different := false
+	if manager.exists {
+		different = manager.hasDifferentConfig()
+	}
+	manager.tracker.add("exists", true, manager.exists)
+	if manager.req.Force || different {
+		if resp := manager.removeNetwork(); resp.Failed {
+			return resp
+		}
+		manager.exists = false
+		manager.existing = network.Inspect{}
+		manager.existingRaw = nil
+	}
+	if resp := manager.createNetwork(); resp.Failed {
+		return resp
+	}
+	if resp := manager.connectContainers(); resp.Failed {
+		return resp
+	}
+	if !manager.req.Appends {
+		if resp := manager.disconnectMissing(); resp.Failed {
+			return resp
+		}
+	}
+	return manager.finish(manager.inspectResult())
+}
+
+func (manager *networkManager) absent() Response {
+	manager.tracker.add("exists", false, manager.exists)
+	if resp := manager.removeNetwork(); resp.Failed {
+		return resp
+	}
+	response := manager.finish(Response{Changed: manager.changed, Network: nil})
+	if !manager.exists && !manager.changed {
+		response.Network = nil
+	}
+	return response
+}
+
+func (manager *networkManager) createNetwork() Response {
+	if manager.exists {
+		return Response{}
+	}
+	opts, err := createOptions(manager.req)
 	if err != nil {
-		if docker.IsNotFoundError(err) {
-			return network.Inspect{}, false, nil
-		}
-		return network.Inspect{}, false, err
+		return failedResponse(err.Error())
 	}
-	return result.Network, true, nil
-}
-
-// handleAbsent removes a network if it exists
-func handleAbsent(cli client.APIClient, ctx context.Context, name string, existing network.Inspect, exists bool) Response {
-	if !exists {
-		return Response{Changed: false, Msg: "network already absent"}
-	}
-
-	// Disconnect any connected containers first
-	for containerID := range existing.Containers {
-		if _, err := cli.NetworkDisconnect(ctx, existing.ID, client.NetworkDisconnectOptions{Container: containerID, Force: true}); err != nil {
-			// Log but continue - container might have been removed
-			if !docker.IsNotFoundError(err) {
-				return Response{Failed: true, Msg: docker.WrapError("disconnect container", containerID, err).Error()}
-			}
-		}
-	}
-
-	if _, err := cli.NetworkRemove(ctx, name, client.NetworkRemoveOptions{}); err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("remove network", name, err).Error()}
-	}
-	return Response{Changed: true, Msg: "network removed", NetworkID: existing.ID}
-}
-
-// handlePresent ensures a network exists with the desired configuration
-func handlePresent(cli client.APIClient, ctx context.Context, req Request, existing network.Inspect, exists bool) Response {
-	diffBuilder := docker.NewDiffBuilder()
-
-	if exists {
-		// Check if we need to recreate (immutable fields changed)
-		needsRecreate := checkNeedsRecreate(req, existing, diffBuilder)
-
-		if needsRecreate && !req.Force {
-			return Response{
-				Changed: false,
-				Failed:  true,
-				Msg:     fmt.Sprintf("network exists with different immutable settings (use force=true to recreate): %v", diffBuilder.DiffMap()),
-				Diff:    diffBuilder.DiffMap(),
-			}
-		}
-
-		if needsRecreate && req.Force {
-			// Force recreate: remove and create again
-			resp := handleAbsent(cli, ctx, req.Name, existing, true)
-			if resp.Failed {
-				return resp
-			}
-			exists = false
-		}
-	}
-
-	if !exists {
-		// Create network
-		networkID, err := createNetwork(cli, ctx, req)
+	if !manager.state.CheckMode {
+		created, err := manager.cli.NetworkCreate(manager.ctx, manager.req.Name, opts)
 		if err != nil {
-			return Response{Failed: true, Msg: docker.WrapError("create network", req.Name, err).Error()}
+			return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
 		}
-
-		// Connect containers if specified
-		if len(req.Connected) > 0 {
-			if _, err := reconcileConnectedContainers(cli, ctx, networkID, req.Connected, nil, false); err != nil {
-				return Response{Failed: true, Msg: err.Error(), NetworkID: networkID}
+		raw, inspect, found, err := inspectNetwork(manager.ctx, manager.cli, created.ID)
+		if err != nil {
+			return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
+		}
+		if !found {
+			raw, inspect, found, err = inspectNetwork(manager.ctx, manager.cli, manager.req.Name)
+			if err != nil {
+				return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
 			}
 		}
-
-		return Response{Changed: true, Msg: "network created", NetworkID: networkID, Diff: diffBuilder.DiffMap()}
-	}
-
-	// Network exists, check for container connection changes
-	changed := false
-	if len(req.Connected) > 0 || (!req.Appends && len(existing.Containers) > 0) {
-		currentContainers := make(map[string]network.EndpointResource)
-		for id, endpoint := range existing.Containers {
-			currentContainers[id] = endpoint
+		if found {
+			manager.existing = inspect
+			manager.existingRaw = raw
+			manager.exists = true
 		}
+	}
+	manager.actions = append(manager.actions, fmt.Sprintf("Created network %s with driver %s", manager.req.Name, manager.req.Driver))
+	manager.changed = true
+	return Response{}
+}
 
-		connectChanged, err := reconcileConnectedContainers(cli, ctx, existing.ID, req.Connected, currentContainers, req.Appends)
+func (manager *networkManager) removeNetwork() Response {
+	if !manager.exists {
+		return Response{}
+	}
+	if resp := manager.disconnectAllContainers(); resp.Failed {
+		return resp
+	}
+	if !manager.state.CheckMode {
+		if _, err := manager.cli.NetworkRemove(manager.ctx, manager.req.Name, client.NetworkRemoveOptions{}); err != nil && !docker.IsNotFoundError(err) {
+			return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
+		}
+		if manager.existing.Scope == "swarm" {
+			for {
+				_, _, found, err := inspectNetwork(manager.ctx, manager.cli, manager.req.Name)
+				if err != nil {
+					return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
+				}
+				if !found {
+					break
+				}
+				manager.clock.Sleep(100 * time.Millisecond)
+			}
+		}
+	}
+	manager.actions = append(manager.actions, fmt.Sprintf("Removed network %s", manager.req.Name))
+	manager.changed = true
+	return Response{}
+}
+
+func (manager *networkManager) connectContainers() Response {
+	for _, name := range manager.req.Connected {
+		if manager.isContainerConnected(name) {
+			continue
+		}
+		exists, err := manager.containerExists(name)
 		if err != nil {
-			return Response{Failed: true, Msg: err.Error(), NetworkID: existing.ID}
+			return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
 		}
-		if connectChanged {
-			changed = true
+		if !exists {
+			continue
 		}
+		if !manager.state.CheckMode {
+			if _, err := manager.cli.NetworkConnect(manager.ctx, manager.req.Name, client.NetworkConnectOptions{Container: name}); err != nil {
+				return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
+			}
+			if raw, inspect, found, inspectErr := inspectNetwork(manager.ctx, manager.cli, manager.req.Name); inspectErr != nil {
+				return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", inspectErr))
+			} else if found {
+				manager.existing = inspect
+				manager.existingRaw = raw
+				manager.exists = true
+			}
+		}
+		manager.actions = append(manager.actions, fmt.Sprintf("Connected container %s", name))
+		manager.changed = true
+		manager.tracker.add("connected."+name, true, false)
 	}
-
-	if changed {
-		return Response{Changed: true, Msg: "network connections updated", NetworkID: existing.ID}
-	}
-
-	return Response{Changed: false, Msg: "network already exists", NetworkID: existing.ID}
+	return Response{}
 }
 
-// checkNeedsRecreate compares immutable network settings
-// Only checks fields that were explicitly set in the request (non-zero values)
-// This allows updating just container connections without re-specifying all options
-func checkNeedsRecreate(req Request, existing network.Inspect, diff *docker.DiffBuilder) bool {
-	needsRecreate := false
-
-	// Driver is immutable - only check if explicitly specified
-	if req.Driver != "" && req.Driver != existing.Driver {
-		diff.Add("driver", req.Driver, existing.Driver)
-		needsRecreate = true
+func (manager *networkManager) disconnectMissing() Response {
+	if !manager.exists {
+		return Response{}
 	}
-
-	// Internal is immutable - but only matters if it's set to true and differs
-	// Default is false, so we only trigger recreate if user sets it true and network is not internal
-	if req.Internal && req.Internal != existing.Internal {
-		diff.Add("internal", req.Internal, existing.Internal)
-		needsRecreate = true
+	wanted := make(map[string]bool, len(manager.req.Connected))
+	for _, name := range manager.req.Connected {
+		wanted[name] = true
 	}
-
-	// EnableIPv6 is immutable - only check if set to true
-	if req.EnableIPv6 && req.EnableIPv6 != existing.EnableIPv6 {
-		diff.Add("enable_ipv6", req.EnableIPv6, existing.EnableIPv6)
-		needsRecreate = true
+	for id, endpoint := range manager.existing.Containers {
+		name := endpoint.Name
+		if name == "" {
+			name = id
+		}
+		if wanted[name] || wanted[id] {
+			continue
+		}
+		if resp := manager.disconnectContainer(name); resp.Failed {
+			return resp
+		}
 	}
-
-	// Ingress is immutable - only check if set to true
-	if req.Ingress && req.Ingress != existing.Ingress {
-		diff.Add("ingress", req.Ingress, existing.Ingress)
-		needsRecreate = true
-	}
-
-	// ConfigOnly is immutable - only check if set to true
-	if req.ConfigOnly && req.ConfigOnly != existing.ConfigOnly {
-		diff.Add("config_only", req.ConfigOnly, existing.ConfigOnly)
-		needsRecreate = true
-	}
-
-	// Driver options are immutable - check if requested options are present
-	// Note: Docker may add additional default options, so we only check if our requested options match
-	// Only check if user specified any options
-	if len(req.Options) > 0 && !mapsContain(existing.Options, req.Options) {
-		diff.Add("options", req.Options, existing.Options)
-		needsRecreate = true
-	}
-
-	// IPAM config is immutable - only check if explicitly specified
-	if len(req.IPAMConfig) > 0 && !compareIPAMConfig(req.IPAMConfig, existing.IPAM) {
-		diff.Add("ipam_config", req.IPAMConfig, formatExistingIPAM(existing.IPAM))
-		needsRecreate = true
-	}
-
-	// Labels are mutable in theory but Docker doesn't support updating them
-	// So we treat them as immutable for now - check if requested labels are present
-	// Only check if user specified any labels
-	if len(req.Labels) > 0 && !mapsContain(existing.Labels, req.Labels) {
-		diff.Add("labels", req.Labels, existing.Labels)
-		needsRecreate = true
-	}
-
-	// Attachable is immutable - only check if set to true
-	if req.Attachable && req.Attachable != existing.Attachable {
-		diff.Add("attachable", req.Attachable, existing.Attachable)
-		needsRecreate = true
-	}
-
-	return needsRecreate
+	return Response{}
 }
 
-// compareIPAMConfig compares requested IPAM config with existing
-func compareIPAMConfig(requested []IPAMConfig, existing network.IPAM) bool {
-	if len(requested) == 0 && len(existing.Config) == 0 {
-		return true
+func (manager *networkManager) disconnectAllContainers() Response {
+	if manager.state.CheckMode {
+		for id, endpoint := range manager.existing.Containers {
+			name := endpoint.Name
+			if name == "" {
+				name = id
+			}
+			manager.actions = append(manager.actions, fmt.Sprintf("Disconnected container %s", name))
+			manager.changed = true
+			manager.tracker.add("connected."+name, false, true)
+		}
+		return Response{}
 	}
+	raw, inspect, found, err := inspectNetwork(manager.ctx, manager.cli, manager.req.Name)
+	if err != nil {
+		return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
+	}
+	if !found {
+		return Response{}
+	}
+	manager.existing = inspect
+	manager.existingRaw = raw
+	for id, endpoint := range inspect.Containers {
+		name := endpoint.Name
+		if name == "" {
+			name = id
+		}
+		if resp := manager.disconnectContainer(name); resp.Failed {
+			return resp
+		}
+	}
+	return Response{}
+}
 
-	if len(requested) != len(existing.Config) {
+func (manager *networkManager) disconnectContainer(name string) Response {
+	if !manager.state.CheckMode {
+		if _, err := manager.cli.NetworkDisconnect(manager.ctx, manager.req.Name, client.NetworkDisconnectOptions{Container: name, Force: true}); err != nil && !docker.IsNotFoundError(err) {
+			return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
+		}
+	}
+	manager.actions = append(manager.actions, fmt.Sprintf("Disconnected container %s", name))
+	manager.changed = true
+	manager.tracker.add("connected."+name, false, true)
+	return Response{}
+}
+
+func (manager *networkManager) isContainerConnected(name string) bool {
+	if !manager.exists {
 		return false
 	}
-
-	// Sort for comparison
-	reqSorted := make([]string, len(requested))
-	for i, cfg := range requested {
-		reqSorted[i] = normalizedIPAMKey(cfg.Subnet, cfg.Gateway, cfg.IPRange, cfg.AuxAddress)
-	}
-	sort.Strings(reqSorted)
-
-	existSorted := make([]string, len(existing.Config))
-	for i, cfg := range existing.Config {
-		auxAddresses := make(map[string]string, len(cfg.AuxAddress))
-		for name, address := range cfg.AuxAddress {
-			auxAddresses[name] = addrString(address)
-		}
-		existSorted[i] = normalizedIPAMKey(prefixString(cfg.Subnet), addrString(cfg.Gateway), prefixString(cfg.IPRange), auxAddresses)
-	}
-	sort.Strings(existSorted)
-
-	for i := range reqSorted {
-		if reqSorted[i] != existSorted[i] {
-			return false
+	for id, endpoint := range manager.existing.Containers {
+		if endpoint.Name == name || id == name {
+			return true
 		}
 	}
+	return false
+}
 
+func (manager *networkManager) containerExists(name string) (bool, error) {
+	_, err := manager.cli.ContainerInspect(manager.ctx, name, client.ContainerInspectOptions{})
+	if err != nil {
+		if docker.IsNotFoundError(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (manager *networkManager) inspectResult() Response {
+	if manager.state.CheckMode {
+		return Response{Changed: manager.changed, Network: manager.existingRaw}
+	}
+	raw, _, found, err := inspectNetwork(manager.ctx, manager.cli, manager.req.Name)
+	if err != nil {
+		return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
+	}
+	if !found {
+		return Response{Changed: manager.changed, Network: nil}
+	}
+	return Response{Changed: manager.changed, Network: raw}
+}
+
+func (manager *networkManager) finish(response Response) Response {
+	if response.Failed {
+		return response
+	}
+	response.Changed = manager.changed
+	if manager.state.CheckMode || manager.debug {
+		response.Actions = manager.actions
+	}
+	if manager.state.DiffMode {
+		response.Diff = manager.tracker.diff()
+	}
+	return response
+}
+
+func (manager *networkManager) hasDifferentConfig() bool {
+	net := manager.existing
+	different := false
+	if manager.req.ConfigOnly != nil && *manager.req.ConfigOnly != net.ConfigOnly {
+		manager.tracker.add("config_only", *manager.req.ConfigOnly, net.ConfigOnly)
+		different = true
+	}
+	if manager.req.ConfigFrom != "" && manager.req.ConfigFrom != net.ConfigFrom.Network {
+		manager.tracker.add("config_from", manager.req.ConfigFrom, net.ConfigFrom.Network)
+		different = true
+	}
+	if manager.req.Driver != "" && manager.req.Driver != net.Driver {
+		manager.tracker.add("driver", manager.req.Driver, net.Driver)
+		different = true
+	}
+	if len(manager.req.DriverOptions) > 0 {
+		if !driverOptionsMatch(stringMap(manager.req.DriverOptions), net.Options) {
+			if len(net.Options) == 0 {
+				manager.tracker.add("driver_options", manager.req.DriverOptions, net.Options)
+			} else {
+				for key, value := range stringMap(manager.req.DriverOptions) {
+					if net.Options[key] != value {
+						manager.tracker.add("driver_options."+key, value, net.Options[key])
+					}
+				}
+			}
+			different = true
+		}
+	}
+	if manager.req.IPAMDriver != "" && manager.req.IPAMDriver != net.IPAM.Driver {
+		manager.tracker.add("ipam_driver", manager.req.IPAMDriver, net.IPAM.Driver)
+		different = true
+	}
+	if manager.req.IPAMDriverOptions != nil {
+		existingOptions := net.IPAM.Options
+		if existingOptions == nil {
+			existingOptions = map[string]string{}
+		}
+		requested := stringMap(manager.req.IPAMDriverOptions)
+		if !reflect.DeepEqual(existingOptions, requested) {
+			manager.tracker.add("ipam_driver_options", requested, existingOptions)
+			different = true
+		}
+	}
+	if len(manager.req.IPAMConfig) > 0 {
+		if compareIPAMConfig(manager.req.IPAMConfig, net.IPAM, manager.tracker) {
+			different = true
+		}
+	}
+	if manager.req.EnableIPv4 != nil && *manager.req.EnableIPv4 != net.EnableIPv4 {
+		manager.tracker.add("enable_ipv4", *manager.req.EnableIPv4, net.EnableIPv4)
+		different = true
+	}
+	if manager.req.EnableIPv6 != nil && *manager.req.EnableIPv6 != net.EnableIPv6 {
+		manager.tracker.add("enable_ipv6", *manager.req.EnableIPv6, net.EnableIPv6)
+		different = true
+	}
+	if manager.req.Internal != nil && *manager.req.Internal != net.Internal {
+		manager.tracker.add("internal", *manager.req.Internal, net.Internal)
+		different = true
+	}
+	if manager.req.Scope != "" && manager.req.Scope != net.Scope {
+		manager.tracker.add("scope", manager.req.Scope, net.Scope)
+		different = true
+	}
+	if manager.req.Attachable != nil && *manager.req.Attachable != net.Attachable {
+		manager.tracker.add("attachable", *manager.req.Attachable, net.Attachable)
+		different = true
+	}
+	if manager.req.Ingress != nil && *manager.req.Ingress != net.Ingress {
+		manager.tracker.add("ingress", *manager.req.Ingress, net.Ingress)
+		different = true
+	}
+	if len(manager.req.Labels) > 0 {
+		if !labelsMatch(manager.req.Labels, net.Labels) {
+			if len(net.Labels) == 0 {
+				manager.tracker.add("labels", manager.req.Labels, net.Labels)
+			} else {
+				for key, value := range manager.req.Labels {
+					if net.Labels[key] != value {
+						manager.tracker.add("labels."+key, value, net.Labels[key])
+					}
+				}
+			}
+			different = true
+		}
+	}
+	return different
+}
+
+func createOptions(req Request) (client.NetworkCreateOptions, error) {
+	opts := client.NetworkCreateOptions{
+		Driver:  req.Driver,
+		Options: stringMap(req.DriverOptions),
+		Labels:  req.Labels,
+	}
+	if req.ConfigOnly != nil {
+		opts.ConfigOnly = *req.ConfigOnly
+	}
+	if req.ConfigFrom != "" {
+		opts.ConfigFrom = req.ConfigFrom
+	}
+	opts.EnableIPv4 = req.EnableIPv4
+	opts.EnableIPv6 = req.EnableIPv6
+	if req.Internal != nil && *req.Internal {
+		opts.Internal = true
+	}
+	if req.Scope != "" {
+		opts.Scope = req.Scope
+	}
+	if req.Attachable != nil {
+		opts.Attachable = *req.Attachable
+	}
+	if req.Ingress != nil {
+		opts.Ingress = *req.Ingress
+	}
+
+	ipamPools := make([]network.IPAMConfig, 0, len(req.IPAMConfig))
+	for _, cfg := range req.IPAMConfig {
+		subnet, err := parsePrefix(cfg.Subnet, "subnet")
+		if err != nil {
+			return client.NetworkCreateOptions{}, err
+		}
+		gateway, err := parseAddress(cfg.Gateway, "gateway")
+		if err != nil {
+			return client.NetworkCreateOptions{}, err
+		}
+		ipRange, err := parsePrefix(cfg.IPRange, "iprange")
+		if err != nil {
+			return client.NetworkCreateOptions{}, err
+		}
+		auxAddresses := make(map[string]netip.Addr, len(cfg.AuxAddresses))
+		for name, value := range cfg.AuxAddresses {
+			address, err := parseAddress(value, fmt.Sprintf("aux_addresses.%s", name))
+			if err != nil {
+				return client.NetworkCreateOptions{}, err
+			}
+			auxAddresses[name] = address
+		}
+		ipamPools = append(ipamPools, network.IPAMConfig{
+			Subnet:     subnet,
+			Gateway:    gateway,
+			IPRange:    ipRange,
+			AuxAddress: auxAddresses,
+		})
+	}
+	if req.IPAMDriver != "" || req.IPAMDriverOptions != nil || len(ipamPools) > 0 {
+		opts.IPAM = &network.IPAM{
+			Driver:  req.IPAMDriver,
+			Config:  ipamPools,
+			Options: stringMap(req.IPAMDriverOptions),
+		}
+	}
+	return opts, nil
+}
+
+func compareIPAMConfig(requested []IPAMConfig, existing network.IPAM, tracker *diffTracker) bool {
+	if len(existing.Config) == 0 {
+		tracker.add("ipam_config", requested, existing.Config)
+		return true
+	}
+	existingPools := make([]normalizedIPAM, 0, len(existing.Config))
+	for _, cfg := range existing.Config {
+		existingPools = append(existingPools, normalizeExistingIPAM(cfg))
+	}
+	different := false
+	for idx, cfg := range requested {
+		requestedPool := normalizeRequestedIPAM(cfg)
+		matched := normalizedIPAM{}
+		found := false
+		for _, existingPool := range existingPools {
+			if ipamSubset(requestedPool, existingPool) {
+				matched = existingPool
+				found = true
+				break
+			}
+		}
+		_ = found
+		if cfg.Subnet != "" && requestedPool.Subnet != matched.Subnet {
+			tracker.add(fmt.Sprintf("ipam_config[%d].subnet", idx), cfg.Subnet, matched.Subnet)
+			different = true
+		}
+		if cfg.Gateway != "" && requestedPool.Gateway != matched.Gateway {
+			tracker.add(fmt.Sprintf("ipam_config[%d].gateway", idx), cfg.Gateway, matched.Gateway)
+			different = true
+		}
+		if cfg.IPRange != "" && requestedPool.IPRange != matched.IPRange {
+			tracker.add(fmt.Sprintf("ipam_config[%d].iprange", idx), cfg.IPRange, matched.IPRange)
+			different = true
+		}
+		if cfg.AuxAddresses != nil && !reflect.DeepEqual(requestedPool.AuxAddresses, matched.AuxAddresses) {
+			tracker.add(fmt.Sprintf("ipam_config[%d].aux_addresses", idx), cfg.AuxAddresses, matched.AuxAddresses)
+			different = true
+		}
+	}
+	return different
+}
+
+type normalizedIPAM struct {
+	Subnet       string
+	IPRange      string
+	Gateway      string
+	AuxAddresses map[string]string
+}
+
+func normalizeRequestedIPAM(cfg IPAMConfig) normalizedIPAM {
+	aux := map[string]string{}
+	for key, value := range cfg.AuxAddresses {
+		aux[key] = docker.NormalizeIPAddress(value)
+	}
+	if cfg.AuxAddresses == nil {
+		aux = nil
+	}
+	return normalizedIPAM{
+		Subnet:       docker.NormalizeIPNetwork(cfg.Subnet),
+		IPRange:      docker.NormalizeIPNetwork(cfg.IPRange),
+		Gateway:      docker.NormalizeIPAddress(cfg.Gateway),
+		AuxAddresses: aux,
+	}
+}
+
+func normalizeExistingIPAM(cfg network.IPAMConfig) normalizedIPAM {
+	aux := make(map[string]string, len(cfg.AuxAddress))
+	for key, value := range cfg.AuxAddress {
+		aux[key] = docker.NormalizeIPAddress(addrString(value))
+	}
+	return normalizedIPAM{
+		Subnet:       docker.NormalizeIPNetwork(prefixString(cfg.Subnet)),
+		IPRange:      docker.NormalizeIPNetwork(prefixString(cfg.IPRange)),
+		Gateway:      docker.NormalizeIPAddress(addrString(cfg.Gateway)),
+		AuxAddresses: aux,
+	}
+}
+
+func ipamSubset(requested, existing normalizedIPAM) bool {
+	if requested.Subnet != "" && requested.Subnet != existing.Subnet {
+		return false
+	}
+	if requested.IPRange != "" && requested.IPRange != existing.IPRange {
+		return false
+	}
+	if requested.Gateway != "" && requested.Gateway != existing.Gateway {
+		return false
+	}
+	if requested.AuxAddresses != nil && !reflect.DeepEqual(requested.AuxAddresses, existing.AuxAddresses) {
+		return false
+	}
 	return true
 }
 
-func normalizedIPAMKey(subnet, gateway, ipRange string, auxAddresses map[string]string) string {
-	auxKeys := make([]string, 0, len(auxAddresses))
-	for name := range auxAddresses {
-		auxKeys = append(auxKeys, name)
+func driverOptionsMatch(requested, existing map[string]string) bool {
+	if len(requested) == 0 {
+		return true
 	}
-	sort.Strings(auxKeys)
-	aux := make([]string, 0, len(auxKeys))
-	for _, name := range auxKeys {
-		aux = append(aux, name+"="+docker.NormalizeIPAddress(auxAddresses[name]))
+	if len(existing) == 0 {
+		return false
 	}
-	return fmt.Sprintf("%s|%s|%s|%v",
-		docker.NormalizeIPNetwork(subnet),
-		docker.NormalizeIPAddress(gateway),
-		docker.NormalizeIPNetwork(ipRange),
-		aux,
-	)
+	for key, value := range requested {
+		if existing[key] != value {
+			return false
+		}
+	}
+	return true
 }
 
-// formatExistingIPAM formats existing IPAM config for diff output
-func formatExistingIPAM(ipam network.IPAM) []map[string]string {
-	result := make([]map[string]string, len(ipam.Config))
-	for i, cfg := range ipam.Config {
-		result[i] = map[string]string{
-			"subnet":   prefixString(cfg.Subnet),
-			"gateway":  addrString(cfg.Gateway),
-			"ip_range": prefixString(cfg.IPRange),
+func labelsMatch(requested, existing map[string]string) bool {
+	if len(requested) == 0 {
+		return true
+	}
+	if len(existing) == 0 {
+		return false
+	}
+	for key, value := range requested {
+		if existing[key] != value {
+			return false
 		}
+	}
+	return true
+}
+
+func stringMap(values map[string]any) map[string]string {
+	if values == nil {
+		return nil
+	}
+	result := make(map[string]string, len(values))
+	for key, value := range values {
+		if text, ok := value.(string); ok {
+			result[key] = text
+			continue
+		}
+		result[key] = fmt.Sprint(value)
 	}
 	return result
 }
 
-// createNetwork creates a new Docker network with the specified configuration
-func createNetwork(cli client.APIClient, ctx context.Context, req Request) (string, error) {
-	opts := client.NetworkCreateOptions{
-		Driver:     req.Driver,
-		Options:    req.Options,
-		Internal:   req.Internal,
-		Attachable: req.Attachable,
-		Labels:     req.Labels,
-		ConfigOnly: req.ConfigOnly,
-		Ingress:    req.Ingress,
+func containerNamesInNetwork(inspect network.Inspect) ContainerNames {
+	if len(inspect.Containers) == 0 {
+		return nil
 	}
-	if req.EnableIPv6 {
-		opts.EnableIPv6 = &req.EnableIPv6
-	}
-
-	// Handle Scope if specified
-	if req.Scope != "" {
-		opts.Scope = req.Scope
-	}
-
-	// Handle ConfigFrom
-	if req.ConfigFrom != "" {
-		opts.ConfigFrom = req.ConfigFrom
-	}
-
-	// Build IPAM configuration
-	if len(req.IPAMConfig) > 0 || req.IPAMDriver != "" {
-		ipamConfigs := make([]network.IPAMConfig, 0, len(req.IPAMConfig))
-		for _, cfg := range req.IPAMConfig {
-			subnet, err := parsePrefix(cfg.Subnet, "subnet")
-			if err != nil {
-				return "", err
-			}
-			gateway, err := parseAddress(cfg.Gateway, "gateway")
-			if err != nil {
-				return "", err
-			}
-			ipRange, err := parsePrefix(cfg.IPRange, "ip_range")
-			if err != nil {
-				return "", err
-			}
-			auxAddresses := make(map[string]netip.Addr, len(cfg.AuxAddress))
-			for name, value := range cfg.AuxAddress {
-				address, err := parseAddress(value, fmt.Sprintf("aux_address.%s", name))
-				if err != nil {
-					return "", err
-				}
-				auxAddresses[name] = address
-			}
-			ipamCfg := network.IPAMConfig{
-				Subnet:     subnet,
-				Gateway:    gateway,
-				IPRange:    ipRange,
-				AuxAddress: auxAddresses,
-			}
-			ipamConfigs = append(ipamConfigs, ipamCfg)
-		}
-
-		driver := req.IPAMDriver
-		if driver == "" {
-			driver = "default"
-		}
-
-		opts.IPAM = &network.IPAM{
-			Driver:  driver,
-			Config:  ipamConfigs,
-			Options: req.IPAMDriverOptions,
+	names := make(ContainerNames, 0, len(inspect.Containers))
+	for _, endpoint := range inspect.Containers {
+		if endpoint.Name != "" {
+			names = append(names, endpoint.Name)
 		}
 	}
+	return names
+}
 
-	resp, err := cli.NetworkCreate(ctx, req.Name, opts)
+func inspectNetwork(ctx context.Context, cli client.APIClient, name string) (map[string]any, network.Inspect, bool, error) {
+	result, err := cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{Verbose: true})
 	if err != nil {
-		return "", err
+		if docker.IsNotFoundError(err) {
+			return nil, network.Inspect{}, false, nil
+		}
+		return nil, network.Inspect{}, false, err
 	}
-
-	return resp.ID, nil
+	raw, err := inspectionFromResult(result)
+	if err != nil {
+		return nil, network.Inspect{}, false, err
+	}
+	return raw, result.Network, true, nil
 }
 
-// reconcileConnectedContainers ensures the desired containers are connected to the network
-func reconcileConnectedContainers(cli client.APIClient, ctx context.Context, networkID string, desired []ConnectedContainer, current map[string]network.EndpointResource, appends bool) (bool, error) {
-	changed := false
-	// Build map of desired container names/IDs
-	desiredMap := make(map[string]ConnectedContainer)
-	for _, c := range desired {
-		desiredMap[c.Name] = c
+func inspectionFromResult(result client.NetworkInspectResult) (map[string]any, error) {
+	if len(result.Raw) > 0 {
+		return docker.DecodeInspection(result.Raw)
 	}
-
-	// Disconnect containers not in desired list (unless appends is true)
-	if !appends && current != nil {
-		for containerID, endpoint := range current {
-			containerName := endpoint.Name
-			if containerName == "" {
-				containerName = containerID
-			}
-
-			// Check if this container should remain connected
-			_, wantedByID := desiredMap[containerID]
-			_, wantedByName := desiredMap[containerName]
-
-			if !wantedByID && !wantedByName {
-				if _, err := cli.NetworkDisconnect(ctx, networkID, client.NetworkDisconnectOptions{Container: containerID}); err != nil {
-					if !docker.IsNotFoundError(err) {
-						return false, docker.WrapError("disconnect container", containerName, err)
-					}
-				}
-				changed = true
-			}
-		}
-	}
-
-	// Connect desired containers
-	for _, c := range desired {
-		// Check if already connected
-		alreadyConnected := false
-		var currentEndpoint network.EndpointResource
-		for containerID, endpoint := range current {
-			if containerID == c.Name || endpoint.Name == c.Name {
-				alreadyConnected = true
-				currentEndpoint = endpoint
-				break
-			}
-		}
-
-		// Build endpoint settings
-		endpointSettings := &network.EndpointSettings{
-			Aliases:    c.Aliases,
-			Links:      c.Links,
-			DriverOpts: c.DriverOpts,
-		}
-
-		if c.IPv4Address != "" || c.IPv6Address != "" {
-			ipv4Address, err := parseAddress(c.IPv4Address, "ipv4_address")
-			if err != nil {
-				return false, docker.WrapError("connect container", c.Name, err)
-			}
-			ipv6Address, err := parseAddress(c.IPv6Address, "ipv6_address")
-			if err != nil {
-				return false, docker.WrapError("connect container", c.Name, err)
-			}
-			endpointSettings.IPAMConfig = &network.EndpointIPAMConfig{
-				IPv4Address: ipv4Address,
-				IPv6Address: ipv6Address,
-			}
-		}
-
-		if alreadyConnected {
-			// Check if endpoint settings need updating
-			if needsEndpointUpdate(c, currentEndpoint) {
-				// Disconnect and reconnect with new settings
-				if _, err := cli.NetworkDisconnect(ctx, networkID, client.NetworkDisconnectOptions{Container: c.Name}); err != nil {
-					if !docker.IsNotFoundError(err) {
-						return false, docker.WrapError("disconnect container for update", c.Name, err)
-					}
-				}
-				if _, err := cli.NetworkConnect(ctx, networkID, client.NetworkConnectOptions{Container: c.Name, EndpointConfig: endpointSettings}); err != nil {
-					return false, docker.WrapError("reconnect container", c.Name, err)
-				}
-				changed = true
-			}
-		} else {
-			// Connect new container
-			if _, err := cli.NetworkConnect(ctx, networkID, client.NetworkConnectOptions{Container: c.Name, EndpointConfig: endpointSettings}); err != nil {
-				// Check if it's because container doesn't exist
-				if docker.IsNotFoundError(err) {
-					return false, docker.WrapError("connect container (not found)", c.Name, err)
-				}
-				return false, docker.WrapError("connect container", c.Name, err)
-			}
-			changed = true
-		}
-	}
-
-	return changed, nil
-}
-
-// needsEndpointUpdate checks if a container's endpoint settings need updating
-// Note: EndpointResource has limited fields - only basic IP info is available
-func needsEndpointUpdate(desired ConnectedContainer, current network.EndpointResource) bool {
-	// Check IP addresses
-	if desired.IPv4Address != "" {
-		if !current.IPv4Address.IsValid() || docker.NormalizeEndpointAddress(current.IPv4Address.String()) != docker.NormalizeEndpointAddress(desired.IPv4Address) {
-			return true
-		}
-	}
-	if desired.IPv6Address != "" {
-		if !current.IPv6Address.IsValid() || docker.NormalizeEndpointAddress(current.IPv6Address.String()) != docker.NormalizeEndpointAddress(desired.IPv6Address) {
-			return true
-		}
-	}
-
-	// Note: EndpointResource doesn't include aliases - would need container inspect
-	// For now, if aliases are specified, we assume update is needed if not already connected
-	// This is a limitation - aliases can only be checked via container inspect
-
-	return false
+	return docker.InspectionMap(result.Network)
 }
 
 func parsePrefix(value, field string) (netip.Prefix, error) {
@@ -518,19 +769,27 @@ func addrString(address netip.Addr) string {
 	return address.String()
 }
 
-// mapsContain checks if all keys in 'required' exist in 'actual' with the same values
-// This allows 'actual' to have additional keys that aren't in 'required'
-func mapsContain(actual, required map[string]string) bool {
-	if len(required) == 0 {
-		return true
+type diffTracker struct {
+	before map[string]any
+	after  map[string]any
+}
+
+func (tracker *diffTracker) add(name string, parameter, active any) {
+	if tracker.before == nil {
+		tracker.before = map[string]any{}
+		tracker.after = map[string]any{}
 	}
-	if actual == nil {
-		return false
+	tracker.before[name] = active
+	tracker.after[name] = parameter
+}
+
+func (tracker *diffTracker) diff() *Diff {
+	if tracker.before == nil {
+		return &Diff{Before: map[string]any{}, After: map[string]any{}}
 	}
-	for k, v := range required {
-		if actualVal, ok := actual[k]; !ok || actualVal != v {
-			return false
-		}
-	}
-	return true
+	return &Diff{Before: tracker.before, After: tracker.after}
+}
+
+func failedResponse(message string) Response {
+	return Response{Failed: true, Msg: message}
 }

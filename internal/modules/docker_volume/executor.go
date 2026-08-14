@@ -1,153 +1,254 @@
 package docker_volume
 
 import (
+	"context"
 	"fmt"
-	"strings"
 
+	"github.com/gjergjiramku/dibra/internal/execution"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
-	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 )
 
 func Execute(req Request) Response {
-	return ExecuteWithDependencies(req, docker.Dependencies{})
+	return ExecuteWithDependenciesAndState(req, docker.Dependencies{}, execution.State{})
+}
+
+func ExecuteWithState(req Request, state execution.State) Response {
+	return ExecuteWithDependenciesAndState(req, docker.Dependencies{}, state)
 }
 
 func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Response {
+	return ExecuteWithDependenciesAndState(req, dependencies, execution.State{})
+}
+
+func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependencies, state execution.State) Response {
 	dependencies = dependencies.Resolve()
-	cli, err := dependencies.NewClient(req.CommonArgs)
+	req, err := normalizeRequest(req)
 	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("create client", "", err).Error()}
+		return failedResponse(err.Error())
 	}
-	defer cli.Close()
+
+	apiClient, err := dependencies.NewClient(req.CommonArgs)
+	if err != nil {
+		return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
+	}
+	defer apiClient.Close()
 
 	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
 
-	state := req.State
-	if state == "" {
-		state = "present"
-	}
-
-	// Helper to inspect volume
-	findVolume := func(name string) (volume.Volume, bool, error) {
-		result, err := cli.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
-		if err != nil {
-			if docker.IsNotFoundError(err) {
-				return volume.Volume{}, false, nil
-			}
-			return volume.Volume{}, false, err
-		}
-		return result.Volume, true, nil
-	}
-
-	existing, exists, err := findVolume(req.Name)
+	existing, found, err := inspectVolume(ctx, apiClient, req.volumeName())
 	if err != nil {
-		return Response{Failed: true, Msg: docker.WrapError("inspect volume", req.Name, err).Error()}
+		return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
 	}
 
-	if state == "absent" {
-		if !exists {
-			return Response{Changed: false, Msg: "volume already absent"}
-		}
-		// Remove
-		_, err := cli.VolumeRemove(ctx, req.Name, client.VolumeRemoveOptions{Force: req.Force})
-		if err != nil {
-			// Check for "volume in use" error
-			if isVolumeInUseError(err) {
-				return Response{Failed: true, Msg: fmt.Sprintf("cannot remove volume '%s': volume is in use by a container; use force=true to forcefully remove or stop the container first", req.Name)}
-			}
-			return Response{Failed: true, Msg: docker.WrapError("remove volume", req.Name, err).Error()}
-		}
-		return Response{Changed: true, Msg: "volume removed", VolumeID: existing.Name}
+	if req.State == "absent" {
+		return removeVolume(ctx, apiClient, req, found, state)
 	}
-
-	if state == "present" {
-		recreate := req.Recreate
-		if recreate == "" {
-			recreate = "never"
-		}
-
-		if exists {
-			// Idempotency check
-			if recreate == "always" {
-				// Remove and recreate
-				_, err := cli.VolumeRemove(ctx, req.Name, client.VolumeRemoveOptions{Force: req.Force})
-				if err != nil {
-					if isVolumeInUseError(err) {
-						return Response{Failed: true, Msg: fmt.Sprintf("cannot recreate volume '%s': volume is in use by a container; use force=true or stop the container first", req.Name)}
-					}
-					return Response{Failed: true, Msg: docker.WrapError("remove volume for recreation", req.Name, err).Error()}
-				}
-			} else {
-				// Check if properties match
-				if req.Driver != "" && existing.Driver != req.Driver {
-					return Response{Failed: true, Msg: fmt.Sprintf("volume exists with different driver: %s != %s; use recreate=always to recreate", existing.Driver, req.Driver)}
-				}
-
-				// Deep compare driver options
-				if req.DriverOptions != nil && !docker.CompareMaps(existing.Options, req.DriverOptions) {
-					return Response{Failed: true, Msg: "volume exists with different driver options: cannot modify in-place; use recreate=always to recreate"}
-				}
-
-				// Labels can't be updated on existing volumes
-				if req.Labels != nil && !docker.CompareMaps(existing.Labels, req.Labels) {
-					return Response{Failed: true, Msg: "volume exists with different labels: cannot modify in-place; use recreate=always to recreate"}
-				}
-
-				return Response{
-					Changed:    false,
-					Msg:        "volume already exists",
-					VolumeID:   existing.Name,
-					Name:       existing.Name,
-					Driver:     existing.Driver,
-					Mountpoint: existing.Mountpoint,
-					CreatedAt:  existing.CreatedAt,
-					Scope:      existing.Scope,
-					Labels:     existing.Labels,
-					Options:    existing.Options,
-				}
-			}
-		}
-
-		// Create
-		opts := client.VolumeCreateOptions{
-			Name:       req.Name,
-			Driver:     req.Driver,
-			DriverOpts: req.DriverOptions,
-			Labels:     req.Labels,
-		}
-
-		resp, err := cli.VolumeCreate(ctx, opts)
-		if err != nil {
-			return Response{Failed: true, Msg: docker.WrapError("create volume", req.Name, err).Error()}
-		}
-		created := resp.Volume
-
-		return Response{
-			Changed:    true,
-			Msg:        "volume created",
-			VolumeID:   created.Name,
-			Name:       created.Name,
-			Driver:     created.Driver,
-			Mountpoint: created.Mountpoint,
-			CreatedAt:  created.CreatedAt,
-			Scope:      created.Scope,
-			Labels:     created.Labels,
-			Options:    created.Options,
-		}
-	}
-
-	return Response{Failed: true, Msg: fmt.Sprintf("unknown state: %s", state)}
+	return presentVolume(ctx, apiClient, req, existing, found, state)
 }
 
-// isVolumeInUseError checks if the error indicates the volume is in use by a container
-func isVolumeInUseError(err error) bool {
-	if err == nil {
-		return false
+func normalizeRequest(req Request) (Request, error) {
+	if req.volumeName() == "" {
+		return req, fmt.Errorf("volume_name is required")
 	}
-	errStr := strings.ToLower(err.Error())
-	return strings.Contains(errStr, "volume is in use") ||
-		strings.Contains(errStr, "volume is being used") ||
-		strings.Contains(errStr, "in use by container")
+	if req.State == "" && !req.argumentProvided("state") {
+		req.State = "present"
+	}
+	if req.State != "present" && req.State != "absent" {
+		return req, fmt.Errorf("state must be present or absent")
+	}
+	if req.Driver == "" && !req.argumentProvided("driver") {
+		req.Driver = "local"
+	}
+	if req.DriverOptions == nil && !req.argumentProvided("driver_options") {
+		req.DriverOptions = map[string]string{}
+	}
+	if req.Recreate == "" && !req.argumentProvided("recreate") {
+		req.Recreate = "never"
+	}
+	if req.State == "present" && req.Recreate != "never" && req.Recreate != "always" && req.Recreate != "options-changed" {
+		return req, fmt.Errorf("recreate must be never, always, or options-changed")
+	}
+	return req, nil
+}
+
+func presentVolume(ctx context.Context, apiClient client.APIClient, req Request, existing map[string]any, found bool, state execution.State) Response {
+	differences := map[string]configDifference{}
+	if found {
+		differences = hasDifferentConfig(req, existing)
+	}
+
+	shouldRecreate := found && (req.Recreate == "always" || req.Recreate == "options-changed" && len(differences) > 0)
+	result := Response{Volume: existing}
+	if state.DiffMode {
+		result.Diff = presentDiff(found, true, differences)
+	}
+
+	if shouldRecreate {
+		if !state.CheckMode {
+			if _, err := apiClient.VolumeRemove(ctx, req.volumeName(), client.VolumeRemoveOptions{}); err != nil {
+				return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
+			}
+		}
+		found = false
+		existing = nil
+		result.Volume = nil
+		result.Changed = true
+	}
+
+	if !found {
+		result.Changed = true
+		if !state.CheckMode {
+			options := client.VolumeCreateOptions{
+				Name:       req.volumeName(),
+				Driver:     req.Driver,
+				DriverOpts: req.DriverOptions,
+			}
+			if req.Labels != nil {
+				options.Labels = req.Labels
+			}
+			if _, err := apiClient.VolumeCreate(ctx, options); err != nil {
+				return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
+			}
+			created, _, err := inspectVolume(ctx, apiClient, req.volumeName())
+			if err != nil {
+				return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
+			}
+			result.Volume = created
+			return result
+		}
+		inspected, stillPresent, err := inspectVolume(ctx, apiClient, req.volumeName())
+		if err != nil {
+			return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
+		}
+		if stillPresent {
+			result.Volume = inspected
+		}
+		return result
+	}
+
+	result.Volume = existing
+	return result
+}
+
+func removeVolume(ctx context.Context, apiClient client.APIClient, req Request, found bool, state execution.State) Response {
+	result := Response{Volume: nil}
+	if state.DiffMode {
+		result.Diff = presentDiff(found, false, nil)
+	}
+	if !found {
+		return result
+	}
+	result.Changed = true
+	if state.CheckMode {
+		return result
+	}
+	if _, err := apiClient.VolumeRemove(ctx, req.volumeName(), client.VolumeRemoveOptions{}); err != nil {
+		return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
+	}
+	return result
+}
+
+type configDifference struct {
+	parameter any
+	active    any
+}
+
+func hasDifferentConfig(req Request, existing map[string]any) map[string]configDifference {
+	differences := map[string]configDifference{}
+	if req.Driver != "" {
+		active, _ := existing["Driver"].(string)
+		if req.Driver != active {
+			differences["driver"] = configDifference{parameter: req.Driver, active: active}
+		}
+	}
+	if len(req.DriverOptions) > 0 {
+		activeOptions := stringMap(existing["Options"])
+		if len(activeOptions) == 0 {
+			differences["driver_options"] = configDifference{parameter: req.DriverOptions, active: existing["Options"]}
+		} else {
+			for key, value := range req.DriverOptions {
+				active, found := activeOptions[key]
+				if !found || active != value {
+					var activeValue any
+					if found {
+						activeValue = active
+					}
+					differences["driver_options."+key] = configDifference{parameter: value, active: activeValue}
+				}
+			}
+		}
+	}
+	if len(req.Labels) > 0 {
+		activeLabels := stringMap(existing["Labels"])
+		for key, value := range req.Labels {
+			if activeLabels[key] != value {
+				var activeValue any
+				if current, found := activeLabels[key]; found {
+					activeValue = current
+				}
+				differences["labels."+key] = configDifference{parameter: value, active: activeValue}
+			}
+		}
+	}
+	return differences
+}
+
+func presentDiff(existsBefore, existsAfter bool, differences map[string]configDifference) *Diff {
+	before := map[string]any{"exists": existsBefore}
+	after := map[string]any{"exists": existsAfter}
+	for field, difference := range differences {
+		before[field] = difference.active
+		after[field] = difference.parameter
+	}
+	return &Diff{Before: before, After: after}
+}
+
+func inspectVolume(ctx context.Context, apiClient client.APIClient, name string) (map[string]any, bool, error) {
+	result, err := apiClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	if err != nil {
+		if docker.IsNotFoundError(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	decoded, err := inspectMap(result)
+	if err != nil {
+		return nil, false, err
+	}
+	return decoded, true, nil
+}
+
+func inspectMap(result client.VolumeInspectResult) (map[string]any, error) {
+	if len(result.Raw) > 0 {
+		return docker.DecodeInspection(result.Raw)
+	}
+	return docker.InspectionMap(result.Volume)
+}
+
+func stringMap(value any) map[string]string {
+	switch typed := value.(type) {
+	case map[string]string:
+		return typed
+	case map[string]any:
+		result := make(map[string]string, len(typed))
+		for key, item := range typed {
+			if item == nil {
+				continue
+			}
+			if text, ok := item.(string); ok {
+				result[key] = text
+				continue
+			}
+			result[key] = fmt.Sprint(item)
+		}
+		return result
+	default:
+		return map[string]string{}
+	}
+}
+
+func failedResponse(message string) Response {
+	return Response{Failed: true, Msg: message}
 }

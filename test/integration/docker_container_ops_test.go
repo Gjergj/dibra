@@ -160,6 +160,7 @@ func TestPlaybook_DockerContainerCopyInto(t *testing.T) {
       content: "Hello from dibra!"
       container_path: /tmp/hello.txt
       mode: "0644"
+      mode_parse: modern
 `
 	output1 := runPlaybook(t, playbook1)
 	if strings.Contains(output1, "FAILED") {
@@ -184,6 +185,8 @@ func TestPlaybook_DockerContainerCopyInto(t *testing.T) {
       content: "QmluYXJ5IGRhdGEgdGVzdA=="
       content_is_b64: true
       container_path: /tmp/binary.txt
+      mode: "0644"
+      mode_parse: modern
 `
 	output2 := runPlaybook(t, playbook2)
 	if strings.Contains(output2, "FAILED") {

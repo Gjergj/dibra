@@ -12,13 +12,17 @@ import (
 	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/execution"
+	"github.com/gjergjiramku/dibra/internal/modules/current_container_facts"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_compose"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_compose_v2_exec"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_compose_v2_pull"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_compose_v2_run"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_config"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_container"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_container_copy_into"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_container_exec"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_container_info"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_context_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_host_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_image"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_image_build"
@@ -34,6 +38,7 @@ import (
 	"github.com/gjergjiramku/dibra/internal/modules/docker_network_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_node"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_node_info"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_plugin"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_prune"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_secret"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_stack"
@@ -114,20 +119,23 @@ type argumentPresence interface {
 var definitions = []Definition{
 	stateModule("docker_container", Capabilities{SupportPartial, SupportFull}, sensitivity("registry_password"), normalizeDockerContainerArguments, docker_container.ExecuteWithState),
 	stateModule("docker_image", Capabilities{SupportPartial, SupportNone}, sensitivity("build.args", "registry_password"), normalizeDockerImageArguments, docker_image.ExecuteWithState),
-	module("docker_network", Capabilities{SupportFull, SupportFull}, sensitivity(), docker_network.Execute),
-	module("docker_volume", Capabilities{SupportFull, SupportFull}, sensitivity(), docker_volume.Execute),
-	module("docker_prune", Capabilities{SupportNone, SupportNone}, sensitivity(), docker_prune.Execute),
-	module("docker_login", Capabilities{SupportFull, SupportNone}, sensitivityWithResults([]string{"password"}, []string{"token"}), docker_login.Execute),
-	module("docker_swarm", Capabilities{SupportFull, SupportFull}, sensitivityWithResults([]string{"join_token"}, []string{"join_tokens"}), docker_swarm.Execute),
-	module("docker_swarm_service", Capabilities{SupportFull, SupportFull}, sensitivity(), docker_swarm_service.Execute),
-	module("docker_node", Capabilities{SupportFull, SupportNone}, sensitivity(), docker_node.Execute),
-	moduleWithDeprecatedAlias("docker_compose_v2", "docker_compose", Capabilities{SupportFull, SupportNone}, sensitivity(), docker_compose.Execute),
-	module("docker_compose_v2_run", Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), docker_compose_v2_run.Execute),
+	stateModule("docker_network", Capabilities{SupportFull, SupportFull}, sensitivity(), normalizeDockerNetworkArguments, docker_network.ExecuteWithState),
+	stateModule("docker_volume", Capabilities{SupportFull, SupportFull}, sensitivity(), normalizeDockerVolumeArguments, docker_volume.ExecuteWithState),
+	moduleWithAliases("docker_prune", []string{"docker_prune"}, Capabilities{SupportNone, SupportNone}, sensitivity(), normalizeDockerPruneArguments, docker_prune.Execute),
+	stateModule("docker_login", Capabilities{SupportFull, SupportNone}, sensitivityWithResults([]string{"password"}, []string{"token", "login_result.IdentityToken"}), normalizeDockerLoginArguments, docker_login.ExecuteWithState),
+	stateModule("docker_plugin", Capabilities{SupportFull, SupportFull}, sensitivity(), normalizeDockerAPIArguments, docker_plugin.ExecuteWithState),
+	stateModule("docker_swarm", Capabilities{SupportFull, SupportFull}, sensitivityWithResults([]string{"join_token", "signing_ca_key"}, []string{"swarm_facts.JoinTokens", "swarm_facts.UnlockKey"}), normalizeDockerAPIArguments, docker_swarm.ExecuteWithState),
+	stateModule("docker_swarm_service", Capabilities{SupportFull, SupportFull}, sensitivity(), normalizeDockerAPIArguments, docker_swarm_service.ExecuteWithState),
+	stateModule("docker_node", Capabilities{SupportFull, SupportNone}, sensitivity(), normalizeDockerAPIArguments, docker_node.ExecuteWithState),
+	stateModuleWithDeprecatedAlias("docker_compose_v2", "docker_compose", Capabilities{SupportFull, SupportNone}, sensitivity(), normalizeDockerComposeArguments, docker_compose.ExecuteWithState),
+	moduleWithAliases("docker_compose_v2_exec", []string{"docker_compose_v2_exec"}, Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), normalizeDockerAPIArguments, docker_compose_v2_exec.Execute),
+	stateModule("docker_compose_v2_pull", Capabilities{SupportFull, SupportNone}, sensitivity(), normalizeDockerAPIArguments, docker_compose_v2_pull.ExecuteWithState),
+	moduleWithAliases("docker_compose_v2_run", []string{"docker_compose_v2_run"}, Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), normalizeDockerAPIArguments, docker_compose_v2_run.Execute),
 	module("docker_secret", Capabilities{SupportFull, SupportNone}, sensitivity("data"), docker_secret.Execute),
-	module("docker_config", Capabilities{SupportFull, SupportNone}, sensitivity("data"), docker_config.Execute),
+	stateModule("docker_config", Capabilities{SupportFull, SupportNone}, sensitivity("data"), normalizeDockerAPIArguments, docker_config.ExecuteWithState),
 	module("docker_stack", Capabilities{SupportNone, SupportNone}, sensitivity(), docker_stack.Execute),
 	moduleWithAliases("docker_container_exec", []string{"docker_container_exec"}, Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), normalizeDockerContainerExecArguments, docker_container_exec.Execute),
-	module("docker_container_copy_into", Capabilities{SupportFull, SupportFull}, sensitivity("content"), docker_container_copy_into.Execute),
+	stateModule("docker_container_copy_into", Capabilities{SupportFull, SupportFull}, sensitivity("content"), normalizeDockerAPIArguments, docker_container_copy_into.ExecuteWithState),
 	stateModule("docker_image_build", Capabilities{SupportFull, SupportNone}, sensitivity("args", "secrets.value"), normalizeDockerAPIArguments, docker_image_build.ExecuteWithState),
 	moduleWithAliases("docker_image_load", []string{"docker_image_load"}, Capabilities{SupportNone, SupportNone}, sensitivity(), normalizeDockerAPIArguments, docker_image_load.Execute),
 	stateModule("docker_image_export", Capabilities{SupportFull, SupportNone}, sensitivity(), normalizeImageExportArguments, docker_image_export.ExecuteWithState),
@@ -137,12 +145,14 @@ var definitions = []Definition{
 	stateModule("docker_image_tag", Capabilities{SupportFull, SupportFull}, sensitivity(), normalizeDockerAPIArguments, docker_image_tag.ExecuteWithState),
 	readOnlyModuleWithNormalizer("docker_container_info", sensitivity(), normalizeDockerContainerInfoArguments, docker_container_info.Execute),
 	readOnlyModuleWithNormalizer("docker_image_info", sensitivity(), normalizeDockerAPIArguments, docker_image_info.Execute),
-	readOnlyModule("docker_network_info", sensitivity(), docker_network_info.Execute),
-	readOnlyModule("docker_volume_info", sensitivity(), docker_volume_info.Execute),
-	readOnlyModule("docker_host_info", sensitivity(), docker_host_info.Execute),
-	readOnlyModule("docker_swarm_info", sensitivityWithResults(nil, []string{"swarm_info.join_tokens"}), docker_swarm_info.Execute),
-	readOnlyModule("docker_swarm_service_info", sensitivity(), docker_swarm_service_info.Execute),
-	readOnlyModule("docker_node_info", sensitivity(), docker_node_info.Execute),
+	readOnlyModuleWithNormalizer("docker_network_info", sensitivity(), normalizeDockerAPIArguments, docker_network_info.Execute),
+	readOnlyModuleWithNormalizer("docker_volume_info", sensitivity(), normalizeDockerAPIArguments, docker_volume_info.Execute),
+	readOnlyModuleWithNormalizer("docker_host_info", sensitivity(), normalizeDockerAPIArguments, docker_host_info.Execute),
+	readOnlyModuleWithNormalizer("docker_swarm_info", sensitivityWithResults(nil, []string{"swarm_facts.JoinTokens", "swarm_unlock_key"}), normalizeDockerSwarmInfoArguments, docker_swarm_info.Execute),
+	readOnlyModuleWithNormalizer("docker_swarm_service_info", sensitivity(), normalizeDockerAPIArguments, docker_swarm_service_info.Execute),
+	readOnlyModuleWithNormalizer("docker_node_info", sensitivity(), normalizeDockerAPIArguments, docker_node_info.Execute),
+	readOnlyModule("docker_context_info", sensitivity(), docker_context_info.Execute),
+	readOnlyModule("current_container_facts", sensitivity(), current_container_facts.Execute),
 }
 
 var definitionsByName = mustIndex(definitions)
@@ -202,20 +212,25 @@ func moduleWithAliases[Request, Response any](shortName string, aliases []string
 	}
 }
 
-func moduleWithDeprecatedAlias[Request, Response any](shortName, deprecatedAlias string, capabilities Capabilities, sensitive Sensitivity, handler func(Request) Response) Definition {
-	definition := moduleWithAliases(shortName, []string{shortName, deprecatedAlias}, capabilities, sensitive, nil, handler)
-	definition.Deprecations = map[string]Deprecation{
+func stateModuleWithDeprecatedAlias[Request, Response any](shortName, deprecatedAlias string, capabilities Capabilities, sensitive Sensitivity, normalizer argumentNormalizer, handler func(Request, execution.State) Response) Definition {
+	definition := stateModule(shortName, capabilities, sensitive, normalizer, handler)
+	definition.ShortAliases = []string{shortName, deprecatedAlias}
+	definition.Deprecations = composeDeprecation(shortName, deprecatedAlias, definition.CanonicalName)
+	return definition
+}
+
+func composeDeprecation(shortName, deprecatedAlias, canonicalName string) map[string]Deprecation {
+	return map[string]Deprecation{
 		deprecatedAlias: {
 			Replacement: shortName,
 			Message: fmt.Sprintf(
 				"module alias %q is deprecated and will be removed in a future release; use %q or %q instead",
 				deprecatedAlias,
 				shortName,
-				definition.CanonicalName,
+				canonicalName,
 			),
 		},
 	}
-	return definition
 }
 
 func sensitivity(arguments ...string) Sensitivity {
@@ -441,6 +456,65 @@ func normalizeDockerAPIArguments(fields map[string]json.RawMessage) error {
 		}
 	}
 	return nil
+}
+
+func normalizeDockerNetworkArguments(fields map[string]json.RawMessage) error {
+	if err := normalizeDockerAPIArguments(fields); err != nil {
+		return err
+	}
+	aliases := map[string][]string{
+		"name":           {"network_name"},
+		"appends":        {"incremental"},
+		"connected":      {"containers"},
+		"driver_options": {"options"},
+	}
+	for canonical, names := range aliases {
+		if err := normalizeArgumentAliases(fields, canonical, names...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func normalizeDockerVolumeArguments(fields map[string]json.RawMessage) error {
+	if err := normalizeDockerAPIArguments(fields); err != nil {
+		return err
+	}
+	return normalizeArgumentAliases(fields, "volume_name", "name")
+}
+
+func normalizeDockerLoginArguments(fields map[string]json.RawMessage) error {
+	if err := normalizeDockerAPIArguments(fields); err != nil {
+		return err
+	}
+	if err := normalizeArgumentAliases(fields, "registry_url", "registry", "url"); err != nil {
+		return err
+	}
+	if err := normalizeArgumentAliases(fields, "reauthorize", "reauth", "relogin"); err != nil {
+		return err
+	}
+	return normalizeArgumentAliases(fields, "config_path", "dockercfg_path")
+}
+
+func normalizeDockerPruneArguments(fields map[string]json.RawMessage) error {
+	if err := normalizeDockerAPIArguments(fields); err != nil {
+		return err
+	}
+	return normalizeArgumentAliases(fields, "builder_cache", "builder")
+}
+
+func normalizeDockerComposeArguments(fields map[string]json.RawMessage) error {
+	if err := normalizeDockerAPIArguments(fields); err != nil {
+		return err
+	}
+	return normalizeArgumentAliases(fields, "timeout", "stop_timeout")
+}
+
+func normalizeDockerSwarmInfoArguments(fields map[string]json.RawMessage) error {
+	if err := normalizeDockerAPIArguments(fields); err != nil {
+		return err
+	}
+	return normalizeArgumentAliases(fields, "verbose_output", "verbose")
 }
 
 func normalizeArgumentAliases(fields map[string]json.RawMessage, canonical string, aliases ...string) error {

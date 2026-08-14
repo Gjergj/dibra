@@ -2,21 +2,29 @@ package docker_swarm_info
 
 import "github.com/gjergjiramku/dibra/internal/modules/docker"
 
-// Request represents the module arguments
 type Request struct {
 	docker.CommonArgs
 
-	Nodes   bool `json:"nodes"`   // Include node list
-	Verbose bool `json:"verbose"` // Include detailed node info
+	Nodes           bool             `json:"nodes"`
+	NodesFilters    docker.FilterMap `json:"nodes_filters"`
+	Services        bool             `json:"services"`
+	ServicesFilters docker.FilterMap `json:"services_filters"`
+	Tasks           bool             `json:"tasks"`
+	TasksFilters    docker.FilterMap `json:"tasks_filters"`
+	UnlockKey       bool             `json:"unlock_key"`
+	VerboseOutput   bool             `json:"verbose_output"`
 }
 
-// Response represents the module return value
 type Response struct {
-	Changed   bool                     `json:"changed"`
-	Failed    bool                     `json:"failed"`
-	Msg       string                   `json:"msg,omitempty"`
-	InSwarm   bool                     `json:"in_swarm"`
-	IsManager bool                     `json:"is_manager"`
-	SwarmInfo map[string]interface{}   `json:"swarm_info,omitempty"`
-	Nodes     []map[string]interface{} `json:"nodes,omitempty"`
+	Changed            bool              `json:"changed"`
+	Failed             bool              `json:"failed"`
+	Msg                string            `json:"msg,omitempty"`
+	CanTalkToDocker    bool              `json:"can_talk_to_docker"`
+	DockerSwarmActive  bool              `json:"docker_swarm_active"`
+	DockerSwarmManager bool              `json:"docker_swarm_manager"`
+	SwarmFacts         map[string]any    `json:"swarm_facts,omitempty"`
+	SwarmUnlockKey     any               `json:"swarm_unlock_key,omitempty"`
+	Nodes              *[]map[string]any `json:"nodes,omitempty"`
+	Services           *[]map[string]any `json:"services,omitempty"`
+	Tasks              *[]map[string]any `json:"tasks,omitempty"`
 }

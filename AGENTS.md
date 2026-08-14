@@ -77,6 +77,24 @@ make test-docker-image-integration
 # Run that lane with the integration container already running
 make test-docker-image-integration-only
 
+# Run the exact Engine 29.7.2 resource/info certification lane
+make test-docker-resource-integration
+
+# Run that lane with the integration container already running
+make test-docker-resource-integration-only
+
+# Run the exact Compose 5.4.0 docker_compose_v2 certification lane
+make test-docker-compose-integration
+
+# Run that lane with the integration container already running
+make test-docker-compose-integration-only
+
+# Run the Engine 29.7.2 Swarm node/service/config certification lane
+make test-docker-swarm-integration
+
+# Run that lane with the integration container already running
+make test-docker-swarm-integration-only
+
 # Run only dibra-deploy integration tests
 make test-deploy-integration
 
@@ -253,6 +271,7 @@ suite when the server version differs, so a developer's host Docker socket can
 never silently substitute a different Engine. Local-socket and TLS transport
 coverage, where applicable, use this same Engine baseline; this is not a
 cross-version matrix. Compose has its own independent version pin below.
+Integration `TestMain` also requires the exact pinned Compose 5.4.0 plugin.
 
 Docker executor side effects are injected through `docker.Dependencies` in
 `internal/modules/docker/dependencies.go`. Every Docker executor keeps the
@@ -293,10 +312,11 @@ executor.
 Compose support is intentionally pinned to current Compose 5 behavior rather
 than upstream's historical Compose 2 matrix. Compose executors call
 `CheckComposeVersion`, require the exact pinned 5.4.0 version, request JSON
-progress, and use `ParseComposeJSONEvents`. Compose 5.4.0 emits both the new
-`Working`/`Done` image events and older JSON text/status arrangements, so both
-shapes remain required fixtures. Every Compose version change requires an
-explicit baseline review and update.
+progress, and use `ParseComposeJSONEvents`. The integration host asserts that
+same 5.4.0 plugin version in `TestMain` before any suite runs. Compose 5.4.0
+emits both the new `Working`/`Done` image events and older JSON text/status
+arrangements, so both shapes remain required fixtures. Every Compose version
+change requires an explicit baseline review and update.
 
 ### Docker Parity Inventory
 
@@ -776,140 +796,61 @@ Important behavior:
 
 ### docker_network
 
-Manages Docker networks with full idempotency, container connection management, and IPv6 support.
+Implements the pinned `community.docker.docker_network` 5.2.2 Engine API
+contract. Canonical `connected` is a list of container name strings. Config
+differences recreate the network; `force: true` recreates even when the
+config matches.
 
 ```yaml
-# Create a basic bridge network
 - name: Create a network
   docker_network:
-    name: my-network
+    name: app-net
     driver: bridge
-
-# Create network with IPAM configuration
-- name: Create network with custom subnet
-  docker_network:
-    name: app-network
-    driver: bridge
-    ipam_config:
-      - subnet: "172.28.0.0/16"
-        gateway: "172.28.0.1"
-    labels:
-      environment: production
-
-# Create IPv6-enabled network
-- name: Create dual-stack network
-  docker_network:
-    name: ipv6-network
-    driver: bridge
-    enable_ipv6: true
-    ipam_config:
-      - subnet: "10.100.0.0/16"
-        gateway: "10.100.0.1"
-      - subnet: "fd12:3456:789a::/64"
-        gateway: "fd12:3456:789a::1"
-
-# Create network and connect containers
-- name: Create network with connected containers
-  docker_network:
-    name: app-network
-    driver: bridge
+    driver_options:
+      com.docker.network.bridge.enable_icc: false
     connected:
-      - name: web-container
-        aliases:
-          - web
-          - frontend
-      - name: api-container
-        ipv4_address: "172.28.0.100"
+      - web
+      - api
 
-# Connect additional container (keep existing connections)
-- name: Add container to network
+- name: Remove a network
   docker_network:
-    name: app-network
-    appends: true
-    connected:
-      - name: new-container
-
-# Replace all connected containers
-- name: Replace connected containers
-  docker_network:
-    name: app-network
-    appends: false
-    connected:
-      - name: only-this-container
-
-# Create internal network (no external access)
-- name: Create internal network
-  docker_network:
-    name: internal-net
-    driver: bridge
-    internal: true
-
-# Create attachable network (for swarm services)
-- name: Create attachable network
-  docker_network:
-    name: attachable-net
-    driver: bridge
-    attachable: true
-
-# Force recreate network with new config
-- name: Recreate network with different IPAM
-  docker_network:
-    name: my-network
-    driver: bridge
-    force: true
-    ipam_config:
-      - subnet: "172.29.0.0/16"
-
-# Remove a network
-- name: Remove network
-  docker_network:
-    name: my-network
+    name: app-net
     state: absent
 ```
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `name` | required | Name of the network. |
-| `state` | `present` | `present` to create/update, `absent` to remove. |
-| `driver` | `bridge` | Network driver (bridge, overlay, macvlan, etc.). |
-| `options` | | Driver-specific options as key-value pairs. |
-| `ipam_config` | | List of IPAM configurations with `subnet`, `gateway`, `ip_range`, `aux_address`. |
-| `ipam_driver` | `default` | IPAM driver name. |
-| `ipam_driver_options` | | IPAM driver options as key-value pairs. |
-| `labels` | | Labels to apply to the network. |
-| `internal` | `false` | Restrict external access to the network. |
-| `attachable` | `false` | Enable manual container attachment (for overlay networks). |
-| `enable_ipv6` | `false` | Enable IPv6 on the network. |
-| `config_only` | `false` | Create a config-only network (for swarm). |
-| `config_from` | | Name of network to copy configuration from. |
-| `ingress` | `false` | Create an ingress network (swarm). |
-| `scope` | | Network scope (local, swarm, global). |
-| `connected` | | List of containers to connect with optional endpoint settings. |
-| `appends` | `false` | If true, don't disconnect existing containers not in the list. |
-| `force` | `false` | Force recreate if immutable fields differ. |
+Important behavior:
 
-**Connected Container Options**:
-
-| Field | Description |
-|-------|-------------|
-| `name` | Container name or ID (required). |
-| `ipv4_address` | Static IPv4 address for the container. |
-| `ipv6_address` | Static IPv6 address for the container. |
-| `aliases` | Network-scoped aliases for the container. |
-| `links` | Legacy container links. |
-| `driver_opts` | Per-container driver options. |
-
-**Idempotency**: The module checks if the network exists with matching configuration. Immutable fields (driver, internal, ipam_config, etc.) require `force: true` to recreate. Container connections can be updated without recreating the network.
+- `connected` is a list of names or IDs. An empty `connected` list on an
+  existing network copies currently connected names and does not disconnect
+  everyone. `appends: true` keeps extra existing connections.
+- Driver, IPAM, labels, `internal`, `attachable`, `ingress`, `config_only`,
+  `enable_ipv4`, and `enable_ipv6` differences disconnect containers, delete,
+  and recreate. `force: true` recreates even when those fields match.
+- Boolean `driver_options` stringify (`false` → `"false"`). CIDR values that
+  fail parsing use `"%q is not a valid CIDR"`. `config_only: true` forces
+  driver `"null"`.
+- Pointer booleans preserve omission versus explicit `false`. Aliases include
+  `network_name`, `incremental`/`containers`, and `options` → `driver_options`.
+  IPAM accepts `iprange`/`ip_range` and `aux_addresses`/`aux_address`.
+- Successful results return the raw Engine inspection in `network`. Check and
+  diff modes are fully implemented.
 
 ### docker_volume
 
-Manages Docker volumes.
+Implements the pinned `community.docker.docker_volume` 5.2.2 Engine API
+contract. Canonical `volume_name` aliases `name`. `recreate` is
+`never|always|options-changed`; there is no `force` option.
 
 ```yaml
 - name: Create a volume
   docker_volume:
-    name: my-data
+    volume_name: my-data
     driver: local
+
+- name: Recreate when options change
+  docker_volume:
+    name: my-data
+    recreate: options-changed
 
 - name: Remove a volume
   docker_volume:
@@ -917,114 +858,154 @@ Manages Docker volumes.
     state: absent
 ```
 
+On `recreate: never` (the default), a mismatch leaves the existing volume
+unchanged rather than failing. Successful results return the raw Engine
+inspection in `volume`. Check and diff modes are fully implemented.
+
 ### docker_prune
 
-Prunes unused Docker resources (system prune, or specific types).
+Implements the pinned `community.docker.docker_prune` 5.2.2 Engine API
+contract. Canonical `builder_cache` aliases `builder`. Check and diff modes
+are unsupported.
 
 ```yaml
-- name: Prune everything
+- name: Prune unused resources
   docker_prune:
     containers: true
     images: true
-    networks: true
+    images_filters:
+      dangling: true
     volumes: true
-    builder: true
-
-- name: Prune only dangling images
-  docker_prune:
-    images: true
-    images_filters:
-      dangling: "true"
-
-- name: Prune with filters
-  docker_prune:
-    containers: true
-    containers_filters:
-      until: "24h"
-    images: true
-    images_filters:
-      dangling: "false"
-    builder: true
-    builder_cache_all: true
+    builder_cache: true
+    builder_cache_keep_storage: 1GB
 ```
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `containers` | `false` | Prune stopped containers. |
-| `containers_filters` | | Filter containers to prune (e.g., `until: "24h"`). |
-| `images` | `false` | Prune unused images. |
-| `images_filters` | | Filter images to prune (e.g., `dangling: "true"`). |
-| `networks` | `false` | Prune unused networks. |
-| `networks_filters` | | Filter networks to prune. |
-| `volumes` | `false` | Prune unused volumes. |
-| `volumes_filters` | | Filter volumes to prune (e.g., `label: "temp"`). |
-| `builder` | `false` | Prune build cache. |
-| `builder_cache_all` | `false` | Remove all build cache, not just dangling. |
-| `builder_cache_filters` | | Filter build cache to prune. |
+Filters accept a string or a list; booleans become `"true"`/`"false"`.
+Returned groups are present only when requested: `containers` plus
+`containers_space_reclaimed`, `images` (Engine `ImagesDeleted` objects) plus
+`images_space_reclaimed`, `networks`, `volumes` plus `volumes_space_reclaimed`,
+and `builder_cache_space_reclaimed` plus `builder_cache_caches_deleted`.
+
+On Engine 29 / API ≥1.42, volume prune without `all=true` removes only
+anonymous volumes. Named volumes need `volumes_filters.all: true`.
 
 ### docker_login
 
-Log into a Docker registry.
+Implements the pinned `community.docker.docker_login` 5.2.2 Engine API
+contract. Canonical `registry_url` aliases `registry` and `url`. Canonical
+`reauthorize` aliases `reauth` and `relogin`. There is no `validate` or
+`email` option.
 
 ```yaml
-- name: Login to Docker Hub
+- name: Login to a registry
   docker_login:
+    registry_url: localhost:5000
     username: myuser
     password: mypassword
 
-- name: Login to private registry
+- name: Logout
   docker_login:
-    registry: https://myregistry.com
-    username: myuser
-    password: mypassword
-
-- name: Logout from registry
-  docker_login:
-    registry: https://myregistry.com
+    registry_url: localhost:5000
     state: absent
 ```
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `username` | | Username for registry authentication. |
-| `password` | | Password for registry authentication. |
-| `registry` | `https://index.docker.io/v1/` | Registry URL. |
-| `email` | | Email for registry (legacy). |
-| `config_path` | `~/.docker/config.json` | Path to Docker config file. |
-| `state` | `present` | `present` to login, `absent` to logout. |
-| `relogin` | `false` | Force re-login even if credentials match. |
-| `validate` | `true` | Validate credentials via registry ping before storing. |
+Username and password are required for `state: present`. The module always
+calls Engine `/auth`. Check mode authenticates but does not write
+`config.json`. Matching stored credentials without `reauthorize` are
+unchanged. Credentials are stored with mode 0600. If `credsStore` or
+`credHelpers` is set for the registry, the module fails: Dibra cannot manage
+helper-backed credentials. Successful logins return `login_result`.
 
-**Notes**:
-- If a credential helper (`credsStore`) is configured for the registry, the module will fail with an error message explaining that credentials must be managed through the helper.
-- Credentials are stored in `config.json` with proper file permissions (0600).
-- File locking prevents concurrent writes to the config file.
+### docker_plugin
+
+Implements the pinned `community.docker.docker_plugin` 5.2.2 Engine API
+contract. `plugin_name` is required. `state` is `present`, `absent`,
+`enable`, or `disable`. `alias` becomes the local name.
+
+```yaml
+- name: Install a plugin
+  docker_plugin:
+    plugin_name: vieux/sshfs
+    alias: sshfs
+    state: present
+```
+
+Install uses `AcceptAllPermissions` and installs disabled, then applies
+`plugin_options`. Enable of a missing plugin installs then enables. Disable
+of a missing plugin fails with `Plugin not found: Plugin does not exist.`
+Check and diff modes are fully implemented. Enabling `vieux/sshfs` in
+integration requires `/dev/fuse`.
 
 ### docker_swarm
 
-Initialize or leave a Swarm.
+Implements the pinned `community.docker.docker_swarm` 5.2.2 Engine API
+contract. It initializes, updates, joins, leaves, and removes Swarm nodes.
 
 ```yaml
-- name: Init Swarm
+- name: Init a swarm with default parameters
   docker_swarm:
     state: present
     advertise_addr: 192.168.1.10
 
-- name: Join Swarm
+- name: Update swarm configuration
+  docker_swarm:
+    state: present
+    election_tick: 5
+    autolock_managers: true
+    labels:
+      env: prod
+
+- name: Init with address pools
+  docker_swarm:
+    state: present
+    default_addr_pool:
+      - 10.20.0.0/16
+    subnet_size: 24
+
+- name: Join an existing swarm
   docker_swarm:
     state: join
-    remote_addrs: [192.168.1.10:2377]
-    join_token: SWMTKN-...
+    advertise_addr: 192.168.1.2
+    join_token: SWMTKN-1--xxxxx
+    remote_addrs: ["192.168.1.1:2377"]
 
-- name: Leave Swarm
+- name: Leave swarm
   docker_swarm:
     state: absent
     force: true
 ```
 
+Important behavior:
+
+- `state` is `present`, `join`, `absent`, or `remove`. `present` initializes a
+  new swarm or updates the cluster spec of an existing manager. `force: true`
+  with `present` re-inits with `ForceNewCluster`. `join` requires `remote_addrs`
+  and `join_token`. `remove` requires `node_id` and only removes a node whose
+  status is `down`.
+- Spec options are compared only when supplied. Omitted labels are left
+  unchanged; `labels: {}` clears cluster labels. Cluster labels never apply to
+  the local node. `default_addr_pool`, `subnet_size`, `advertise_addr`,
+  `listen_addr`, `data_path_addr`, and `data_path_port` are init/join-only and
+  are not compared for idempotency.
+- CA rotation uses `ca_force_rotate`, `signing_ca_cert`, and `signing_ca_key`.
+  Signing material is PEM content, not paths. Snapshot knobs are
+  `snapshot_interval`, `keep_old_snapshots`, and `log_entries_for_slow_followers`.
+  Ticks are `election_tick`, `heartbeat_tick`, and `dispatcher_heartbeat_period`
+  (nanoseconds). `autolock_managers` returns `swarm_facts.UnlockKey` only when a
+  swarm is created with autolock or autolock actually changes to true.
+- Successful results return `actions` and `swarm_facts`. Create results contain
+  `JoinTokens` and `UnlockKey`; update results are the raw Engine inspect object.
+  Check and diff modes are fully implemented.
+- The module uses the shared API connection and injected Docker dependencies.
+
+Every contract change needs focused executor tests, a real-daemon parity
+scenario with check/diff coverage, and an update to the parity inventory.
+
 ### docker_swarm_service
 
-Manage Swarm Services.
+Implements the pinned `community.docker.docker_swarm_service` 5.2.2 Engine API
+contract. Nested spec options, comparison, and `resolve_image` follow the
+pinned upstream module. Check and diff modes are fully implemented.
 
 ```yaml
 - name: Create nginx service
@@ -1041,63 +1022,347 @@ Manage Swarm Services.
     name: my-web
     replicas: 5
 
+- name: Pin the image digest
+  docker_swarm_service:
+    name: my-web
+    image: nginx:alpine
+    resolve_image: true
+
 - name: Remove service
   docker_swarm_service:
     name: my-web
     state: absent
 ```
 
-### docker_node
+Important behavior:
 
-Manage Swarm Nodes.
+- `name` is required. `state` is `present` or `absent`. `mode` is
+  `replicated` (default), `global`, or `replicated-job`. Changing mode rebuilds
+  the service. Omitted options are left unchanged on in-place updates; explicit
+  `[]`/`{}` clears them. Create and rebuild use only specified fields.
+- Nested specs are `limits`, `reservations`, `placement`, `update_config`,
+  `rollback_config`, `restart_config`, `logging`, `mounts`, `networks`
+  (string or `{name,aliases,options}`), `configs`, `secrets`, `healthcheck`,
+  and `publish`. `command` accepts a string or list. `env` accepts a list,
+  dictionary, or `KEY=VALUE` string, plus `env_files`.
+- `resolve_image: true` calls Engine `inspect_distribution` and stores
+  `repo:tag@digest`. Image comparison strips an active digest when the desired
+  image has no `@`. Failure is `Error looking for an image named {image}: {e}`.
+- `force_update: true` always changes. Network name collisions prefer a
+  swarm-scoped network over a local one with the same name. Comparison
+  canonicalizes network IDs to names, so Engine 29's swarm-scoped `host`
+  network (which `NetworkList` omits) stays idempotent against the local
+  `host` ID. Config and secret names are resolved to IDs; missing names fail
+  with `Could not find a config/secret named "…"`.
+- Successful results return `msg`, `changed`, `rebuilt`, `changes`, and
+  `swarm_service` facts. Status messages are
+  `Service created|updated|rebuilt|forcefully updated|unchanged|removed|absent`.
+  Updates retry twice on `update out of sequence`. The module uses the shared
+  API connection and injected Docker dependencies.
+
+Run `make test-docker-swarm-integration` for the Engine 29.7.2 service lane.
+
+### docker_swarm_service_info
+
+Implements the pinned `community.docker.docker_swarm_service_info` 5.2.2
+read-only contract. It must run on a Swarm manager and returns the raw
+`docker service inspect` dictionary.
 
 ```yaml
-- name: Add Label to Node
-  docker_node:
-    hostname: my-worker-1
-    labels:
-      tier: frontend
+- name: Get info from a service
+  docker_swarm_service_info:
+    name: myservice
+  register: result
+```
 
-- name: Drain Node
+`name` is required and accepts a service name or ID. Successful results always
+include `exists` and `service`. For an existing service, `service` is the
+complete Engine inspection object with Docker's original field names (`ID`,
+`Spec`, `Version`, `Endpoint`); do not add `tasks` or `service_id`. For a
+missing service, the module succeeds with `exists: false` and `service: null`.
+Off-swarm and worker hosts fail with
+`Error running docker swarm module: must run on swarm manager node`. Check
+mode is fully supported. Diff mode is not applicable. Shared API connection
+arguments and aliases apply.
+
+Run `make test-docker-swarm-integration` for the Engine 29.7.2 service lane.
+
+### docker_node
+
+Implements the pinned `community.docker.docker_node` 5.2.2 Engine API
+contract. It updates a Swarm node's role, availability, and labels and must
+run on a manager. Diff mode is unsupported.
+
+```yaml
+- name: Set node role
   docker_node:
-    self: true
+    hostname: mynode
+    role: manager
+
+- name: Drain a node
+  docker_node:
+    hostname: mynode
     availability: drain
 
-- name: Promote Node
+- name: Replace node labels
   docker_node:
-    hostname: my-worker-1
-    role: manager
+    hostname: mynode
+    labels:
+      key: value
+    labels_state: replace
+
+- name: Remove all labels
+  docker_node:
+    hostname: mynode
+    labels_state: replace
 ```
+
+Important behavior:
+
+- `hostname` is required and accepts a Swarm hostname or node ID. `self: true`
+  is a Dibra compatibility extension that selects the local daemon's node.
+- `labels_state` is `merge` (default) or `replace`. Empty/omitted `labels` with
+  `replace` removes every label. `labels_to_remove` applies only in merge mode;
+  a key listed in both `labels` and `labels_to_remove` is kept from `labels`.
+- Label values are sanitized to strings; bools and floats fail.
+- Check mode predicts role, availability, and label changes without calling
+  update. Demoting the last manager is changed in check mode and fails on a
+  real run with Engine's last-manager message.
+- Successful results return the raw Engine inspect dictionary in `node`.
+- Off-swarm and worker hosts fail with
+  `Error running docker swarm module: must run on swarm manager node`.
+
+Run `make test-docker-swarm-integration` for the Engine 29.7.2 node lane.
+
+### docker_node_info
+
+Implements the pinned `community.docker.docker_node_info` 5.2.2 read-only
+contract. It must run on a Swarm manager and returns `nodes` as a list of raw
+Engine inspect dictionaries.
+
+```yaml
+- name: List all nodes
+  docker_node_info:
+
+- name: Inspect one node
+  docker_node_info:
+    name: mynode
+
+- name: Inspect several nodes
+  docker_node_info:
+    name:
+      - mynode1
+      - mynode2
+
+- name: Inspect the local manager
+  docker_node_info:
+    self: true
+```
+
+`name` accepts a scalar or list. Omitting `name` lists every registered node.
+Missing names are omitted (`nodes: []` on success). `self: true` ignores
+`name` and inspects the local daemon node. Check mode is fully supported.
 
 ### docker_compose_v2
 
-Manage Docker Compose projects.
-
-`docker_compose` remains accepted for compatibility, but it is deprecated and
-emits a warning. New playbooks must use `docker_compose_v2` or
-`community.docker.docker_compose_v2`.
+Implements the pinned `community.docker.docker_compose_v2` 5.2.2 CLI contract
+through the installed Compose 5.4.0 plugin. This is a CLI-backed module; it
+does not use the Engine API. `docker_compose` remains accepted as a deprecated
+alias.
 
 ```yaml
-- name: Deploy Stack
+- name: Create and start services
   docker_compose_v2:
     project_src: /opt/my-project
     state: present
-    build: true
-    pull: true
-    env:
-      DB_PASSWORD: secret
+    pull: missing
+    build: policy
 
-- name: Scale Service
+- name: Inline definition
+  docker_compose_v2:
+    project_name: flask
+    definition:
+      services:
+        web:
+          image: alpine:latest
+          command: ["sleep", "infinity"]
+
+- name: Stop without removing
   docker_compose_v2:
     project_src: /opt/my-project
-    scale:
-      web: 3
+    state: stopped
 
-- name: Remove Stack
+- name: Remove the project
   docker_compose_v2:
     project_src: /opt/my-project
     state: absent
+    remove_volumes: true
 ```
+
+Important behavior:
+
+- `state` is `present`, `absent`, `stopped`, or `restarted`. `present` runs
+  `docker compose up --detach --no-color --quiet-pull`. `stopped` runs
+  `up --no-start` then `stop` only when containers are not already stopped.
+  `restarted` always restarts. `absent` runs `down`.
+- Canonical `pull` is `always|missing|never|policy` (default `policy`). Canonical
+  `build` is `always|never|policy` (default `policy`). Boolean `true`/`false`
+  remain Dibra compatibility values and map to `always`/`policy`.
+- `dependencies` defaults to true (`--no-deps` when false). `ignore_build_events`
+  defaults to true, so a rebuild that does not recreate containers is unchanged.
+  Pull events on `up` are ignored for `changed` but still appear in `actions`.
+- `definition` writes a temporary `compose.yaml` and requires `project_name`.
+  It is mutually exclusive with `project_src` and `files`.
+- Check mode passes `--dry-run` and does not count a predicted pull as a
+  container change. Diff mode is unsupported. Successful results return
+  `actions` as `{what,id,status}` records plus raw Compose `containers` and
+  `images` lists. After a bake rebuild on Engine 29, `docker compose images`
+  can fail because the running container still references a replaced image
+  ID; the module keeps the successful `up` result and returns an empty
+  `images` list in that case.
+- The module uses the shared CLI connection resolver and injected Docker
+  dependencies. Never call `os/exec` or construct a Moby client from the
+  executor.
+
+Run `make test-docker-compose-integration` for the Compose 5.4.0 certification
+lane.
+
+### docker_compose_v2_pull
+
+Implements the pinned `community.docker.docker_compose_v2_pull` 5.2.2 CLI
+contract through the installed Compose 5.4.0 plugin. This is a CLI-backed
+module; it does not use the Engine API.
+
+```yaml
+- name: Pull images for a Compose project
+  docker_compose_v2_pull:
+    project_src: /opt/my-project
+
+- name: Pull only when images are missing
+  docker_compose_v2_pull:
+    project_src: /opt/my-project
+    policy: missing
+
+- name: Pull a service and its dependencies
+  docker_compose_v2_pull:
+    project_src: /opt/my-project
+    services:
+      - web
+    include_deps: true
+    ignore_buildable: true
+    ignore_pull_failures: true
+```
+
+Important behavior:
+
+- `policy` is `always` (default) or `missing`. `--policy` is omitted for
+  `always`. Compose 5.4.0 always supports `missing`.
+- `ignore_buildable`, `ignore_pull_failures`, and `include_deps` map to the
+  matching `docker compose pull` flags. `services` are appended after `--`.
+- `definition` writes a temporary `compose.yaml` and requires `project_name`.
+  It is mutually exclusive with `project_src` and `files`.
+- Changed detection is the inverse of `docker_compose_v2` `up` pulls:
+  `policy=always` on a real run ignores `Pulling` for `changed` (layer
+  progress still counts), while check mode and `policy=missing` count
+  `Pulling`. Check mode with `policy=always` therefore always reports
+  changed when Compose emits pull events. Diff mode is unsupported.
+- Successful results return `actions` as `{what,id,status}` records with
+  status `Pulling`. There is no containers or images list.
+- The module uses the shared CLI connection resolver and injected Docker
+  dependencies. Never call `os/exec` or construct a Moby client from the
+  executor.
+
+### docker_compose_v2_exec
+
+Implements the pinned `community.docker.docker_compose_v2_exec` 5.2.2 CLI
+contract through the installed Compose 5.4.0 plugin. It executes a command in
+an already running Compose service container.
+
+```yaml
+- name: Read application configuration
+  docker_compose_v2_exec:
+    project_src: /opt/my-project
+    service: web
+    command: cat /app/config.json
+
+- name: Execute in the second worker replica
+  docker_compose_v2_exec:
+    project_src: /opt/my-project
+    service: worker
+    index: 2
+    argv: ["/bin/sh", "-c", "echo \"$JOB_ID\""]
+    env:
+      JOB_ID: "42"
+    tty: false
+```
+
+Important behavior:
+
+- `service` and exactly one of `command` or `argv` are required. `command`
+  uses shell-style argument splitting but does not invoke a shell itself.
+- Synchronous execution always reports changed and returns `rc`, `stdout`, and
+  `stderr`. A nonzero command or Compose exit code is returned as data and does
+  not fail the module.
+- Detached execution returns no module-specific fields and fails when Compose
+  cannot start the command. `stdin` is forbidden with `detach: true`.
+- `stdin_add_newline` and `strip_empty_ends` default to true. Environment
+  values must be strings.
+- `index` selects a scaled service replica. Workdir, user, privileged mode,
+  TTY, environment, inline definitions, project files, environment files,
+  profiles, custom CLI paths, and shared CLI connection options follow the
+  pinned upstream contract.
+- Compose 5.4.0 uses `--no-tty`; this preserves the pinned module semantics
+  after the older upstream `--no-TTY` spelling was removed.
+- Check and diff modes are unsupported. The registry skips check-mode
+  invocation before any command reaches a container.
+
+### docker_compose_v2_run
+
+Implements the pinned `community.docker.docker_compose_v2_run` 5.2.2 CLI
+contract through the installed Compose 5.4.0 plugin. It creates a new one-off
+container for a Compose service; it does not execute inside an existing
+container.
+
+```yaml
+- name: Run a one-off command
+  docker_compose_v2_run:
+    project_src: /opt/my-project
+    service: web
+    command: /bin/sh -c "ls -lah"
+    chdir: /app
+    cleanup: true
+
+- name: Start a detached one-off task
+  docker_compose_v2_run:
+    project_src: /opt/my-project
+    service: worker
+    argv: ["/bin/sh", "-c", "sleep 60"]
+    detach: true
+```
+
+Important behavior:
+
+- `service` is required. `command` uses shell-style argument splitting but
+  does not itself invoke a shell; `argv` passes arguments directly. The two
+  options are mutually exclusive.
+- Synchronous runs always report changed and return `rc`, `stdout`, and
+  `stderr`, including empty strings and nonzero command exit codes. A nonzero
+  container command exit code is data, not a module failure.
+- Detached runs return `container_id` and omit `rc`, `stdout`, and `stderr`.
+  `stdin` is forbidden with `detach: true`. `stdin_add_newline` and
+  `strip_empty_ends` default to true.
+- `env` values must be strings. `build`, capabilities, entrypoint, labels,
+  name, dependency handling, published/service ports, cleanup, aliases,
+  volumes, workdir, user, interactive mode, and TTY map to Compose run
+  options.
+- Compose 5.4.0 spells the false interactive/TTY flags
+  `--interactive=false` and `--no-tty`; these preserve the pinned module
+  semantics after the older upstream spellings were removed.
+- `definition`, project files, environment files, profiles, custom CLI paths,
+  and shared CLI connection options use the same project preparation and
+  connection resolvers as the other Compose modules.
+- Check and diff modes are unsupported. The registry skips check-mode
+  invocation before a one-off container can be created.
 
 ### docker_secret
 
@@ -1131,31 +1396,59 @@ Manage Docker Swarm secrets.
 
 ### docker_config
 
-Manage Docker Swarm configs.
+Implements the pinned `community.docker.docker_config` 5.2.2 Engine API
+contract. It creates and removes Swarm configs. Data changes, label changes,
+`template_driver` changes, and `force: true` remove and recreate the config.
 
 ```yaml
-- name: Create Config
+- name: Create a config
   docker_config:
-    name: my-config
-    data: "server { listen 80; }"
+    name: db_password
+    data: opensesame!
     state: present
 
-- name: Remove Config
+- name: Create from a file on the managed node
   docker_config:
-    name: my-config
+    name: db_password
+    data_src: /path/to/config/file
+
+- name: Rotate an in-use config
+  docker_config:
+    name: app_config
+    data: new-contents
+    rolling_versions: true
+    versions_to_keep: 5
+
+- name: Remove a config
+  docker_config:
+    name: db_password
     state: absent
 ```
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `name` | required | Name of the config. |
-| `data` | | Config data (required when creating). |
-| `data_is_b64` | `false` | If true, decode data from base64. |
-| `labels` | | Labels to apply to the config. |
-| `state` | `present` | `present` to create, `absent` to remove. |
-| `force` | `false` | Force recreate even if hash matches. |
+Important behavior:
 
-**Idempotency**: The module stores a SHA256 hash of the data in a label (`dibra.data_hash`) to detect changes. Since Docker configs are immutable, the module recreates the config if the data hash changes. Labels can be updated in-place without recreating.
+- `name` is required. `state` is `present` (default) or `absent`. Present
+  requires exactly one of `data` or `data_src`. Empty `data: ""` is accepted by
+  the module and sent to Engine; Docker Engine 29 rejects 0-byte configs.
+- Idempotency uses a SHA224 hex digest stored in the `ansible_key` label.
+  Missing `ansible_key` does not count as a data change unless `force: true`.
+- Label comparison is allow-more-present: extra existing labels, including
+  `ansible_key`, do not recreate the config. Adding or changing a requested
+  label does. User labels are applied after `ansible_key` / `ansible_version`.
+- `rolling_versions: true` creates `{name}_vN` and sets `ansible_version`.
+  A data change creates the next version without deleting the current one,
+  which is required when a service still references the old config.
+  `versions_to_keep` defaults to 5; `0` and `1` keep only the current
+  version, and `-1` keeps every version. Pruning is skipped in check mode.
+- `template_driver: golang` stores Engine templating metadata. Clearing it
+  from an existing golang config, or adding it to a non-templated config,
+  recreates. Invalid values fail with
+  `value of template_driver must be one of: golang, got: {value}`.
+- Successful present results return `config_id` and `config_name`. Check mode
+  is fully implemented and does not create or remove Engine objects. Diff mode
+  is unsupported. Shared API connection arguments and aliases apply.
+
+Run `make test-docker-swarm-integration` for the Engine 29.7.2 config lane.
 
 ### docker_stack
 
@@ -1217,7 +1510,9 @@ the Engine exec-create request; it is not an upstream 5.2.2 option.
 
 ### docker_container_copy_into
 
-Copy files or content into a Docker container.
+Implements the pinned `community.docker.docker_container_copy_into` 5.2.2
+Engine API contract. It streams one regular file or symbolic link through the
+container archive endpoint; it does not invoke `docker cp`.
 
 ```yaml
 - name: Copy content into container
@@ -1226,14 +1521,42 @@ Copy files or content into a Docker container.
     content: "Hello World"
     container_path: /tmp/hello.txt
     mode: "0644"
+    mode_parse: modern
 
-- name: Copy local file into container
+- name: Copy a file from the managed node into the container
   docker_container_copy_into:
     container: my-container
-    path: /local/path/file.txt
+    path: /srv/application/file.txt
     container_path: /app/file.txt
     owner_id: 1000
     group_id: 1000
+```
+
+Important behavior:
+
+- Exactly one of `path` and `content` is required. `path` is resolved on the
+  managed node where `dibra-agent` runs, not on the controller. `content`
+  requires an explicit `mode` and can be decoded with `content_is_b64`.
+- Omitted `force` performs a complete content, filesystem-type, mode, UID, and
+  GID comparison. `force: true` always writes; `force: false` preserves any
+  existing destination without comparing it to the source.
+- Omitted ownership is derived by executing `id` as the container's configured
+  user. Stopped, paused, or minimal containers therefore require both
+  `owner_id` and `group_id`; the two options must always be supplied together.
+- `local_follow: true` follows a managed-node source link, while false copies
+  the link itself, including dangling links. `follow: true` resolves container
+  destination links, including relative and multi-hop targets; false replaces
+  the link itself.
+- `mode_parse` is `legacy` by default. `modern` treats strings as octal and
+  integers as decimal values; `octal_string_only` requires an octal string.
+  Prefer quoted modes with `mode_parse: modern` in new playbooks.
+- Check mode performs all validation and comparisons without uploading an
+  archive. Diff mode reports text before/after values and headers, and emits
+  binary or size markers instead of content for binary files or files larger
+  than Ansible's 104448-byte diff threshold.
+- Regular-file archives are streamed through the shared API client and all
+  filesystem, environment, clock, and client effects use injected Docker
+  dependencies. The module supports all shared API connection options.
 
 ### docker_image_build
 
@@ -1537,7 +1860,9 @@ and uses the shared API connection resolver.
 
 ### docker_network_info
 
-Inspect a Docker network and return its full configuration. Read-only module.
+Implements the pinned `community.docker.docker_network_info` 5.2.2 read-only
+contract. Missing networks succeed with `exists: false` and `network: null`.
+Existing results are the complete Engine inspection with original field names.
 
 ```yaml
 - name: Get network info
@@ -1545,11 +1870,14 @@ Inspect a Docker network and return its full configuration. Read-only module.
     name: my-network
 ```
 
-**Returns**: Full network inspection including IPAM config, connected containers. Sets `exists: false` if network not found (does not fail).
+The module always reports unchanged, supports check mode fully, and emits no
+diff. Shared API connection arguments apply.
 
 ### docker_volume_info
 
-Inspect a Docker volume and return its full configuration. Read-only module.
+Implements the pinned `community.docker.docker_volume_info` 5.2.2 read-only
+contract. Missing volumes succeed with `exists: false` and `volume: null`.
+Existing results are the complete Engine inspection.
 
 ```yaml
 - name: Get volume info
@@ -1557,50 +1885,103 @@ Inspect a Docker volume and return its full configuration. Read-only module.
     name: my-volume
 ```
 
-**Returns**: Full volume inspection including driver, mountpoint, labels. Sets `exists: false` if volume not found (does not fail).
-
 ### docker_host_info
 
-Get Docker daemon information and optionally disk usage. Read-only module.
+Implements the pinned `community.docker.docker_host_info` 5.2.2 read-only
+contract. `host_info` is the raw Engine info object. `can_talk_to_docker` is
+always present and is `false` when the daemon cannot be reached.
 
 ```yaml
-- name: Get Docker host info
+- name: Get docker host info
   docker_host_info:
-
-- name: Get Docker host info with disk usage
-  docker_host_info:
+    containers: true
+    containers_all: true
+    images: true
+    networks: true
+    volumes: true
     disk_usage: true
+    verbose_output: false
 ```
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `containers` | `false` | Include container count in response. |
-| `images` | `false` | Include image count in response. |
-| `volumes` | `false` | Include volume count in response. |
-| `disk_usage` | `false` | Include disk usage statistics (can be slow). |
+Non-verbose lists use the upstream key subsets (`Id`/`Image`/`Command`/...
+for containers, `Id`/`RepoTags`/`Created`/`Size` for images, `Id`/`Driver`/
+`Name`/`Scope` for networks, `Driver`/`Name` for volumes). Verbose lists
+return the full Engine objects. Non-verbose `disk_usage` is `{LayersSize}`;
+verbose adds `Images`, `Containers`, and `Volumes` sequences. Filters accept
+strings or lists. Shared API connection arguments apply.
 
-**Returns**: Docker daemon info including version, OS, architecture, container/image counts, swarm status, plugins.
+### docker_context_info
+
+Implements the pinned `community.docker.docker_context_info` 5.2.2 CLI
+context contract. This module does not talk to the Engine API; it reads
+Docker CLI context files through injected filesystem and environment
+dependencies.
+
+```yaml
+- name: List Docker CLI contexts
+  docker_context_info:
+
+- name: Current context only
+  docker_context_info:
+    only_current: true
+    cli_context: default
+```
+
+`only_current` and `name` are mutually exclusive. Current name is
+`cli_context`, else `DOCKER_HOST` forces `default`, else `DOCKER_CONTEXT`,
+else `~/.docker/config.json` `currentContext`, else `default`. The synthetic
+default context has description `Current DOCKER_HOST based configuration`
+and null `meta_path`/`tls_path`. A missing named context fails.
+
+### current_container_facts
+
+Implements the pinned `community.docker.current_container_facts` 5.2.2
+read-only contract. There is no Docker connection. Facts are returned under
+`ansible_facts`.
+
+```yaml
+- name: Detect the current container
+  current_container_facts:
+```
+
+Detection uses `/proc/self/cpuset` (`/docker`, `/azpl_job`, `/actions_job`)
+and falls back to `/proc/self/mountinfo` hostname paths for Docker versus
+Podman. Check mode is fully supported.
 
 ### docker_swarm_info
 
-Get Docker Swarm information. Read-only module.
+Implements the pinned `community.docker.docker_swarm_info` 5.2.2 read-only
+contract. It must run on a Swarm manager; otherwise it fails with
+`Error running docker swarm module: must run on swarm manager node` and still
+returns `can_talk_to_docker`, `docker_swarm_active`, and `docker_swarm_manager`.
 
 ```yaml
-- name: Get swarm info
+- name: Get swarm facts
   docker_swarm_info:
 
-- name: Get swarm info with node list
+- name: List nodes, services, and tasks
   docker_swarm_info:
     nodes: true
-    verbose: true
+    services: true
+    tasks: true
+    verbose_output: true
+
+- name: Filter nodes and retrieve the unlock key
+  docker_swarm_info:
+    nodes: true
+    nodes_filters:
+      name: mynode
+    unlock_key: true
 ```
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `nodes` | `false` | Include list of nodes (manager only). |
-| `verbose` | `false` | Include detailed node information. |
-
-**Returns**: Swarm state, join tokens (if manager), node list. Sets `in_swarm: false` if not part of a swarm.
+`swarm_facts` is the raw Engine swarm inspect object, including `JoinTokens`.
+Non-verbose `nodes`, `services`, and `tasks` use the `docker node ls` /
+`docker service ls` / `docker service ps` key subsets. Verbose lists return the
+full Engine objects. `swarm_unlock_key` is present only when `unlock_key` is
+true: `null` on an unlocked swarm, otherwise the `SWMKEY-` string. Filters
+accept strings or lists. `verbose` remains a Dibra alias for `verbose_output`.
+Shared API connection arguments apply. Check mode is fully supported; diff
+mode is not applicable.
 
 ### command
 
@@ -4567,11 +4948,13 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_DockerSwarmServiceIdempotency` | Swarm service improved idempotency (Phase 6.4) |
 | `TestPlaybook_DockerNodeLabelsToRemove` | Node label removal support (Phase 6.5.3) |
 | `TestPlaybook_DockerSwarmServiceInfo` | Swarm service info module (Phase 6.6) |
+| `TestPlaybook_DockerSwarmServiceInfoParity` | Swarm service info parity: manager check, exists/service, ID lookup, inspect equality, check mode, idempotency |
 | `TestPlaybook_DockerNodeInfo` | Node info module (Phase 6.7) |
 | `TestPlaybook_DockerHostInfo` | Host info and shared explicit Docker connection options |
 | `TestPlaybook_DockerVolume` | Volume deep compare, driver options, metadata, recreate (Phase 7.4) |
 | `TestPlaybook_DockerSecretHashIdempotency` | Secret hash-based idempotency, data change detection (Phase 7.3) |
 | `TestPlaybook_DockerConfigHashIdempotency` | Config hash-based idempotency, label-only updates (Phase 7.3) |
+| `TestPlaybook_DockerConfigParity` | Swarm config parity: data/data_src/base64, ansible_key, rolling versions, versions_to_keep, template_driver, check mode, labels, force, in-use rotation |
 | `TestPlaybook_DockerVolumePrune` | Prune filter improvements (Phase 7.2) |
 | `TestPlaybook_Find` | Find module: recursive/non-recursive search, glob/regex patterns, excludes, file_type (file/directory/link/any), age/size filters, hidden files, symlinks, depth limit, mode filtering, checksum algorithms, contains content matching, multiple paths, limit, path/pattern/exclude aliases, template variables, idempotency |
 | `TestPlaybook_Register` | Register keyword: basic shell register, register on failure, overwrite, command module, ping module-specific fields, stdout_lines access, chained registers, file/copy/tempfile module fields, multiple modules, idempotency tracking, template expressions with registered vars, include_tasks/import_tasks boundary, invalid variable names (numeric, hyphen, space), underscore prefix, no side effects without register, rerun idempotency |

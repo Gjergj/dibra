@@ -1,32 +1,47 @@
 package docker_node_info
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
-	"github.com/moby/moby/api/types/swarm"
 )
+
+type StringList []string
+
+func (values *StringList) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || string(data) == "null" {
+		*values = nil
+		return nil
+	}
+	if data[0] == '"' {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		*values = StringList{value}
+		return nil
+	}
+	var result []string
+	if err := json.Unmarshal(data, &result); err != nil {
+		return fmt.Errorf("must be a string or list of strings: %w", err)
+	}
+	*values = result
+	return nil
+}
 
 type Request struct {
 	docker.CommonArgs
 
-	Name string `json:"name"` // Node hostname or ID, or empty for self
-	Self bool   `json:"self"` // Get info for the current node
+	Name StringList `json:"name"`
+	Self bool       `json:"self"`
 }
 
 type Response struct {
-	Changed bool        `json:"changed"`
-	Failed  bool        `json:"failed"`
-	Msg     string      `json:"msg,omitempty"`
-	Exists  bool        `json:"exists"`
-	Node    interface{} `json:"node,omitempty"`
-	NodeID  string      `json:"node_id,omitempty"`
-	Tasks   []TaskInfo  `json:"tasks,omitempty"`
-}
-
-// TaskInfo contains summarized task information
-type TaskInfo struct {
-	ID           string           `json:"id"`
-	ServiceID    string           `json:"service_id"`
-	Status       swarm.TaskStatus `json:"status"`
-	DesiredState swarm.TaskState  `json:"desired_state"`
-	Slot         int              `json:"slot"`
+	Changed bool             `json:"changed"`
+	Failed  bool             `json:"failed"`
+	Msg     string           `json:"msg,omitempty"`
+	Nodes   []map[string]any `json:"nodes"`
 }

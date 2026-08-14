@@ -291,6 +291,77 @@ func TestValidateRequestRejectsPinnedUpstreamInvalidCombinations(t *testing.T) {
 	}
 }
 
+func TestExecuteOmitsStdinAttachmentWhenStdinIsAbsent(t *testing.T) {
+	fake := &execClient{execID: "exec-no-stdin", inspectResult: client.ExecInspectResult{ExitCode: 0}}
+	response := ExecuteWithDependencies(Request{
+		Container: "web",
+		Argv:      []string{"cat"},
+	}, fakeDependencies(fake))
+	if response.Failed || fake.createOptions.AttachStdin {
+		t.Fatalf("ExecuteWithDependencies() = %#v attachStdin=%t", response, fake.createOptions.AttachStdin)
+	}
+}
+
+func TestExecuteStdinNewlineAndStripCombinations(t *testing.T) {
+	hello := "Hello world!"
+	tests := []struct {
+		name           string
+		addNewline     *bool
+		stripEmptyEnds *bool
+		wantWritten    string
+		stdout         string
+		wantStdout     string
+	}{
+		{
+			name:           "newline preserved",
+			stripEmptyEnds: boolPointer(false),
+			wantWritten:    hello + "\n",
+			stdout:         hello + "\n",
+			wantStdout:     hello + "\n",
+		},
+		{
+			name:           "no added newline",
+			addNewline:     boolPointer(false),
+			stripEmptyEnds: boolPointer(false),
+			wantWritten:    hello,
+			stdout:         hello,
+			wantStdout:     hello,
+		},
+		{
+			name:           "newline then strip",
+			addNewline:     boolPointer(true),
+			stripEmptyEnds: boolPointer(true),
+			wantWritten:    hello + "\n",
+			stdout:         hello + "\n",
+			wantStdout:     hello,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fake := &execClient{
+				execID:        "exec-stdin-combo",
+				stdout:        test.stdout,
+				inspectResult: client.ExecInspectResult{ExitCode: 0},
+			}
+			response := ExecuteWithDependencies(Request{
+				Container:       "web",
+				Argv:            []string{"cat"},
+				Stdin:           &hello,
+				StdinAddNewline: test.addNewline,
+				StripEmptyEnds:  test.stripEmptyEnds,
+			}, fakeDependencies(fake))
+			if response.Failed || responseInt(response.RC) != 0 || responseString(response.Stdout) != test.wantStdout {
+				t.Fatalf("ExecuteWithDependencies() = %#v, want stdout %q", response, test.wantStdout)
+			}
+			fake.connection.mu.Lock()
+			defer fake.connection.mu.Unlock()
+			if fake.connection.written.String() != test.wantWritten || !fake.connection.writeClosed {
+				t.Fatalf("stdin written=%q closed=%t, want %q", fake.connection.written.String(), fake.connection.writeClosed, test.wantWritten)
+			}
+		})
+	}
+}
+
 func TestExecuteMapsPinnedUpstreamEngineErrors(t *testing.T) {
 	tests := []struct {
 		name string
