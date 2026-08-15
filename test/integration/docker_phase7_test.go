@@ -148,9 +148,9 @@ func TestPlaybook_DockerSecretHashIdempotency(t *testing.T) {
 	}
 
 	// Verify hash label exists
-	hashLabel := remoteExec(t, client, "docker secret inspect "+secretName+" --format '{{index .Spec.Labels \"dibra.data_hash\"}}'")
+	hashLabel := remoteExec(t, client, "docker secret inspect "+secretName+" --format '{{index .Spec.Labels \"ansible_key\"}}'")
 	if strings.TrimSpace(hashLabel) == "" {
-		t.Error("Expected dibra.data_hash label to be set")
+		t.Error("Expected ansible_key label to be set")
 	}
 	initialHash := strings.TrimSpace(hashLabel)
 	t.Logf("Initial hash: %s", initialHash)
@@ -180,7 +180,7 @@ func TestPlaybook_DockerSecretHashIdempotency(t *testing.T) {
 	}
 
 	// Verify hash changed
-	newHashLabel := remoteExec(t, client, "docker secret inspect "+secretName+" --format '{{index .Spec.Labels \"dibra.data_hash\"}}'")
+	newHashLabel := remoteExec(t, client, "docker secret inspect "+secretName+" --format '{{index .Spec.Labels \"ansible_key\"}}'")
 	newHash := strings.TrimSpace(newHashLabel)
 	if newHash == initialHash {
 		t.Error("Expected hash to change when data changed")

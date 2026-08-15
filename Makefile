@@ -104,14 +104,14 @@ test-docker-compose-integration: test-integration-up
 test-docker-compose-integration-only:
 	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerComposeLifecycle|TestPlaybook_DockerComposeV2Parity|TestPlaybook_DockerComposeV2Examples|TestPlaybook_DockerComposeV2ExecParity|TestPlaybook_DockerComposeV2PullParity|TestPlaybook_DockerComposeV2RunParity)$$'
 
-# Run the Engine 29.7.2 Swarm node/info certification lane.
+# Run the Engine 29.7.2 Swarm node/service/config/secret certification lane.
 test-docker-swarm-integration: test-integration-up
-	@echo "Running Docker Swarm node/service/config-family integration tests..."
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerSwarmParity|TestPlaybook_DockerSwarmInfoParity|TestPlaybook_DockerSwarmLifecycle|TestPlaybook_DockerSwarmService|TestPlaybook_DockerSwarmServiceParity|TestPlaybook_DockerSwarmServiceInfo|TestPlaybook_DockerSwarmServiceInfoParity|TestPlaybook_DockerNode|TestPlaybook_DockerNodeLabelsToRemove|TestPlaybook_DockerNodeInfo|TestPlaybook_DockerNodeParity|TestPlaybook_DockerNodeInfoParity|TestPlaybook_DockerConfigLifecycle|TestPlaybook_DockerConfigHashIdempotency|TestPlaybook_DockerConfigParity)$$' || (make test-integration-down && exit 1)
+	@echo "Running Docker Swarm node/service/config/secret/stack-family integration tests..."
+	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerSwarmParity|TestPlaybook_DockerSwarmInfoParity|TestPlaybook_DockerSwarmLifecycle|TestPlaybook_DockerSwarmService|TestPlaybook_DockerSwarmServiceParity|TestPlaybook_DockerSwarmServiceInfo|TestPlaybook_DockerSwarmServiceInfoParity|TestPlaybook_DockerNode|TestPlaybook_DockerNodeLabelsToRemove|TestPlaybook_DockerNodeInfo|TestPlaybook_DockerNodeParity|TestPlaybook_DockerNodeInfoParity|TestPlaybook_DockerConfigLifecycle|TestPlaybook_DockerConfigHashIdempotency|TestPlaybook_DockerConfigParity|TestPlaybook_DockerSecretLifecycle|TestPlaybook_DockerSecretHashIdempotency|TestPlaybook_DockerSecretParity|TestPlaybook_DockerStackLifecycle|TestPlaybook_DockerStackParity)$$' || (make test-integration-down && exit 1)
 	make test-integration-down
 
 test-docker-swarm-integration-only:
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerSwarmParity|TestPlaybook_DockerSwarmInfoParity|TestPlaybook_DockerSwarmLifecycle|TestPlaybook_DockerSwarmService|TestPlaybook_DockerSwarmServiceParity|TestPlaybook_DockerSwarmServiceInfo|TestPlaybook_DockerSwarmServiceInfoParity|TestPlaybook_DockerNode|TestPlaybook_DockerNodeLabelsToRemove|TestPlaybook_DockerNodeInfo|TestPlaybook_DockerNodeParity|TestPlaybook_DockerNodeInfoParity|TestPlaybook_DockerConfigLifecycle|TestPlaybook_DockerConfigHashIdempotency|TestPlaybook_DockerConfigParity)$$'
+	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerSwarmParity|TestPlaybook_DockerSwarmInfoParity|TestPlaybook_DockerSwarmLifecycle|TestPlaybook_DockerSwarmService|TestPlaybook_DockerSwarmServiceParity|TestPlaybook_DockerSwarmServiceInfo|TestPlaybook_DockerSwarmServiceInfoParity|TestPlaybook_DockerNode|TestPlaybook_DockerNodeLabelsToRemove|TestPlaybook_DockerNodeInfo|TestPlaybook_DockerNodeParity|TestPlaybook_DockerNodeInfoParity|TestPlaybook_DockerConfigLifecycle|TestPlaybook_DockerConfigHashIdempotency|TestPlaybook_DockerConfigParity|TestPlaybook_DockerSecretLifecycle|TestPlaybook_DockerSecretHashIdempotency|TestPlaybook_DockerSecretParity|TestPlaybook_DockerStackLifecycle|TestPlaybook_DockerStackParity)$$'
 
 # Start the shared Linux/systemd test container for dibra-deploy tests
 test-deploy-integration-up: test-integration-up

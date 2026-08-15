@@ -89,7 +89,7 @@ make test-docker-compose-integration
 # Run that lane with the integration container already running
 make test-docker-compose-integration-only
 
-# Run the Engine 29.7.2 Swarm node/service/config certification lane
+# Run the Engine 29.7.2 Swarm node/service/config/secret certification lane
 make test-docker-swarm-integration
 
 # Run that lane with the integration container already running
@@ -1366,33 +1366,55 @@ Important behavior:
 
 ### docker_secret
 
-Manage Docker Swarm secrets.
+Implements the pinned `community.docker.docker_secret` 5.2.2 Engine API
+contract. It creates and removes Swarm secrets. Data changes, label changes,
+and `force: true` remove and recreate the secret.
 
 ```yaml
-- name: Create Secret
+- name: Create a secret
   docker_secret:
-    name: my-secret
-    data: "supersecretpassword"
+    name: db_password
+    data: opensesame!
     state: present
-    labels:
-      env: prod
 
-- name: Remove Secret
+- name: Create from a file on the managed node
   docker_secret:
-    name: my-secret
+    name: db_password
+    data_src: /path/to/secret/file
+
+- name: Rotate an in-use secret
+  docker_secret:
+    name: app_secret
+    data: new-contents
+    rolling_versions: true
+    versions_to_keep: 5
+
+- name: Remove a secret
+  docker_secret:
+    name: db_password
     state: absent
 ```
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `name` | required | Name of the secret. |
-| `data` | | Secret data (required when creating). |
-| `data_is_b64` | `false` | If true, decode data from base64. |
-| `labels` | | Labels to apply to the secret. |
-| `state` | `present` | `present` to create, `absent` to remove. |
-| `force` | `false` | Force recreate even if hash matches. |
+Important behavior:
 
-**Idempotency**: The module stores a SHA256 hash of the data in a label (`dibra.data_hash`) to detect changes. Since Docker secrets are immutable, the module recreates the secret if the data hash changes.
+- `name` is required. `state` is `present` (default) or `absent`. Present
+  requires exactly one of `data` or `data_src`. Empty `data: ""` is accepted by
+  the module and sent to Engine; Docker Engine 29 rejects 0-byte secrets.
+- Idempotency uses a SHA224 hex digest stored in the `ansible_key` label.
+  Missing `ansible_key` does not count as a data change unless `force: true`.
+- Label comparison is allow-more-present: extra existing labels, including
+  `ansible_key`, do not recreate the secret. Adding or changing a requested
+  label does. User labels are applied after `ansible_key` / `ansible_version`.
+- `rolling_versions: true` creates `{name}_vN` and sets `ansible_version`.
+  A data change creates the next version without deleting the current one,
+  which is required when a service still references the old secret.
+  `versions_to_keep` defaults to 5; `0` and `1` keep only the current
+  version, and `-1` keeps every version. Pruning is skipped in check mode.
+- Successful present results return `secret_id` and `secret_name`. Check mode
+  is fully implemented and does not create or remove Engine objects. Diff mode
+  is unsupported. Shared API connection arguments and aliases apply.
+
+Run `make test-docker-swarm-integration` for the Engine 29.7.2 secret lane.
 
 ### docker_config
 
@@ -1452,20 +1474,62 @@ Run `make test-docker-swarm-integration` for the Engine 29.7.2 config lane.
 
 ### docker_stack
 
-Deploy Docker Swarm stacks.
+Implements the pinned `community.docker.docker_stack` 5.2.2 CLI contract
+through the installed Docker CLI. This is a CLI-backed module; it does not use
+the Engine API. Check and diff modes are unsupported.
 
 ```yaml
-- name: Deploy Stack
+- name: Deploy stack from a compose file
   docker_stack:
-    name: my-app
-    compose_file: /path/to/docker-compose.yml
-    state: present
+    name: mystack
+    compose:
+      - /opt/docker-compose.yml
 
-- name: Remove Stack
+- name: Deploy stack from a base file and an inline override
   docker_stack:
-    name: my-app
+    name: mystack
+    compose:
+      - /opt/docker-compose.yml
+      - version: "3"
+        services:
+          web:
+            image: nginx:latest
+            environment:
+              ENVVAR: envvar
+
+- name: Remove stack
+  docker_stack:
+    name: mystack
     state: absent
+    absent_retries: 30
 ```
+
+Important behavior:
+
+- `name` is required. `state` is `present` (default) or `absent`. Present
+  requires `compose` to be a list with at least one path string or nested
+  dictionary. Dibra keeps `compose_file` as a compatibility alias for a single
+  path when `compose` is omitted.
+- Nested dictionaries are written to temporary YAML files and passed as extra
+  `--compose-file` arguments, matching the documented file-plus-override
+  example.
+- `detach` defaults to true. `detach: false` adds `--detach=false` to both
+  `docker stack deploy` and `docker stack rm` so Docker waits for convergence.
+- `prune`, `with_registry_auth`, and `resolve_image` (`always|changed|never`)
+  map to the matching deploy flags. An omitted `resolve_image` leaves Docker's
+  default (`always`).
+- `absent_retries` (default 0) retries `stack rm` until stderr is
+  `Nothing found in stack: {name}`. `absent_retries_interval` defaults to 1
+  second. A missing stack is unchanged.
+- Changed detection inspects each stack service `Spec` before and after
+  deploy and ignores `UpdatedAt`/`Version`. Successful changes return
+  `stack_spec_diff`. Check and diff modes are unsupported; `--check` skips
+  the module.
+- `docker_cli` selects the executable. Shared CLI connection arguments and
+  aliases apply. The module uses injected Docker CLI, filesystem, clock, and
+  environment dependencies.
+
+Run `make test-docker-swarm-integration` for the Engine 29.7.2 stack lane.
 
 ### docker_container_exec
 
@@ -4953,8 +5017,10 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_DockerHostInfo` | Host info and shared explicit Docker connection options |
 | `TestPlaybook_DockerVolume` | Volume deep compare, driver options, metadata, recreate (Phase 7.4) |
 | `TestPlaybook_DockerSecretHashIdempotency` | Secret hash-based idempotency, data change detection (Phase 7.3) |
+| `TestPlaybook_DockerSecretParity` | Swarm secret parity: data/data_src/base64, ansible_key, rolling versions, versions_to_keep, check mode, labels, force, in-use rotation |
 | `TestPlaybook_DockerConfigHashIdempotency` | Config hash-based idempotency, label-only updates (Phase 7.3) |
 | `TestPlaybook_DockerConfigParity` | Swarm config parity: data/data_src/base64, ansible_key, rolling versions, versions_to_keep, template_driver, check mode, labels, force, in-use rotation |
+| `TestPlaybook_DockerStackParity` | Swarm stack parity: compose paths/dicts, absent retries, prune, detach, docker_cli, stack_spec_diff, check-mode skip |
 | `TestPlaybook_DockerVolumePrune` | Prune filter improvements (Phase 7.2) |
 | `TestPlaybook_Find` | Find module: recursive/non-recursive search, glob/regex patterns, excludes, file_type (file/directory/link/any), age/size filters, hidden files, symlinks, depth limit, mode filtering, checksum algorithms, contains content matching, multiple paths, limit, path/pattern/exclude aliases, template variables, idempotency |
 | `TestPlaybook_Register` | Register keyword: basic shell register, register on failure, overwrite, command module, ping module-specific fields, stdout_lines access, chained registers, file/copy/tempfile module fields, multiple modules, idempotency tracking, template expressions with registered vars, include_tasks/import_tasks boundary, invalid variable names (numeric, hyphen, space), underscore prefix, no side effects without register, rerun idempotency |

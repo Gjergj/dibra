@@ -131,9 +131,9 @@ var definitions = []Definition{
 	moduleWithAliases("docker_compose_v2_exec", []string{"docker_compose_v2_exec"}, Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), normalizeDockerAPIArguments, docker_compose_v2_exec.Execute),
 	stateModule("docker_compose_v2_pull", Capabilities{SupportFull, SupportNone}, sensitivity(), normalizeDockerAPIArguments, docker_compose_v2_pull.ExecuteWithState),
 	moduleWithAliases("docker_compose_v2_run", []string{"docker_compose_v2_run"}, Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), normalizeDockerAPIArguments, docker_compose_v2_run.Execute),
-	module("docker_secret", Capabilities{SupportFull, SupportNone}, sensitivity("data"), docker_secret.Execute),
+	stateModule("docker_secret", Capabilities{SupportFull, SupportNone}, sensitivity("data"), normalizeDockerAPIArguments, docker_secret.ExecuteWithState),
 	stateModule("docker_config", Capabilities{SupportFull, SupportNone}, sensitivity("data"), normalizeDockerAPIArguments, docker_config.ExecuteWithState),
-	module("docker_stack", Capabilities{SupportNone, SupportNone}, sensitivity(), docker_stack.Execute),
+	moduleWithAliases("docker_stack", []string{"docker_stack"}, Capabilities{SupportNone, SupportNone}, sensitivity(), normalizeDockerAPIArguments, docker_stack.Execute),
 	moduleWithAliases("docker_container_exec", []string{"docker_container_exec"}, Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), normalizeDockerContainerExecArguments, docker_container_exec.Execute),
 	stateModule("docker_container_copy_into", Capabilities{SupportFull, SupportFull}, sensitivity("content"), normalizeDockerAPIArguments, docker_container_copy_into.ExecuteWithState),
 	stateModule("docker_image_build", Capabilities{SupportFull, SupportNone}, sensitivity("args", "secrets.value"), normalizeDockerAPIArguments, docker_image_build.ExecuteWithState),
@@ -156,10 +156,6 @@ var definitions = []Definition{
 }
 
 var definitionsByName = mustIndex(definitions)
-
-func module[Request, Response any](shortName string, capabilities Capabilities, sensitive Sensitivity, handler func(Request) Response) Definition {
-	return moduleWithAliases(shortName, []string{shortName}, capabilities, sensitive, nil, handler)
-}
 
 func stateModule[Request, Response any](shortName string, capabilities Capabilities, sensitive Sensitivity, normalizer argumentNormalizer, handler func(Request, execution.State) Response) Definition {
 	definition := moduleWithAliases(shortName, []string{shortName}, capabilities, sensitive, normalizer, func(request Request) Response {

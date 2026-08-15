@@ -28,6 +28,7 @@ import (
 	"github.com/gjergjiramku/dibra/internal/modules/docker_node"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_node_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_prune"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_stack"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_swarm_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_volume"
 )
@@ -379,6 +380,7 @@ func TestModulesWithImplementedCheckModeAreDeclared(t *testing.T) {
 		"docker_swarm_service":       true,
 		"docker_node":                true,
 		"docker_config":              true,
+		"docker_secret":              true,
 		"docker_compose_v2":          true,
 		"docker_compose_v2_pull":     true,
 		"docker_container_copy_into": true,
@@ -1100,5 +1102,48 @@ func TestDockerNodeAndNodeInfoDecode(t *testing.T) {
 	scalar := scalarInvocation.Arguments.(docker_node_info.Request)
 	if len(scalar.Name) != 1 || scalar.Name[0] != "testhost" || scalar.Self {
 		t.Fatalf("scalar = %#v", scalar)
+	}
+}
+
+func TestDockerStackDecode(t *testing.T) {
+	invocation, err := Decode("community.docker.docker_stack", json.RawMessage(`{
+		"name":"mystack",
+		"compose":["/opt/stack.yml",{"version":"3","services":{"web":{"image":"nginx:latest"}}}],
+		"prune":true,
+		"detach":false,
+		"with_registry_auth":true,
+		"resolve_image":"never",
+		"absent_retries":30,
+		"absent_retries_interval":2,
+		"docker_cli":"/usr/bin/docker",
+		"docker_url":"unix:///run/docker.sock"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := invocation.Arguments.(docker_stack.Request)
+	if request.Name != "mystack" || len(request.Compose) != 2 || request.Compose[0].Path != "/opt/stack.yml" {
+		t.Fatalf("request = %#v", request)
+	}
+	if request.Compose[1].Dict["version"] != "3" || !request.Prune || request.Detach == nil || *request.Detach {
+		t.Fatalf("compose/detach = %#v", request)
+	}
+	if !request.WithRegistryAuth || request.ResolveImage != "never" || request.DockerCLI != "/usr/bin/docker" {
+		t.Fatalf("flags = %#v", request)
+	}
+	if request.AbsentRetries == nil || *request.AbsentRetries != 30 || request.AbsentRetriesInterval == nil || *request.AbsentRetriesInterval != 2 {
+		t.Fatalf("retries = %#v", request)
+	}
+	if request.DockerHost == nil || *request.DockerHost != "unix:///run/docker.sock" {
+		t.Fatalf("docker_host = %#v", request.DockerHost)
+	}
+
+	aliasInvocation, err := Decode("docker_stack", json.RawMessage(`{"name":"mystack","compose_file":"/opt/stack.yml"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias := aliasInvocation.Arguments.(docker_stack.Request)
+	if alias.ComposeFile != "/opt/stack.yml" {
+		t.Fatalf("compose_file alias = %#v", alias)
 	}
 }
