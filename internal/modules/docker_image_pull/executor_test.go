@@ -70,7 +70,8 @@ func pullInspect(id, operatingSystem, architecture, variant string) client.Image
 
 func pullDependencies(fake *pullClient) docker.Dependencies {
 	return docker.Dependencies{
-		Environment: docker.StaticEnvironment{},
+		Environment: docker.StaticEnvironment{"DOCKER_CONFIG": "/nonexistent/dibra-image-pull-unit-test"},
+		FileSystem:  docker.OSFileSystem{},
 		NewClient: func(docker.CommonArgs) (client.APIClient, error) {
 			return fake, nil
 		},

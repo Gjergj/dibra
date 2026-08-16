@@ -71,7 +71,7 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 
 type dockerContext struct {
 	Name        string
-	Description string
+	Description any
 	MetaPath    string
 	TLSPath     string
 	Host        string
@@ -95,23 +95,20 @@ func (context dockerContext) toInfo(currentName string, fileSystem docker.FileSy
 	if context.Host != "" {
 		host := normalizeDockerHost(context.Host)
 		info.Config["docker_host"] = host
-		caPath := filepath.Join(context.TLSPath, "docker", "ca.pem")
-		certPath := filepath.Join(context.TLSPath, "docker", "cert.pem")
-		keyPath := filepath.Join(context.TLSPath, "docker", "key.pem")
-		hasCA := fileExists(fileSystem, caPath)
-		hasCert := fileExists(fileSystem, certPath)
-		hasKey := fileExists(fileSystem, keyPath)
-		if hasCA || hasCert || hasKey {
-			if hasCA {
+		caPath, certPath, keyPath := discoverTLSFiles(fileSystem, filepath.Join(context.TLSPath, "docker"))
+		if caPath != "" || (certPath != "" && keyPath != "") {
+			if caPath != "" {
 				info.Config["ca_path"] = caPath
 			}
-			if hasCert {
+			if certPath != "" && keyPath != "" {
 				info.Config["client_cert"] = certPath
-			}
-			if hasKey {
 				info.Config["client_key"] = keyPath
 			}
-			info.Config["validate_certs"] = !context.SkipTLS
+			if context.SkipTLS {
+				info.Config["validate_certs"] = nil
+			} else {
+				info.Config["validate_certs"] = true
+			}
 			info.Config["tls"] = true
 		} else {
 			info.Config["tls"] = context.SkipTLS
@@ -174,14 +171,9 @@ func loadContexts(dependencies docker.Dependencies, configDir string) (map[strin
 			return fmt.Errorf("Failed to load metafile %s: %w", path, err)
 		}
 		var payload struct {
-			Name     string `json:"Name"`
-			Metadata struct {
-				Description string `json:"Description"`
-			} `json:"Metadata"`
-			Endpoints map[string]struct {
-				Host          string `json:"Host"`
-				SkipTLSVerify bool   `json:"SkipTLSVerify"`
-			} `json:"Endpoints"`
+			Name      string                     `json:"Name"`
+			Metadata  map[string]json.RawMessage `json:"Metadata"`
+			Endpoints map[string]json.RawMessage `json:"Endpoints"`
 		}
 		if err := json.Unmarshal(data, &payload); err != nil {
 			return fmt.Errorf("Failed to load metafile %s: %w", path, err)
@@ -192,15 +184,47 @@ func loadContexts(dependencies docker.Dependencies, configDir string) (map[strin
 		if payload.Name == "default" {
 			return fmt.Errorf(`"default" is a reserved context name`)
 		}
-		endpoint := payload.Endpoints["docker"]
+		var description any
+		if rawDescription, found := payload.Metadata["Description"]; found {
+			if err := json.Unmarshal(rawDescription, &description); err != nil {
+				return fmt.Errorf("Failed to load metafile %s: %w", path, err)
+			}
+		}
+		host := ""
+		skipTLS := false
+		for endpointName, rawEndpoint := range payload.Endpoints {
+			var endpoint map[string]json.RawMessage
+			if err := json.Unmarshal(rawEndpoint, &endpoint); err != nil || endpoint == nil {
+				return fmt.Errorf("Unknown endpoint format for context %s", payload.Name)
+			}
+			if endpointName != "docker" {
+				continue
+			}
+			host = defaultUnixSocket
+			if rawHost, found := endpoint["Host"]; found {
+				var hostValue any
+				if err := json.Unmarshal(rawHost, &hostValue); err != nil {
+					return fmt.Errorf("Failed to load metafile %s: %w", path, err)
+				}
+				host, _ = hostValue.(string)
+			}
+			skipTLS = true
+			if rawSkip, found := endpoint["SkipTLSVerify"]; found {
+				var skipValue any
+				if err := json.Unmarshal(rawSkip, &skipValue); err != nil {
+					return fmt.Errorf("Failed to load metafile %s: %w", path, err)
+				}
+				skipTLS = jsonTruthy(skipValue)
+			}
+		}
 		id := contextID(payload.Name)
 		contexts[payload.Name] = dockerContext{
 			Name:        payload.Name,
-			Description: payload.Metadata.Description,
+			Description: description,
 			MetaPath:    filepath.Dir(path),
 			TLSPath:     filepath.Join(configDir, "contexts", "tls", id),
-			Host:        endpoint.Host,
-			SkipTLS:     endpoint.SkipTLSVerify,
+			Host:        host,
+			SkipTLS:     skipTLS,
 		}
 		return nil
 	})
@@ -242,9 +266,41 @@ func contextID(name string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func fileExists(fileSystem docker.FileSystem, path string) bool {
-	_, err := fileSystem.Stat(path)
-	return err == nil
+func discoverTLSFiles(fileSystem docker.FileSystem, directory string) (caPath, certPath, keyPath string) {
+	_ = fileSystem.WalkDir(directory, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry == nil || path == directory || filepath.Dir(path) != directory {
+			return nil
+		}
+		switch {
+		case strings.HasPrefix(entry.Name(), "ca"):
+			caPath = path
+		case strings.HasPrefix(entry.Name(), "cert"):
+			certPath = path
+		case strings.HasPrefix(entry.Name(), "key"):
+			keyPath = path
+		}
+		return nil
+	})
+	return caPath, certPath, keyPath
+}
+
+func jsonTruthy(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return false
+	case bool:
+		return typed
+	case string:
+		return typed != ""
+	case float64:
+		return typed != 0
+	case []any:
+		return len(typed) != 0
+	case map[string]any:
+		return len(typed) != 0
+	default:
+		return true
+	}
 }
 
 func failedResponse(message string) Response {

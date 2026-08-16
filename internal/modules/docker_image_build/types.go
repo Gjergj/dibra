@@ -10,6 +10,19 @@ import (
 
 type StringList []string
 
+type OptionMap map[string]any
+
+func (values *OptionMap) UnmarshalJSON(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var decoded map[string]any
+	if err := decoder.Decode(&decoded); err != nil {
+		return err
+	}
+	*values = decoded
+	return nil
+}
+
 func (values *StringList) UnmarshalJSON(data []byte) error {
 	data = bytes.TrimSpace(data)
 	if len(data) > 0 && data[0] == '"' {
@@ -47,24 +60,24 @@ type Output struct {
 type Request struct {
 	docker.CommonArgs
 
-	Name       string         `json:"name"`
-	Tag        string         `json:"tag"`
-	Path       string         `json:"path"`
-	Dockerfile string         `json:"dockerfile"`
-	CacheFrom  StringList     `json:"cache_from"`
-	Pull       bool           `json:"pull"`
-	Network    string         `json:"network"`
-	NoCache    bool           `json:"nocache"`
-	EtcHosts   map[string]any `json:"etc_hosts"`
-	Args       map[string]any `json:"args"`
-	Target     string         `json:"target"`
-	Platform   StringList     `json:"platform"`
-	ShmSize    string         `json:"shm_size"`
-	Labels     map[string]any `json:"labels"`
-	Rebuild    string         `json:"rebuild"`
-	Secrets    []Secret       `json:"secrets"`
-	Outputs    []Output       `json:"outputs"`
-	DockerCLI  string         `json:"docker_cli"`
+	Name       string     `json:"name"`
+	Tag        string     `json:"tag"`
+	Path       string     `json:"path"`
+	Dockerfile string     `json:"dockerfile"`
+	CacheFrom  StringList `json:"cache_from"`
+	Pull       bool       `json:"pull"`
+	Network    string     `json:"network"`
+	NoCache    bool       `json:"nocache"`
+	EtcHosts   OptionMap  `json:"etc_hosts"`
+	Args       OptionMap  `json:"args"`
+	Target     string     `json:"target"`
+	Platform   StringList `json:"platform"`
+	ShmSize    string     `json:"shm_size"`
+	Labels     OptionMap  `json:"labels"`
+	Rebuild    string     `json:"rebuild"`
+	Secrets    []Secret   `json:"secrets"`
+	Outputs    []Output   `json:"outputs"`
+	DockerCLI  string     `json:"docker_cli"`
 }
 
 type Response struct {

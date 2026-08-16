@@ -256,10 +256,7 @@ func compareDestination(
 			return containerPath, false, err
 		}
 		equal := comparison.header.Typeflag == tar.TypeSymlink &&
-			comparison.header.Linkname == source.linkTarget &&
-			comparison.header.Mode&0xfff == source.mode&0xfff &&
-			comparison.header.Uid == ownerID &&
-			comparison.header.Gid == groupID
+			comparison.header.Linkname == source.linkTarget
 		addArchiveDestinationDiff(diff, containerPath, comparison, maxDiff)
 		return containerPath, !equal, nil
 	}
@@ -385,6 +382,8 @@ func addDestinationDiff(
 		diff["before"] = "(character device)"
 	case destination.mode&os.ModeDevice != 0:
 		diff["before"] = "(device)"
+	case destination.mode&os.ModeTemporary != 0:
+		diff["before"] = "(temporary file)"
 	case !destination.mode.IsRegular():
 		diff["before"] = "(unknown filesystem object)"
 	case destination.size > int64(maxDiff) && maxDiff > 0:

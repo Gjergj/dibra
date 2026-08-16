@@ -564,11 +564,5 @@ func networkMatches(desired Network, current any) bool {
 	if desired.MacAddress != "" && normalizeMACAddress(desired.MacAddress) != normalizeMACAddress(settings.MacAddress.String()) {
 		return false
 	}
-	if desired.DriverOpts != nil && !compareValues(desired.DriverOpts, settings.DriverOpts, "allow_more_present", "dict") {
-		return false
-	}
-	if desired.GWPriority != nil && *desired.GWPriority != settings.GwPriority {
-		return false
-	}
 	return true
 }

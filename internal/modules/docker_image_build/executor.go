@@ -374,15 +374,81 @@ func validateOutputs(outputs []Output) error {
 	return nil
 }
 
-func appendSortedMapArguments(command *[]string, option string, values map[string]any, separator string) {
+func appendSortedMapArguments(command *[]string, option string, values OptionMap, separator string) {
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		*command = append(*command, option, key+separator+fmt.Sprint(values[key]))
+		*command = append(*command, option, key+separator+dockerAPIOptionText(values[key], false))
 	}
+}
+
+func dockerAPIOptionText(value any, nested bool) string {
+	switch typed := value.(type) {
+	case nil:
+		return "None"
+	case string:
+		if nested {
+			return pythonOptionStringRepr(typed)
+		}
+		return typed
+	case bool:
+		if nested {
+			if typed {
+				return "True"
+			}
+			return "False"
+		}
+		return strconv.FormatBool(typed)
+	case json.Number:
+		return typed.String()
+	case float64:
+		text := strconv.FormatFloat(typed, 'g', -1, 64)
+		if !strings.ContainsAny(text, ".eE") {
+			text += ".0"
+		}
+		return text
+	case []any:
+		items := make([]string, len(typed))
+		for index, item := range typed {
+			items[index] = dockerAPIOptionText(item, true)
+		}
+		return "[" + strings.Join(items, ", ") + "]"
+	case map[string]any:
+		return pythonOptionMapText(typed)
+	case OptionMap:
+		return pythonOptionMapText(map[string]any(typed))
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
+func pythonOptionMapText(values map[string]any) string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	items := make([]string, 0, len(keys))
+	for _, key := range keys {
+		items = append(items, pythonOptionStringRepr(key)+": "+dockerAPIOptionText(values[key], true))
+	}
+	return "{" + strings.Join(items, ", ") + "}"
+}
+
+func pythonOptionStringRepr(value string) string {
+	quote := byte('\'')
+	if strings.Contains(value, "'") && !strings.Contains(value, `"`) {
+		quote = '"'
+	}
+	escaped := strings.ReplaceAll(value, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, "\n", `\n`)
+	escaped = strings.ReplaceAll(escaped, "\r", `\r`)
+	escaped = strings.ReplaceAll(escaped, "\t", `\t`)
+	escaped = strings.ReplaceAll(escaped, string(quote), `\`+string(quote))
+	return string(quote) + escaped + string(quote)
 }
 
 func outputParts(output Output) []string {

@@ -171,8 +171,9 @@ func TestPlaybook_DockerComposeV2Parity(t *testing.T) {
 		if second["changed"] != false && second["changed"] != nil {
 			t.Fatalf("build idempotent = %#v", second)
 		}
-		if result := runComposeV2(t, client, "build-always", project, "      state: present\n      build: always\n      ignore_build_events: true\n", ""); result == nil {
-			t.Fatal("build always failed")
+		buildAlwaysOutput := runComposeV2Output(t, project, "      state: present\n      build: always\n      ignore_build_events: true\n", "")
+		if !strings.Contains(buildAlwaysOutput, "FAILED") || !strings.Contains(buildAlwaysOutput, "No such image: sha256:") {
+			t.Fatalf("build always image-list failure = %s", buildAlwaysOutput)
 		}
 		runComposeV2(t, client, "build-cleanup", project, "      state: absent\n      remove_images: local\n", "")
 		if strings.TrimSpace(remoteExec(t, client, "docker images -q dibra-compose-v2-build:latest")) != "" {

@@ -177,3 +177,111 @@ func TestContextInfoNormalizesHTTPHost(t *testing.T) {
 		t.Fatalf("response = %#v", response)
 	}
 }
+
+func TestContextInfoAppliesPinnedEndpointDefaultsAndNullableDescription(t *testing.T) {
+	id := contextID("remote")
+	fileSystem := memoryFS{
+		home: "/home/user",
+		files: map[string]memoryFile{
+			"/home/user/.docker/contexts/meta/" + id + "/meta.json": {data: []byte(`{
+				"Name":"remote",
+				"Metadata":{"Description":null},
+				"Endpoints":{"docker":{}}
+			}`)},
+		},
+	}
+	response := ExecuteWithDependencies(Request{Name: "remote"}, contextDependencies(fileSystem, docker.StaticEnvironment{}))
+	if response.Failed || len(response.Contexts) != 1 {
+		t.Fatalf("response = %#v", response)
+	}
+	context := response.Contexts[0]
+	if context.Description != nil {
+		t.Fatalf("description = %#v, want nil", context.Description)
+	}
+	if context.Config["docker_host"] != defaultUnixSocket || context.Config["tls"] != true {
+		t.Fatalf("config = %#v", context.Config)
+	}
+}
+
+func TestContextInfoDiscoversPrefixedTLSFilesAndRequiresCertificatePair(t *testing.T) {
+	id := contextID("remote")
+	tlsDirectory := "/home/user/.docker/contexts/tls/" + id + "/docker"
+	fileSystem := memoryFS{
+		home: "/home/user",
+		files: map[string]memoryFile{
+			"/home/user/.docker/contexts/meta/" + id + "/meta.json": {data: []byte(`{
+				"Name":"remote",
+				"Metadata":{"Description":"Remote"},
+				"Endpoints":{"docker":{"Host":"tcp://daemon.example:2376","SkipTLSVerify":true}}
+			}`)},
+			tlsDirectory + "/ca-remote.crt":    {data: []byte("ca")},
+			tlsDirectory + "/cert-client.crt":  {data: []byte("cert")},
+			tlsDirectory + "/key-client.key":   {data: []byte("key")},
+			tlsDirectory + "/nested/ca.pem":    {data: []byte("ignored")},
+			tlsDirectory + "/nested/key.pem":   {data: []byte("ignored")},
+			tlsDirectory + "/unrelated.config": {data: []byte("ignored")},
+		},
+	}
+	response := ExecuteWithDependencies(Request{Name: "remote"}, contextDependencies(fileSystem, docker.StaticEnvironment{}))
+	if response.Failed || len(response.Contexts) != 1 {
+		t.Fatalf("response = %#v", response)
+	}
+	config := response.Contexts[0].Config
+	validateCerts, found := config["validate_certs"]
+	if config["ca_path"] != tlsDirectory+"/ca-remote.crt" ||
+		config["client_cert"] != tlsDirectory+"/cert-client.crt" ||
+		config["client_key"] != tlsDirectory+"/key-client.key" ||
+		!found ||
+		validateCerts != nil ||
+		config["tls"] != true {
+		t.Fatalf("config = %#v", config)
+	}
+
+	delete(fileSystem.files, tlsDirectory+"/key-client.key")
+	response = ExecuteWithDependencies(Request{Name: "remote"}, contextDependencies(fileSystem, docker.StaticEnvironment{}))
+	config = response.Contexts[0].Config
+	if _, found := config["client_cert"]; found {
+		t.Fatalf("unpaired client certificate leaked into config: %#v", config)
+	}
+	if _, found := config["client_key"]; found {
+		t.Fatalf("unpaired client key leaked into config: %#v", config)
+	}
+}
+
+func TestContextInfoValidatedTLSUsesTrueValidateCerts(t *testing.T) {
+	id := contextID("validated")
+	tlsDirectory := "/home/user/.docker/contexts/tls/" + id + "/docker"
+	fileSystem := memoryFS{
+		home: "/home/user",
+		files: map[string]memoryFile{
+			"/home/user/.docker/contexts/meta/" + id + "/meta.json": {data: []byte(`{
+				"Name":"validated",
+				"Metadata":{},
+				"Endpoints":{"docker":{"Host":"tcp://daemon.example:2376","SkipTLSVerify":false}}
+			}`)},
+			tlsDirectory + "/ca.pem": {data: []byte("ca")},
+		},
+	}
+	response := ExecuteWithDependencies(Request{Name: "validated"}, contextDependencies(fileSystem, docker.StaticEnvironment{}))
+	if response.Failed || response.Contexts[0].Config["validate_certs"] != true {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestContextInfoRejectsNonObjectEndpoint(t *testing.T) {
+	id := contextID("invalid")
+	fileSystem := memoryFS{
+		home: "/home/user",
+		files: map[string]memoryFile{
+			"/home/user/.docker/contexts/meta/" + id + "/meta.json": {data: []byte(`{
+				"Name":"invalid",
+				"Metadata":{},
+				"Endpoints":{"docker":null}
+			}`)},
+		},
+	}
+	response := ExecuteWithDependencies(Request{Name: "invalid"}, contextDependencies(fileSystem, docker.StaticEnvironment{}))
+	if !response.Failed || response.Msg == "" {
+		t.Fatalf("response = %#v", response)
+	}
+}

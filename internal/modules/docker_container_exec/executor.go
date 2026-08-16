@@ -64,7 +64,7 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 	execConfig := client.ExecCreateOptions{
 		User:         req.User,
 		Privileged:   req.Privileged,
-		TTY:          req.TTY,
+		TTY:          false,
 		AttachStdin:  stdin != "",
 		AttachStdout: true,
 		AttachStderr: true,

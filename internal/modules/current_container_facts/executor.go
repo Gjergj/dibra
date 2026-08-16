@@ -1,9 +1,11 @@
 package current_container_facts
 
 import (
+	"fmt"
 	"path"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 )
@@ -28,7 +30,10 @@ func Execute(req Request) Response {
 
 func ExecuteWithDependencies(_ Request, dependencies docker.Dependencies) Response {
 	dependencies = dependencies.Resolve()
-	containerID, containerType := detectContainer(dependencies.FileSystem)
+	containerID, containerType, err := detectContainer(dependencies.FileSystem)
+	if err != nil {
+		return Response{Failed: true, Msg: err.Error()}
+	}
 	return Response{
 		AnsibleFacts: map[string]any{
 			"ansible_module_running_in_container": containerID != "",
@@ -38,23 +43,28 @@ func ExecuteWithDependencies(_ Request, dependencies docker.Dependencies) Respon
 	}
 }
 
-func detectContainer(fileSystem docker.FileSystem) (string, string) {
-	if data, err := fileSystem.ReadFile("/proc/self/cpuset"); err == nil {
+func detectContainer(fileSystem docker.FileSystem) (string, string, error) {
+	if data, exists, err := readProcFile(fileSystem, "/proc/self/cpuset"); err != nil {
+		return "", "", err
+	} else if exists {
 		cgroupPath, cgroupName := path.Split(strings.TrimSpace(string(data)))
 		cgroupPath = strings.TrimSuffix(cgroupPath, "/")
 		switch cgroupPath {
 		case "/docker":
-			return cgroupName, "docker"
+			return cgroupName, "docker", nil
 		case "/azpl_job":
-			return cgroupName, "azure_pipelines"
+			return cgroupName, "azure_pipelines", nil
 		case "/actions_job":
-			return cgroupName, "github_actions"
+			return cgroupName, "github_actions", nil
 		}
 	}
 
-	data, err := fileSystem.ReadFile("/proc/self/mountinfo")
+	data, exists, err := readProcFile(fileSystem, "/proc/self/mountinfo")
 	if err != nil {
-		return "", ""
+		return "", "", err
+	}
+	if !exists {
+		return "", "", nil
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		parts := strings.Fields(line)
@@ -62,11 +72,26 @@ func detectContainer(fileSystem docker.FileSystem) (string, string) {
 			continue
 		}
 		if match := dockerHostnamePath.FindStringSubmatch(parts[3]); len(match) == 2 {
-			return match[1], "docker"
+			return match[1], "docker", nil
 		}
 		if match := podmanHostnamePath.FindStringSubmatch(parts[3]); len(match) == 2 {
-			return match[1], "podman"
+			return match[1], "podman", nil
 		}
 	}
-	return "", ""
+	return "", "", nil
+}
+
+func readProcFile(fileSystem docker.FileSystem, filename string) ([]byte, bool, error) {
+	if _, err := fileSystem.Stat(filename); err != nil {
+		// Python's os.path.exists() returns false for inaccessible paths.
+		return nil, false, nil
+	}
+	data, err := fileSystem.ReadFile(filename)
+	if err != nil {
+		return nil, true, fmt.Errorf("failed to read %s: %w", filename, err)
+	}
+	if !utf8.Valid(data) {
+		return nil, true, fmt.Errorf("failed to decode %s as UTF-8", filename)
+	}
+	return data, true, nil
 }

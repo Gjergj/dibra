@@ -198,18 +198,9 @@ func (manager *composeManager) run() Response {
 	}
 	images, imageErr := manager.listImages()
 	if imageErr != nil {
-		// Compose 5.4 bake rebuilds on Engine 29 can replace the image ID a
-		// still-running container references, so `compose images` fails even
-		// after a successful up. Keep the primary result in that case.
-		if !result.Failed && len(result.Containers) == 0 {
-			return *imageErr
-		}
-		if result.Images == nil {
-			result.Images = []any{}
-		}
-	} else {
-		result.Images = images
+		return *imageErr
 	}
+	result.Images = images
 	if !result.Failed {
 		if result.Stdout == "" {
 			result.Stdout = ""

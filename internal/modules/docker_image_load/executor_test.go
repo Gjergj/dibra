@@ -72,7 +72,7 @@ func archivePath(t *testing.T) string {
 }
 
 func TestLoadReturnsNamesRawInspectionsAndAlwaysChanges(t *testing.T) {
-	id := "sha256:aaaaaaaaaaaaaaaa"
+	id := "sha256:" + strings.Repeat("a", 64)
 	fake := &loadClient{
 		stream: `{"stream":"Loaded image: alpine:latest\n"}` + "\n" +
 			`{"status":"Loaded image ID: ` + id + `\n"}`,
@@ -156,5 +156,30 @@ func TestUntaggedLoadedNameWarnsAndRemainsInImageNames(t *testing.T) {
 	if response.Failed || !response.Changed || len(response.ImageNames) != 1 || len(response.Images) != 0 ||
 		len(response.Warnings) != 1 || !strings.Contains(response.Warnings[0], "neither ID nor has a tag") {
 		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestLoadedImageIDRecognitionMatchesPinnedUpstream(t *testing.T) {
+	valid := "sha256:" + strings.Repeat("aB", 32)
+	if !isImageID(valid) {
+		t.Fatalf("full canonical ID was not recognized: %s", valid)
+	}
+	for _, invalid := range []string{
+		strings.Repeat("a", 64),
+		"sha256:" + strings.Repeat("a", 12),
+		"SHA256:" + strings.Repeat("a", 64),
+		"sha256:" + strings.Repeat("g", 64),
+	} {
+		if isImageID(invalid) {
+			t.Errorf("isImageID(%q) = true", invalid)
+		}
+	}
+
+	bare := strings.Repeat("a", 64)
+	fake := &loadClient{stream: `{"stream":"Loaded image ID: ` + bare + `\n"}`}
+	response := ExecuteWithDependencies(Request{Path: archivePath(t)}, loadDependencies(fake))
+	if response.Failed || !response.Changed || len(response.ImageNames) != 1 ||
+		len(response.Images) != 0 || len(response.Warnings) != 1 || len(fake.inspected) != 0 {
+		t.Errorf("bare ID response = %#v inspected = %#v", response, fake.inspected)
 	}
 }

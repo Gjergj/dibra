@@ -302,6 +302,22 @@ func TestExecuteOmitsStdinAttachmentWhenStdinIsAbsent(t *testing.T) {
 	}
 }
 
+func TestExecuteKeepsTTYOnStartButNotExecCreate(t *testing.T) {
+	fake := &execClient{execID: "exec-tty"}
+	response := ExecuteWithDependencies(Request{
+		Container: "web",
+		Argv:      []string{"true"},
+		Detach:    true,
+		TTY:       true,
+	}, fakeDependencies(fake))
+	if response.Failed || !response.Changed {
+		t.Fatalf("ExecuteWithDependencies() = %#v", response)
+	}
+	if fake.createOptions.TTY || !fake.startOptions.TTY {
+		t.Fatalf("create TTY=%t start TTY=%t", fake.createOptions.TTY, fake.startOptions.TTY)
+	}
+}
+
 func TestExecuteStdinNewlineAndStripCombinations(t *testing.T) {
 	hello := "Hello world!"
 	tests := []struct {

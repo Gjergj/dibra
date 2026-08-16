@@ -87,7 +87,8 @@ func imageInspect(id string, tags ...string) client.ImageInspectResult {
 
 func imageDependencies(fake *imageClient) docker.Dependencies {
 	return docker.Dependencies{
-		Environment: docker.StaticEnvironment{},
+		Environment: docker.StaticEnvironment{"DOCKER_CONFIG": "/nonexistent/dibra-image-unit-test"},
+		FileSystem:  docker.OSFileSystem{},
 		NewClient:   func(docker.CommonArgs) (client.APIClient, error) { return fake, nil },
 	}
 }
@@ -248,7 +249,7 @@ func TestDockerConfigProvidesBuildAuthAndProxyArguments(t *testing.T) {
 		Environment: docker.StaticEnvironment{},
 		FileSystem:  fileSystem,
 	}
-	auth, err := dockerConfigAuthConfigs(Request{}, "registry.test/team/image:latest", dependencies)
+	auth, err := dockerConfigAuthConfigs(context.Background(), Request{}, "registry.test/team/image:latest", dependencies)
 	if err != nil {
 		t.Fatal(err)
 	}

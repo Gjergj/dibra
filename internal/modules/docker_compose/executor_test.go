@@ -432,7 +432,7 @@ func TestExecuteListsContainersAndImages(t *testing.T) {
 	}
 }
 
-func TestExecuteSuccessfulUpSurvivesMissingComposeImages(t *testing.T) {
+func TestExecuteFailsWhenComposeImagesFailsAfterSuccessfulUp(t *testing.T) {
 	runner := &scriptedCLI{results: map[string][]docker.CLIResult{
 		"up": {{Stderr: creatingEvent()}},
 		"ps": {{Stdout: []byte(`{"Name":"demo-web-1","Image":"app:latest","State":"running"}`)}},
@@ -445,11 +445,11 @@ func TestExecuteSuccessfulUpSurvivesMissingComposeImages(t *testing.T) {
 		ComposeCommonArgs: docker.ComposeCommonArgs{ProjectSrc: "/project"},
 		Build:             "always",
 	}, docker.Dependencies{FileSystem: newComposeFileSystem("/project"), CLIRunner: runner})
-	if response.Failed || !response.Changed || len(response.Containers) != 1 {
+	if !response.Failed || response.Changed || response.RC != 1 {
 		t.Fatalf("response = %#v", response)
 	}
-	if response.Images == nil {
-		t.Fatal("images should be an empty list")
+	if !strings.Contains(response.Cmd, " images --format json") || !strings.Contains(response.Stderr, "No such image") {
+		t.Fatalf("response = %#v", response)
 	}
 }
 

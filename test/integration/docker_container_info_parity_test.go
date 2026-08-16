@@ -62,6 +62,13 @@ func TestPlaybook_DockerContainerInfoParity(t *testing.T) {
 			t.Fatalf("present result = %#v", result)
 		}
 		assertContainerMatchesInspect(t, client, result, name)
+		second := runContainerInfo(t, client, "present-second", `
+      name: `+name+`
+`)
+		if second["changed"] != false || second["exists"] != true ||
+			!reflect.DeepEqual(result["container"], second["container"]) {
+			t.Fatalf("repeated inspection differs: first=%#v second=%#v", result, second)
+		}
 	})
 
 	t.Run("lookup by full ID", func(t *testing.T) {

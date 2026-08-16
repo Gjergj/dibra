@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"testing"
@@ -204,6 +205,8 @@ func TestPlaybook_DockerImagePushParity(t *testing.T) {
 		openRegistry = "127.0.0.1:5000"
 		authRegistry = "127.0.0.1:5001"
 		base         = "/tmp/dibra-image-push"
+		dockerConfig = "/root/.docker/config.json"
+		helperPath   = "/usr/local/bin/docker-credential-dibra-auth"
 	)
 	openImage := openRegistry + "/dibra/parity:latest"
 	authImage := authRegistry + "/dibra/parity:latest"
@@ -215,10 +218,19 @@ func TestPlaybook_DockerImagePushParity(t *testing.T) {
 	mustRemote(t, client, "docker pull alpine:latest >/dev/null && docker pull busybox:latest >/dev/null")
 	mustRemote(t, client, "docker pull registry:2 >/dev/null && docker run -d --name dibra-registry-open -p 5000:5000 registry:2 >/dev/null")
 	mustRemote(t, client, "for i in $(seq 1 30); do curl -fsS http://127.0.0.1:5000/v2/ >/dev/null && exit 0; sleep 1; done; exit 1")
+	hadDockerConfig := strings.TrimSpace(mustRemote(t, client, "test -f "+dockerConfig+" && echo yes || echo no")) == "yes"
+	if hadDockerConfig {
+		mustRemote(t, client, "cp "+dockerConfig+" "+base+"/config.backup")
+	}
 	defer func() {
-		mustRemote(t, client, "docker logout "+authRegistry+" >/dev/null 2>&1 || true")
 		mustRemote(t, client, "docker rm -f dibra-registry-open dibra-registry-auth >/dev/null 2>&1 || true")
 		mustRemote(t, client, "docker image rm -f "+openImage+" "+authImage+" "+checkImage+" "+authSource+" >/dev/null 2>&1 || true")
+		if hadDockerConfig {
+			mustRemote(t, client, "mkdir -p /root/.docker && cp "+base+"/config.backup "+dockerConfig)
+		} else {
+			mustRemote(t, client, "rm -f "+dockerConfig)
+		}
+		mustRemote(t, client, "rm -f "+helperPath)
 		mustRemote(t, client, "rm -rf "+base)
 	}()
 
@@ -330,7 +342,7 @@ func TestPlaybook_DockerImagePushParity(t *testing.T) {
 		mustRemote(t, client, "docker run --rm --entrypoint htpasswd httpd:2-alpine -Bbn testuser hunter2 > "+base+"/auth/htpasswd")
 		mustRemote(t, client, "docker run -d --name dibra-registry-auth -p 5001:5000 -v "+base+"/auth:/auth -e REGISTRY_AUTH=htpasswd -e REGISTRY_AUTH_HTPASSWD_REALM=Registry -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd registry:2 >/dev/null")
 		mustRemote(t, client, "for i in $(seq 1 30); do code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5001/v2/); test \"$code\" = 401 && exit 0; sleep 1; done; exit 1")
-		mustRemote(t, client, "docker logout "+authRegistry+" >/dev/null 2>&1 || true")
+		mustRemote(t, client, `mkdir -p /root/.docker && printf '%s\n' '{"auths":{}}' > `+dockerConfig)
 		mustRemote(t, client, "mkdir -p "+base+"/rootfs && printf auth-parity > "+base+"/rootfs/content && tar -C "+base+"/rootfs -cf "+base+"/rootfs.tar .")
 		mustRemote(t, client, "docker import "+base+"/rootfs.tar "+authSource+" >/dev/null && docker tag "+authSource+" "+authImage)
 
@@ -345,7 +357,29 @@ func TestPlaybook_DockerImagePushParity(t *testing.T) {
 			t.Fatalf("unauthenticated push output = %s", output)
 		}
 
-		mustRemote(t, client, "printf hunter2 | docker login "+authRegistry+" -u testuser --password-stdin >/dev/null")
+		helperScript := `#!/bin/sh
+set -eu
+case "$1" in
+  get)
+    server="$(cat)"
+    printf 'get %s\n' "$server" >> /tmp/dibra-image-push/helper.log
+    if [ "$server" != "127.0.0.1:5001" ]; then
+      echo "credentials not found" >&2
+      exit 1
+    fi
+    printf '{"Username":"testuser","Secret":"hunter2"}\n'
+    ;;
+  list)
+    printf '{"127.0.0.1:5001":"testuser"}\n'
+    ;;
+  *)
+    exit 2
+    ;;
+esac
+`
+		encodedHelper := base64.StdEncoding.EncodeToString([]byte(helperScript))
+		mustRemote(t, client, "printf '%s' '"+encodedHelper+"' | base64 -d > "+helperPath+" && chmod 0755 "+helperPath)
+		mustRemote(t, client, `printf '%s\n' '{"credHelpers":{"127.0.0.1:5001":"dibra-auth"}}' > `+dockerConfig)
 		first := runPush("auth-first", "      name: "+authImage+"\n")
 		if first["changed"] != true {
 			t.Fatalf("authenticated first push = %#v", first)
@@ -354,11 +388,14 @@ func TestPlaybook_DockerImagePushParity(t *testing.T) {
 		if second["changed"] != false {
 			t.Fatalf("authenticated repeat push = %#v", second)
 		}
+		if helperLog := mustRemote(t, client, "cat "+base+"/helper.log"); !strings.Contains(helperLog, "get "+authRegistry) {
+			t.Fatalf("credential helper was not used: %s", helperLog)
+		}
 	})
 
 	t.Run("authenticated registry pull uses config and preserves idempotency", func(t *testing.T) {
 		mustRemote(t, client, "docker image rm -f "+authImage+" >/dev/null 2>&1 || true")
-		mustRemote(t, client, "docker logout "+authRegistry+" >/dev/null 2>&1 || true")
+		mustRemote(t, client, `printf '%s\n' '{"auths":{}}' > `+dockerConfig)
 		unauthenticated := playbookHeader + `
   - name: Pull without registry credentials
     docker_image_pull:
@@ -370,7 +407,7 @@ func TestPlaybook_DockerImagePushParity(t *testing.T) {
 			t.Fatalf("unauthenticated pull output = %s", output)
 		}
 
-		mustRemote(t, client, "printf hunter2 | docker login "+authRegistry+" -u testuser --password-stdin >/dev/null")
+		mustRemote(t, client, `printf '%s\n' '{"credHelpers":{"127.0.0.1:5001":"dibra-auth"}}' > `+dockerConfig)
 		pullTemplate := writeResultTemplate(t, "authenticated_pull_result")
 		pullPath := base + "/authenticated-pull.json"
 		playbook := playbookHeader + `

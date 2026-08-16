@@ -3,6 +3,9 @@
 package integration
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"strings"
 	"testing"
 )
@@ -74,6 +77,44 @@ func TestPlaybook_DockerContextInfoParity(t *testing.T) {
 		context, _ := contexts[0].(map[string]any)
 		if context["current"] != true {
 			t.Fatalf("current context = %#v", context)
+		}
+	})
+
+	t.Run("named context preserves defaults nullable metadata and TLS discovery", func(t *testing.T) {
+		name := "dibra-context-tls"
+		sum := sha256.Sum256([]byte(name))
+		id := hex.EncodeToString(sum[:])
+		metaDirectory := "/root/.docker/contexts/meta/" + id
+		tlsDirectory := "/root/.docker/contexts/tls/" + id + "/docker"
+		metadata := `{"Name":"` + name + `","Metadata":{"Description":null},"Endpoints":{"docker":{}}}`
+		encodedMetadata := base64.StdEncoding.EncodeToString([]byte(metadata))
+		mustRemote(t, client, "mkdir -p "+metaDirectory+" "+tlsDirectory+
+			"; echo "+encodedMetadata+" | base64 -d > "+metaDirectory+"/meta.json"+
+			"; printf ca > "+tlsDirectory+"/ca-context.crt"+
+			"; printf cert > "+tlsDirectory+"/cert-context.crt"+
+			"; printf key > "+tlsDirectory+"/key-context.key")
+		defer mustRemote(t, client, "rm -rf "+metaDirectory+" /root/.docker/contexts/tls/"+id)
+
+		result := runInfo("named-tls", "      name: "+name+"\n")
+		contexts, _ := result["contexts"].([]any)
+		if len(contexts) != 1 {
+			t.Fatalf("contexts = %#v", result)
+		}
+		context, _ := contexts[0].(map[string]any)
+		if context["description"] != nil || context["meta_path"] != metaDirectory || context["tls_path"] != "/root/.docker/contexts/tls/"+id {
+			t.Fatalf("context = %#v", context)
+		}
+		config, _ := context["config"].(map[string]any)
+		if config["docker_host"] != "unix:///var/run/docker.sock" ||
+			config["tls"] != true ||
+			config["ca_path"] != tlsDirectory+"/ca-context.crt" ||
+			config["client_cert"] != tlsDirectory+"/cert-context.crt" ||
+			config["client_key"] != tlsDirectory+"/key-context.key" {
+			t.Fatalf("config = %#v", config)
+		}
+		validateCerts, found := config["validate_certs"]
+		if !found || validateCerts != nil {
+			t.Fatalf("validate_certs = %#v (found %t), config = %#v", validateCerts, found, config)
 		}
 	})
 

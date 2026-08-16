@@ -329,8 +329,21 @@ func TestContainerAndLocalSymlinkBehavior(t *testing.T) {
 		t.Fatalf("local symlink response = %#v, header=%#v", response, fake.header)
 	}
 
+	fake.addSymlink("/matching-link", "target", 0o600, 123, 456)
+	pathRequest.ContainerPath = "/matching-link"
+	pathRequest.Force = nil
+	puts := fake.puts
+	response = ExecuteWithDependenciesAndState(pathRequest, dependencies, executionState(false, true))
+	if response.Failed || response.Changed || fake.puts != puts {
+		t.Fatalf("matching symlink response = %#v, puts=%d", response, fake.puts)
+	}
+	if response.Diff["before"] != "target" || response.Diff["after"] != "target" {
+		t.Fatalf("matching symlink diff = %#v", response.Diff)
+	}
+
 	pathRequest.ContainerPath = "/copied-target"
 	pathRequest.LocalFollow = boolPointer(true)
+	pathRequest.Force = boolPointer(true)
 	response = ExecuteWithDependencies(pathRequest, dependencies)
 	if response.Failed || fake.header.Typeflag != tar.TypeReg || string(fake.data) != "local" || fake.header.Mode != 0o640 {
 		t.Fatalf("local follow response = %#v, header=%#v data=%q", response, fake.header, fake.data)
@@ -352,6 +365,16 @@ func TestBinaryLargeDiffAndArchiveErrors(t *testing.T) {
 	}
 	if _, ok := response.Diff["before"]; !ok {
 		t.Fatalf("canonical binary diff = %#v", response.Diff)
+	}
+
+	temporaryDiff := map[string]any{}
+	if err := addDestinationDiff(context.Background(), fake, "web", containerFile{
+		path: "/temporary", found: true, mode: os.ModeTemporary,
+	}, 1024, temporaryDiff, nil); err != nil {
+		t.Fatal(err)
+	}
+	if temporaryDiff["before"] != "(temporary file)" {
+		t.Fatalf("temporary diff = %#v", temporaryDiff)
 	}
 
 	large := strings.Repeat("x", 32)

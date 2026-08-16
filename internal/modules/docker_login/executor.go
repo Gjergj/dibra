@@ -63,17 +63,22 @@ func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependenci
 	if err != nil {
 		return failedResponse(fmt.Sprintf("failed to read config: %v", err))
 	}
-	if helper := credentialHelper(cfg, registryURL); helper != "" {
-		return failedResponse(fmt.Sprintf("credential helper %q is configured for this registry; docker_login cannot manage credentials stored in external helpers — use the Docker CLI or manage the helper directly", helper))
+	configJSON, err := json.Marshal(cfg)
+	if err != nil {
+		return failedResponse(fmt.Sprintf("failed to encode config: %v", err))
+	}
+	helper, helperConfigured, err := docker.CredentialHelperFromConfig(configJSON, registryURL)
+	if err != nil {
+		return failedResponse(err.Error())
 	}
 
 	if stateName == "absent" {
-		return logout(dependencies.FileSystem, cfg, configPath, registryURL, state.CheckMode)
+		return logout(ctx, dependencies, cfg, configPath, registryURL, state.CheckMode, helper, helperConfigured)
 	}
-	return login(ctx, req, dependencies.FileSystem, apiClient, cfg, configPath, registryURL, state.CheckMode)
+	return login(ctx, req, dependencies, apiClient, cfg, configPath, registryURL, state.CheckMode, helper, helperConfigured)
 }
 
-func login(ctx context.Context, req Request, fileSystem docker.FileSystem, apiClient client.APIClient, cfg map[string]any, configPath, registryURL string, checkMode bool) Response {
+func login(ctx context.Context, req Request, dependencies docker.Dependencies, apiClient client.APIClient, cfg map[string]any, configPath, registryURL string, checkMode bool, helper docker.CredentialHelper, helperConfigured bool) Response {
 	if req.Username == "" || req.Password == "" {
 		return failedResponse("username and password are required when state=present")
 	}
@@ -92,6 +97,22 @@ func login(ctx context.Context, req Request, fileSystem docker.FileSystem, apiCl
 		return failedResponse(fmt.Sprintf("encode login result: %v", err))
 	}
 
+	if helperConfigured {
+		current, found, err := helper.Get(ctx, dependencies)
+		if err != nil {
+			return failedResponse(err.Error())
+		}
+		if found && current.Username == req.Username && current.Password == req.Password && !req.reauthorize() {
+			return Response{LoginResult: result, Msg: "already logged in"}
+		}
+		if !checkMode {
+			if err := helper.Store(ctx, dependencies, req.Username, req.Password); err != nil {
+				return failedResponse(err.Error())
+			}
+		}
+		return Response{Changed: true, LoginResult: result, Msg: "login succeeded"}
+	}
+
 	auths := authsMap(cfg)
 	if matchingCredentials(auths, registryURL, req.Username, req.Password) && !req.reauthorize() {
 		return Response{LoginResult: result, Msg: "already logged in"}
@@ -100,14 +121,30 @@ func login(ctx context.Context, req Request, fileSystem docker.FileSystem, apiCl
 	if !checkMode {
 		auths[registryURL] = map[string]any{"auth": encodedAuth(req.Username, req.Password)}
 		cfg["auths"] = auths
-		if err := writeConfig(fileSystem, configPath, cfg); err != nil {
+		if err := writeConfig(dependencies.FileSystem, configPath, cfg); err != nil {
 			return failedResponse(fmt.Sprintf("failed to write config: %v", err))
 		}
 	}
 	return Response{Changed: true, LoginResult: result, Msg: "login succeeded"}
 }
 
-func logout(fileSystem docker.FileSystem, cfg map[string]any, configPath, registryURL string, checkMode bool) Response {
+func logout(ctx context.Context, dependencies docker.Dependencies, cfg map[string]any, configPath, registryURL string, checkMode bool, helper docker.CredentialHelper, helperConfigured bool) Response {
+	if helperConfigured {
+		_, found, err := helper.Get(ctx, dependencies)
+		if err != nil {
+			return failedResponse(err.Error())
+		}
+		if !found {
+			return Response{Msg: "not logged in"}
+		}
+		if !checkMode {
+			if err := helper.Erase(ctx, dependencies); err != nil {
+				return failedResponse(err.Error())
+			}
+		}
+		return Response{Changed: true, Msg: "logged out"}
+	}
+
 	auths := authsMap(cfg)
 	if !hasCredentials(auths, registryURL) {
 		return Response{Msg: "not logged in"}
@@ -115,7 +152,7 @@ func logout(fileSystem docker.FileSystem, cfg map[string]any, configPath, regist
 	if !checkMode {
 		delete(auths, registryURL)
 		cfg["auths"] = auths
-		if err := writeConfig(fileSystem, configPath, cfg); err != nil {
+		if err := writeConfig(dependencies.FileSystem, configPath, cfg); err != nil {
 			return failedResponse(fmt.Sprintf("failed to write config: %v", err))
 		}
 	}
@@ -202,18 +239,6 @@ func hasCredentials(auths map[string]any, registryURL string) bool {
 		return true
 	}
 	return len(object) > 0
-}
-
-func credentialHelper(cfg map[string]any, registryURL string) string {
-	if helpers, ok := cfg["credHelpers"].(map[string]any); ok {
-		if name, ok := helpers[registryURL].(string); ok && name != "" {
-			return name
-		}
-	}
-	if store, ok := cfg["credsStore"].(string); ok && store != "" {
-		return store
-	}
-	return ""
 }
 
 func encodedAuth(username, password string) string {

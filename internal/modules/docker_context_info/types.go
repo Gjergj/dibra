@@ -17,7 +17,7 @@ type Response struct {
 type ContextInfo struct {
 	Current     bool           `json:"current"`
 	Name        string         `json:"name"`
-	Description string         `json:"description"`
+	Description any            `json:"description"`
 	MetaPath    *string        `json:"meta_path"`
 	TLSPath     *string        `json:"tls_path"`
 	Config      map[string]any `json:"config"`

@@ -64,7 +64,8 @@ func pushInspect(id string) client.ImageInspectResult {
 
 func pushDependencies(fake *pushClient) docker.Dependencies {
 	return docker.Dependencies{
-		Environment: docker.StaticEnvironment{},
+		Environment: docker.StaticEnvironment{"DOCKER_CONFIG": "/nonexistent/dibra-image-push-unit-test"},
+		FileSystem:  docker.OSFileSystem{},
 		NewClient: func(docker.CommonArgs) (client.APIClient, error) {
 			return fake, nil
 		},

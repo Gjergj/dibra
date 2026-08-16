@@ -74,18 +74,30 @@ func TestPlaybook_DockerPluginParity(t *testing.T) {
 		if installed["changed"] != true {
 			t.Fatalf("install = %#v", installed)
 		}
+		if _, found := installed["actions"]; found {
+			t.Fatalf("regular present result must omit actions: %#v", installed)
+		}
 		pluginInfo, _ := installed["plugin"].(map[string]any)
 		name, _ := pluginInfo["Name"].(string)
 		if name != alias && name != alias+":latest" && name != plugin && name != plugin+":latest" {
 			t.Fatalf("plugin = %#v", pluginInfo)
 		}
 
-		idempotent, output := runPlugin("idempotent", "      plugin_name: "+plugin+"\n      alias: "+alias+"\n", "")
+		idempotent, output := runPlugin("idempotent", "      plugin_name: "+plugin+"\n      alias: "+alias+"\n      plugin_options:\n        DEBUG: \"0\"\n", "")
 		if idempotent == nil {
 			t.Fatalf("idempotent failed: %s", output)
 		}
 		if idempotent["changed"] != false {
 			t.Fatalf("idempotent = %#v", idempotent)
+		}
+
+		debugged, output := runPlugin("debug", "      plugin_name: "+plugin+"\n      alias: "+alias+"\n      plugin_options:\n        DEBUG: \"0\"\n      debug: true\n", "")
+		if debugged == nil {
+			t.Fatalf("debug failed: %s", output)
+		}
+		actions, found := debugged["actions"].([]any)
+		if !found || len(actions) != 0 {
+			t.Fatalf("debug actions = %#v", debugged)
 		}
 
 		enabled, output := runPlugin("enable", "      plugin_name: "+plugin+"\n      alias: "+alias+"\n      state: enable\n", "")

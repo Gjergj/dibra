@@ -1,16 +1,34 @@
 package docker_plugin
 
-import "github.com/gjergjiramku/dibra/internal/modules/docker"
+import (
+	"bytes"
+	"encoding/json"
+
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
+)
+
+type PluginOptions map[string]any
+
+func (options *PluginOptions) UnmarshalJSON(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var decoded map[string]any
+	if err := decoder.Decode(&decoded); err != nil {
+		return err
+	}
+	*options = decoded
+	return nil
+}
 
 type Request struct {
 	docker.CommonArgs
 
-	PluginName    string         `json:"plugin_name"`
-	State         string         `json:"state"`
-	Alias         string         `json:"alias"`
-	PluginOptions map[string]any `json:"plugin_options"`
-	ForceRemove   bool           `json:"force_remove"`
-	EnableTimeout int            `json:"enable_timeout"`
+	PluginName    string        `json:"plugin_name"`
+	State         string        `json:"state"`
+	Alias         string        `json:"alias"`
+	PluginOptions PluginOptions `json:"plugin_options"`
+	ForceRemove   bool          `json:"force_remove"`
+	EnableTimeout int           `json:"enable_timeout"`
 }
 
 func (request Request) preferredName() string {
@@ -30,6 +48,6 @@ type Response struct {
 	Failed  bool           `json:"failed"`
 	Msg     string         `json:"msg,omitempty"`
 	Plugin  map[string]any `json:"plugin,omitempty"`
-	Actions []string       `json:"actions,omitempty"`
+	Actions *[]string      `json:"actions,omitempty"`
 	Diff    *Diff          `json:"diff,omitempty"`
 }

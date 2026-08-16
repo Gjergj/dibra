@@ -101,9 +101,14 @@ func diskUsageFacts(ctx context.Context, cli client.APIClient, verbose bool) (ma
 	if err != nil {
 		return nil, err
 	}
+	buildCache, err := docker.InspectionSlice(result.BuildCache.Items)
+	if err != nil {
+		return nil, err
+	}
 	usage["Images"] = images
 	usage["Containers"] = containers
 	usage["Volumes"] = volumes
+	usage["BuildCache"] = buildCache
 	return usage, nil
 }
 

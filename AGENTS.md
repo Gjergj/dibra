@@ -295,17 +295,20 @@ executor.
 
 - `ParseImageReference`, `NormalizeImageReference`, and `JoinImageNameTag` own
   registry/path/tag/digest parsing and Docker Hub normalization.
-- `EncodeRegistryAuthForImage` and `RegistryAuthFromConfig` own Engine auth
-  headers and registry aliases. Credential-helper execution remains the Docker
-  CLI's responsibility.
+- `EncodeRegistryAuthForImage`, `ResolveRegistryAuthForImageContext`, and
+  `AllRegistryAuthConfigs` own Engine auth headers, registry aliases, inline
+  `auths`, `credsStore`, and per-registry `credHelpers`. Credential helpers
+  must run through the injected `CLIRunner`; per-registry helpers override the
+  global store, missing helper entries fall back to inline auth, and
+  `"<token>"` maps to an Engine identity token.
 - `DecodeJSONStream` and the specialized pull/build/load parsers must surface
   embedded `errorDetail` failures even when Docker omits the top-level `error`.
 - `ReadImageArchiveManifest` owns safe, non-extracting `manifest.json` parsing.
   Export idempotency compares image IDs and requested tags, not file existence.
 - `BuildPortBindings` expands ranges into individual Engine port keys. When
-  host and container ranges differ in length, only the shorter range is used;
-  a host range for one container port is preserved as Docker's
-  random-available range.
+ host and container ranges differ in length, the request fails with
+ `Port ranges don't match in length`; a host range for one container port is
+ preserved as Docker's random-available range.
 - `NormalizeIPAddress`, `NormalizeIPNetwork`, and
   `NormalizeEndpointAddress` own canonical IPv4/IPv6 and CIDR comparisons.
 
@@ -665,11 +668,13 @@ Important behavior:
 - `comparisons` controls strict, ignored, or allow-more-present comparisons.
   Re-creatable fields, live-update resource fields, image-derived defaults,
   endpoint reconciliation, check mode, and structured diff mode must remain
-  independently tested.
+  independently tested. Network `driver_opts` and `gw_priority` are sent when
+  creating or connecting an endpoint, but upstream does not reconcile those
+  fields on an existing endpoint, so they do not trigger a reconnect.
 - `state: present` may omit `image` when the named container already exists;
   creation still requires an image. Non-positive `healthy_wait_timeout`
   disables the timeout. Check/debug `actions` remain structured dictionaries,
-  and unequal published-port ranges truncate to the shorter range.
+ and unequal published-port ranges fail validation.
 - Container images may be names, digests, or full image IDs. Image IDs never
   trigger pulls. Pull policies, registry authentication, image/name/label
   mismatch policies, platform normalization, and image-derived environment,
@@ -680,6 +685,8 @@ Important behavior:
 - The `kernel_memory` argument is accepted and validated but a nonzero value
   fails explicitly on the Engine 29.7.2 baseline. Engine API 1.42 removed that
   field, and the pinned upstream test also excludes it on newer API versions.
+- Engine warnings from container create and update are returned in `warnings`
+  with the upstream `Docker warning: ` prefix.
 - The module uses the shared API connection and injected Docker dependencies.
   Never call the Docker CLI, construct a separate Moby client, or access the OS
   filesystem, environment, clock, or subprocesses directly from the executor.
@@ -912,9 +919,10 @@ contract. Canonical `registry_url` aliases `registry` and `url`. Canonical
 Username and password are required for `state: present`. The module always
 calls Engine `/auth`. Check mode authenticates but does not write
 `config.json`. Matching stored credentials without `reauthorize` are
-unchanged. Credentials are stored with mode 0600. If `credsStore` or
-`credHelpers` is set for the registry, the module fails: Dibra cannot manage
-helper-backed credentials. Successful logins return `login_result`.
+unchanged. Inline credentials are stored with mode 0600. When `credsStore` or
+`credHelpers` selects a helper for the registry, login uses its `get`/`store`
+protocol and logout uses `get`/`erase` without rewriting `config.json`.
+Successful logins return `login_result`.
 
 ### docker_plugin
 
@@ -933,8 +941,13 @@ contract. `plugin_name` is required. `state` is `present`, `absent`,
 Install uses `AcceptAllPermissions` and installs disabled, then applies
 `plugin_options`. Enable of a missing plugin installs then enables. Disable
 of a missing plugin fails with `Plugin not found: Plugin does not exist.`
-Check and diff modes are fully implemented. Enabling `vieux/sshfs` in
-integration requires `/dev/fuse`.
+Plugin option values use upstream's Python string forms (`True`, `False`, and
+an empty string for null). Comparison also preserves upstream's behavior:
+falsey and non-string requested values continue to count as different from
+Engine's string settings. For `state: present`, `actions` is omitted on a
+normal real run, but debug and check mode return it, including an empty list
+when no action occurred. Check and diff modes are fully implemented. Enabling
+`vieux/sshfs` in integration requires `/dev/fuse`.
 
 ### docker_swarm
 
@@ -1216,10 +1229,9 @@ Important behavior:
 - Check mode passes `--dry-run` and does not count a predicted pull as a
   container change. Diff mode is unsupported. Successful results return
   `actions` as `{what,id,status}` records plus raw Compose `containers` and
-  `images` lists. After a bake rebuild on Engine 29, `docker compose images`
-  can fail because the running container still references a replaced image
-  ID; the module keeps the successful `up` result and returns an empty
-  `images` list in that case.
+  `images` lists. If the secondary `docker compose images` query fails after
+  the state command, the module fails rather than suppressing the error,
+  matching upstream.
 - The module uses the shared CLI connection resolver and injected Docker
   dependencies. Never call `os/exec` or construct a Moby client from the
   executor.
@@ -1635,8 +1647,10 @@ containers use the pinned upstream error semantics. The shared API connection
 arguments, aliases, environment precedence, TLS behavior, and OpenSSH transport
 apply. As upstream documents, attached stdin does not work over TCP TLS because
 the TLS connection cannot half-close to deliver EOF without closing the read
-side. `privileged` remains a Dibra compatibility extension and is forwarded to
-the Engine exec-create request; it is not an upstream 5.2.2 option.
+side. The create request always uses `Tty: false`; the requested TTY value is
+applied to start/attach, matching upstream. `privileged` remains a Dibra
+compatibility extension and is forwarded to the Engine exec-create request; it
+is not an upstream 5.2.2 option.
 
 ### docker_container_copy_into
 
@@ -1668,8 +1682,10 @@ Important behavior:
   managed node where `dibra-agent` runs, not on the controller. `content`
   requires an explicit `mode` and can be decoded with `content_is_b64`.
 - Omitted `force` performs a complete content, filesystem-type, mode, UID, and
-  GID comparison. `force: true` always writes; `force: false` preserves any
-  existing destination without comparing it to the source.
+  GID comparison for regular files. A managed-node symlink is idempotent when
+  the destination is a symlink with the same target; upstream intentionally
+  ignores symlink mode and ownership. `force: true` always writes;
+  `force: false` preserves any existing destination without comparing it.
 - Omitted ownership is derived by executing `id` as the container's configured
   user. Stopped, paused, or minimal containers therefore require both
   `owner_id` and `group_id`; the two options must always be supplied together.
@@ -1683,7 +1699,8 @@ Important behavior:
 - Check mode performs all validation and comparisons without uploading an
   archive. Diff mode reports text before/after values and headers, and emits
   binary or size markers instead of content for binary files or files larger
-  than Ansible's 104448-byte diff threshold.
+  than Ansible's 104448-byte diff threshold. Temporary files use the upstream
+  `(temporary file)` marker.
 - Regular-file archives are streamed through the shared API client and all
   filesystem, environment, clock, and client effects use injected Docker
   dependencies. The module supports all shared API connection options.
@@ -1736,6 +1753,8 @@ Important behavior:
   image lookup but never runs a build.
 - Build arguments, hosts, labels, cache sources, target, network, pull,
   no-cache, shared-memory size, and one or more platforms map to buildx flags.
+  Non-string dictionary values use upstream's Python conversion: booleans are
+  lowercase, null becomes `None`, and nested lists/maps use Python-style text.
   `shm_size` is converted to bytes as upstream does.
 - Secrets support `file`, `env`, and sensitive inline `value` sources. Inline
   values are passed through a generated child-process environment variable and
@@ -1772,6 +1791,8 @@ contains the load stream text.
 Loading is intentionally non-idempotent: every successful invocation reports
 changed, even when the same archive is loaded repeatedly. Check mode and diff
 mode are unsupported; check mode skips execution before opening the archive.
+Only `sha256:` followed by exactly 64 hexadecimal characters is recognized as
+an image ID. Bare or short hashes follow upstream's name/tag or warning path.
 Missing files, invalid archives, embedded stream errors, and streams reporting
 no loaded images fail with the pinned upstream semantics. All shared API
 connection options and aliases apply.
@@ -2037,8 +2058,9 @@ Non-verbose lists use the upstream key subsets (`Id`/`Image`/`Command`/...
 for containers, `Id`/`RepoTags`/`Created`/`Size` for images, `Id`/`Driver`/
 `Name`/`Scope` for networks, `Driver`/`Name` for volumes). Verbose lists
 return the full Engine objects. Non-verbose `disk_usage` is `{LayersSize}`;
-verbose adds `Images`, `Containers`, and `Volumes` sequences. Filters accept
-strings or lists. Shared API connection arguments apply.
+verbose adds the complete legacy-compatible `Images`, `Containers`, `Volumes`,
+and `BuildCache` sequences. Filters accept strings or lists. Shared API
+connection arguments apply.
 
 ### docker_context_info
 
@@ -2061,7 +2083,13 @@ dependencies.
 `cli_context`, else `DOCKER_HOST` forces `default`, else `DOCKER_CONTEXT`,
 else `~/.docker/config.json` `currentContext`, else `default`. The synthetic
 default context has description `Current DOCKER_HOST based configuration`
-and null `meta_path`/`tls_path`. A missing named context fails.
+and null `meta_path`/`tls_path`. Named Docker endpoints with an omitted host
+default to the local Unix socket, while omitted `SkipTLSVerify` defaults to
+true as in the pinned Docker SDK context loader. TLS material is discovered by
+the `ca*`, `cert*`, and `key*` filename prefixes; client cert and key are
+returned only as a pair. A TLS context with skipped verification returns
+`validate_certs: null`, and nullable metadata such as `description` remains
+null rather than becoming an empty string. A missing named context fails.
 
 ### current_container_facts
 
@@ -2076,7 +2104,9 @@ read-only contract. There is no Docker connection. Facts are returned under
 
 Detection uses `/proc/self/cpuset` (`/docker`, `/azpl_job`, `/actions_job`)
 and falls back to `/proc/self/mountinfo` hostname paths for Docker versus
-Podman. Check mode is fully supported.
+Podman. Missing proc files are skipped. An existing proc file that cannot be
+read or decoded as UTF-8 fails the module, matching upstream instead of
+silently returning non-container facts. Check mode is fully supported.
 
 ### docker_swarm_info
 

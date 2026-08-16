@@ -332,11 +332,18 @@ func TestPlaybook_DockerImageBuildParity(t *testing.T) {
       pull: false
       labels:
         FOO: BAR
+        BOOL: true
+        LIST: [value, true, null]
+        NONE: null
         "this is a label": "this is the label's value"
 `)
 		assertBuildChanged(t, result, true)
 		labels := imageLabels(t, result.result)
-		if labels["FOO"] != "BAR" || labels["this is a label"] != "this is the label's value" {
+		if labels["FOO"] != "BAR" ||
+			labels["BOOL"] != "true" ||
+			labels["LIST"] != "['value', True, None]" ||
+			labels["NONE"] != "None" ||
+			labels["this is a label"] != "this is the label's value" {
 			t.Fatalf("labels = %#v", labels)
 		}
 		assertRawImageInspection(t, result.result["image"], dockerInspectImage(t, client, name))

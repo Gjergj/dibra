@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	"github.com/moby/moby/api/types/build"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/network"
@@ -137,6 +138,7 @@ func TestHostInfoDiskUsageNonVerboseIsLayersSizeOnly(t *testing.T) {
 				Items:     []image.Summary{{ID: "i1"}},
 			},
 			Containers: client.ContainersDiskUsage{Items: []container.Summary{{ID: "c1"}}},
+			BuildCache: client.BuildCacheDiskUsage{Items: []build.CacheRecord{{ID: "b1", Description: "build step", Size: 7}}},
 		},
 	}
 	response := ExecuteWithDependencies(Request{DiskUsage: true}, hostInfoDependencies(fake))
@@ -151,6 +153,10 @@ func TestHostInfoDiskUsageNonVerboseIsLayersSizeOnly(t *testing.T) {
 	images, _ := verbose.DiskUsage["Images"].([]map[string]any)
 	if len(images) != 1 || images[0]["Id"] != "i1" {
 		t.Fatalf("verbose disk usage = %#v", verbose.DiskUsage)
+	}
+	buildCache, _ := verbose.DiskUsage["BuildCache"].([]map[string]any)
+	if len(buildCache) != 1 || buildCache[0]["ID"] != "b1" || buildCache[0]["Description"] != "build step" {
+		t.Fatalf("verbose build cache = %#v", verbose.DiskUsage)
 	}
 }
 

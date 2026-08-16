@@ -309,6 +309,7 @@ type Response struct {
 	Status    *int64                 `json:"status,omitempty"`
 	Stdout    string                 `json:"stdout,omitempty"`
 	Stderr    string                 `json:"stderr,omitempty"`
+	Warnings  []string               `json:"warnings,omitempty"`
 	Diff      map[string]interface{} `json:"diff,omitempty"`
 	Actions   []map[string]any       `json:"actions,omitempty"`
 }

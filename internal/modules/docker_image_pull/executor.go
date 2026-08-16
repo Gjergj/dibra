@@ -85,7 +85,7 @@ func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependenci
 		return result
 	}
 
-	auth, err := docker.ResolveRegistryAuthForImage(reference.Reference, dependencies, false)
+	auth, err := docker.ResolveRegistryAuthForImageContext(ctx, reference.Reference, dependencies, false)
 	if err != nil {
 		return failedResponse(fmt.Sprintf("Error resolving registry authentication - %v", err))
 	}

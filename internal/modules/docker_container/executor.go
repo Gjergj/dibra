@@ -55,7 +55,11 @@ func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependenci
 	}
 	diff := docker.NewDiffBuilder()
 	actions := make([]map[string]any, 0)
+	warnings := make([]string, 0)
 	finish := func(response Response) Response {
+		if len(warnings) > 0 {
+			response.Warnings = append(append([]string{}, warnings...), response.Warnings...)
+		}
 		if state.DiffMode {
 			response.Diff = diff.DiffMap()
 		}
@@ -98,7 +102,7 @@ func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependenci
 		}
 	}
 
-	imageChanged, imageAction, response := ensureImage(ctx, cli, req, exists, state.CheckMode)
+	imageChanged, imageAction, response := ensureImage(ctx, cli, req, exists, state.CheckMode, dependencies)
 	if response.Failed {
 		return finish(response)
 	}
@@ -142,6 +146,7 @@ func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependenci
 		if created.Failed {
 			return finish(created)
 		}
+		warnings = append(warnings, created.Warnings...)
 		createdID := created.Container["Id"].(string)
 		if req.State == "started" || req.State == "healthy" {
 			actions = append(actions, map[string]any{"started": createdID})
@@ -222,6 +227,7 @@ func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependenci
 		if created.Failed {
 			return finish(created)
 		}
+		warnings = append(warnings, created.Warnings...)
 		createdID := created.Container["Id"].(string)
 		if req.State == "started" || req.State == "healthy" {
 			actions = append(actions, map[string]any{"started": createdID})
@@ -234,9 +240,11 @@ func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependenci
 		actions = append(actions, map[string]any{"updated": inspectResult.Container.ID})
 		changed = true
 		if !state.CheckMode {
-			if updateResponse := updateContainer(ctx, cli, inspectResult.Container.ID, req, desiredHost); updateResponse.Failed {
+			updateResponse := updateContainer(ctx, cli, inspectResult.Container.ID, req, desiredHost)
+			if updateResponse.Failed {
 				return finish(updateResponse)
 			}
+			warnings = append(warnings, updateResponse.Warnings...)
 		}
 	}
 	connect, disconnect, networkErr := networkDifferences(req, inspectResult.Container, diff)
@@ -275,7 +283,7 @@ func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependenci
 	return finish(lifecycle)
 }
 
-func ensureImage(ctx context.Context, cli client.APIClient, req Request, containerExists, checkMode bool) (bool, map[string]any, Response) {
+func ensureImage(ctx context.Context, cli client.APIClient, req Request, containerExists, checkMode bool, dependencies docker.Dependencies) (bool, map[string]any, Response) {
 	if req.Image == "" {
 		return false, nil, Response{}
 	}
@@ -311,7 +319,13 @@ func ensureImage(ctx context.Context, cli client.APIClient, req Request, contain
 		}
 		return true, action, Response{}
 	}
-	auth, authErr := docker.EncodeRegistryAuthForImage(req.Image, req.RegistryUsername, req.RegistryPassword)
+	var auth string
+	var authErr error
+	if req.RegistryUsername != "" || req.RegistryPassword != "" {
+		auth, authErr = docker.EncodeRegistryAuthForImage(req.Image, req.RegistryUsername, req.RegistryPassword)
+	} else {
+		auth, authErr = docker.ResolveRegistryAuthForImageContext(ctx, req.Image, dependencies, false)
+	}
 	if authErr != nil {
 		return false, nil, Response{Failed: true, Msg: docker.WrapError("resolve registry authentication", req.Image, authErr).Error()}
 	}
@@ -566,7 +580,12 @@ func createContainer(ctx context.Context, cli client.APIClient, req Request, con
 			return response
 		}
 	}
-	return Response{Changed: true, Msg: "container created", Container: map[string]interface{}{"Id": created.ID}}
+	return Response{
+		Changed:   true,
+		Msg:       "container created",
+		Container: map[string]interface{}{"Id": created.ID},
+		Warnings:  dockerWarnings(created.Warnings),
+	}
 }
 
 func updateContainer(ctx context.Context, cli client.APIClient, id string, req Request, desired *container.HostConfig) Response {
@@ -602,10 +621,22 @@ func updateContainer(ctx context.Context, cli client.APIClient, id string, req R
 	if req.RestartPolicy != "" {
 		options.RestartPolicy = &desired.RestartPolicy
 	}
-	if _, err := cli.ContainerUpdate(ctx, id, options); err != nil {
+	updated, err := cli.ContainerUpdate(ctx, id, options)
+	if err != nil {
 		return Response{Failed: true, Msg: docker.WrapError("update container", id, err).Error()}
 	}
-	return Response{Changed: true}
+	return Response{Changed: true, Warnings: dockerWarnings(updated.Warnings)}
+}
+
+func dockerWarnings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]string, len(values))
+	for index, value := range values {
+		result[index] = "Docker warning: " + value
+	}
+	return result
 }
 
 func applyNetworkChanges(ctx context.Context, cli client.APIClient, id string, connect []Network, disconnect []string) Response {

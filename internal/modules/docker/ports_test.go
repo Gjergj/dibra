@@ -97,6 +97,16 @@ func TestParsePortBinding(t *testing.T) {
 				Protocol:      "udp",
 			},
 		},
+		{
+			name:  "ipv6 without brackets",
+			input: "2001:abcd:ef00::2:1000:2000",
+			expected: PortBinding{
+				HostIP:        "2001:abcd:ef00::2",
+				HostPort:      "1000",
+				ContainerPort: "2000",
+				Protocol:      "tcp",
+			},
+		},
 		// Error cases
 		{
 			name:          "invalid protocol",
@@ -120,13 +130,19 @@ func TestParsePortBinding(t *testing.T) {
 			name:          "too many colons",
 			input:         "::1:8080:80:extra",
 			expectError:   true,
-			errorContains: "colon-separated parts",
+			errorContains: "invalid container port",
 		},
 		{
 			name:          "invalid port number",
 			input:         "99999:80",
 			expectError:   true,
 			errorContains: "port must be",
+		},
+		{
+			name:          "empty host port without host IP",
+			input:         ":80",
+			expectError:   true,
+			errorContains: "host port cannot be empty",
 		},
 		{
 			name:          "invalid port range",
@@ -268,17 +284,13 @@ func TestToNatPortMapExpandsRanges(t *testing.T) {
 	}
 }
 
-func TestExpandPortBindingUsesShorterMismatchedRange(t *testing.T) {
+func TestExpandPortBindingRejectsMismatchedRange(t *testing.T) {
 	for _, binding := range []PortBinding{
 		{HostPort: "1000-1001", ContainerPort: "2000-2002"},
 		{HostPort: "1000-1002", ContainerPort: "2000-2001"},
 	} {
-		got, err := ExpandPortBinding(binding)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(got) != 2 || got[0].HostPort != "1000" || got[0].ContainerPort != "2000" || got[1].HostPort != "1001" || got[1].ContainerPort != "2001" {
-			t.Fatalf("ExpandPortBinding(%#v) = %#v", binding, got)
+		if _, err := ExpandPortBinding(binding); err == nil || !containsString(err.Error(), "Port ranges don't match in length") {
+			t.Fatalf("ExpandPortBinding(%#v) error = %v", binding, err)
 		}
 	}
 }

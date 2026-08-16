@@ -2,7 +2,6 @@ package docker_image
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -378,7 +377,7 @@ func removeImage(ctx context.Context, cli client.APIClient, reference string, fo
 }
 
 func pullImage(ctx context.Context, cli client.APIClient, reference string, req Request, dependencies docker.Dependencies) (map[string]any, error) {
-	auth, err := registryAuth(reference, req, dependencies, false)
+	auth, err := registryAuth(ctx, reference, req, dependencies, false)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +437,7 @@ func buildImage(ctx context.Context, cli client.APIClient, reference string, req
 		ExtraHosts:  extraHosts(build.EtcHosts),
 		Target:      build.Target,
 	}
-	options.AuthConfigs, err = dockerConfigAuthConfigs(req, reference, dependencies)
+	options.AuthConfigs, err = dockerConfigAuthConfigs(ctx, req, reference, dependencies)
 	if err != nil {
 		return nil, "", fmt.Errorf("Error resolving registry authentication for build - %v", err)
 	}
@@ -617,7 +616,7 @@ func pushImage(ctx context.Context, cli client.APIClient, reference, actionName 
 	if checkMode {
 		return true, action, nil, nil
 	}
-	auth, err := registryAuth(reference, req, dependencies, true)
+	auth, err := registryAuth(ctx, reference, req, dependencies, true)
 	if err != nil {
 		return false, "", nil, err
 	}
@@ -649,46 +648,16 @@ func pushImage(ctx context.Context, cli client.APIClient, reference, actionName 
 	return changed, action, raw, nil
 }
 
-func dockerConfigAuthConfigs(req Request, reference string, dependencies docker.Dependencies) (map[string]registry.AuthConfig, error) {
+func dockerConfigAuthConfigs(ctx context.Context, req Request, reference string, dependencies docker.Dependencies) (map[string]registry.AuthConfig, error) {
 	result := map[string]registry.AuthConfig{}
 	data, found, err := dockerConfigBytes(dependencies)
 	if err != nil {
 		return nil, err
 	}
 	if found {
-		var config struct {
-			Auths map[string]struct {
-				Auth          string `json:"auth"`
-				Username      string `json:"username"`
-				Password      string `json:"password"`
-				IdentityToken string `json:"identitytoken"`
-				RegistryToken string `json:"registrytoken"`
-			} `json:"auths"`
-		}
-		if err := json.Unmarshal(data, &config); err != nil {
-			return nil, fmt.Errorf("decode Docker registry config: %w", err)
-		}
-		for server, entry := range config.Auths {
-			auth := registry.AuthConfig{
-				Username:      entry.Username,
-				Password:      entry.Password,
-				ServerAddress: server,
-				IdentityToken: entry.IdentityToken,
-				RegistryToken: entry.RegistryToken,
-			}
-			if auth.Username == "" && auth.Password == "" && entry.Auth != "" {
-				decoded, decodeErr := base64.StdEncoding.DecodeString(entry.Auth)
-				if decodeErr != nil {
-					return nil, fmt.Errorf("decode authentication for registry %s: %w", server, decodeErr)
-				}
-				username, password, ok := strings.Cut(string(decoded), ":")
-				if !ok {
-					return nil, fmt.Errorf("authentication for registry %s does not contain username and password", server)
-				}
-				auth.Username = username
-				auth.Password = password
-			}
-			result[server] = auth
+		result, err = docker.AllRegistryAuthConfigs(ctx, data, dependencies)
+		if err != nil {
+			return nil, err
 		}
 	}
 	if req.RegistryUsername != "" || req.RegistryPassword != "" {
@@ -705,27 +674,11 @@ func dockerConfigAuthConfigs(req Request, reference string, dependencies docker.
 	return result, nil
 }
 
-func registryAuth(reference string, req Request, dependencies docker.Dependencies, requireHeader bool) (string, error) {
+func registryAuth(ctx context.Context, reference string, req Request, dependencies docker.Dependencies, requireHeader bool) (string, error) {
 	if req.RegistryUsername != "" || req.RegistryPassword != "" {
 		return docker.EncodeRegistryAuthForImage(reference, req.RegistryUsername, req.RegistryPassword)
 	}
-	config, found, err := dockerConfigBytes(dependencies)
-	if err != nil {
-		return "", err
-	}
-	if found {
-		auth, authFound, authErr := docker.RegistryAuthFromConfig(config, reference)
-		if authErr != nil {
-			return "", authErr
-		}
-		if authFound {
-			return docker.EncodeRegistryAuthConfig(auth)
-		}
-	}
-	if requireHeader {
-		return base64.URLEncoding.EncodeToString([]byte("{}")), nil
-	}
-	return "", nil
+	return docker.ResolveRegistryAuthForImageContext(ctx, reference, dependencies, requireHeader)
 }
 
 func dockerConfigBytes(dependencies docker.Dependencies) ([]byte, bool, error) {

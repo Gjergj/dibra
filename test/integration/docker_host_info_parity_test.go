@@ -96,8 +96,10 @@ func TestPlaybook_DockerHostInfoParity(t *testing.T) {
 		}
 		verbose := runInfo("df-verbose", "      disk_usage: true\n      verbose_output: true\n")
 		verboseUsage, _ := verbose["disk_usage"].(map[string]any)
-		if _, found := verboseUsage["Images"]; !found {
-			t.Fatalf("verbose disk usage missing Images: %#v", verboseUsage)
+		for _, key := range []string{"LayersSize", "Images", "Containers", "Volumes", "BuildCache"} {
+			if _, found := verboseUsage[key]; !found {
+				t.Fatalf("verbose disk usage missing %s: %#v", key, verboseUsage)
+			}
 		}
 	})
 

@@ -2,7 +2,13 @@ package docker_container
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"io"
+	"iter"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -13,24 +19,43 @@ import (
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/api/types/jsonstream"
 	mounttypes "github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 )
 
 type fakeContainerClient struct {
 	client.APIClient
-	inspect    container.InspectResponse
-	inspectErr error
-	imageErr   error
-	removeErr  error
-	removed    int
-	logsCalled int
-	waitStatus int64
-	closed     bool
+	inspect     container.InspectResponse
+	inspectErr  error
+	imageErr    error
+	removeErr   error
+	removed     int
+	logsCalled  int
+	waitStatus  int64
+	closed      bool
+	pull        client.ImagePullOptions
+	create      client.ContainerCreateResult
+	update      client.ContainerUpdateResult
+	afterCreate *container.InspectResponse
 }
 
 func (fake *fakeContainerClient) ContainerInspect(_ context.Context, _ string, _ client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
 	return client.ContainerInspectResult{Container: fake.inspect}, fake.inspectErr
+}
+
+func (fake *fakeContainerClient) ContainerCreate(_ context.Context, _ client.ContainerCreateOptions) (client.ContainerCreateResult, error) {
+	if fake.afterCreate != nil {
+		fake.inspect = *fake.afterCreate
+		fake.inspectErr = nil
+	}
+	return fake.create, nil
+}
+
+func (fake *fakeContainerClient) ContainerUpdate(_ context.Context, _ string, _ client.ContainerUpdateOptions) (client.ContainerUpdateResult, error) {
+	return fake.update, nil
 }
 
 type recordingFileSystem struct {
@@ -76,6 +101,19 @@ func (fake *fakeContainerClient) ContainerLogs(_ context.Context, _ string, _ cl
 
 func (fake *fakeContainerClient) ImageInspect(_ context.Context, reference string, _ ...client.ImageInspectOption) (client.ImageInspectResult, error) {
 	return client.ImageInspectResult{InspectResponse: image.InspectResponse{ID: reference}}, fake.imageErr
+}
+
+type fakeContainerPullResponse struct{ io.ReadCloser }
+
+func (fakeContainerPullResponse) JSONMessages(context.Context) iter.Seq2[jsonstream.Message, error] {
+	return func(func(jsonstream.Message, error) bool) {}
+}
+
+func (fakeContainerPullResponse) Wait(context.Context) error { return nil }
+
+func (fake *fakeContainerClient) ImagePull(_ context.Context, _ string, options client.ImagePullOptions) (client.ImagePullResponse, error) {
+	fake.pull = options
+	return fakeContainerPullResponse{io.NopCloser(strings.NewReader("{}\n"))}, nil
 }
 
 func (fake *fakeContainerClient) Close() error {
@@ -282,6 +320,67 @@ func TestAbsentStateSkipsUnrelatedOptionParsing(t *testing.T) {
 	}
 }
 
+func TestNetworkMatchIgnoresDriverOptionsAndGatewayPriority(t *testing.T) {
+	priority := 100
+	desired := Network{
+		Name:       "app",
+		DriverOpts: map[string]string{"com.example.mode": "desired"},
+		GWPriority: &priority,
+	}
+	current := &network.EndpointSettings{
+		DriverOpts: map[string]string{"com.example.mode": "current"},
+		GwPriority: 50,
+	}
+	if !networkMatches(desired, current) {
+		t.Fatal("upstream does not reconcile driver_opts or gw_priority on an existing endpoint")
+	}
+}
+
+func TestCreateAndUpdateReturnEngineWarnings(t *testing.T) {
+	fake := &fakeContainerClient{
+		create: client.ContainerCreateResult{ID: "container-id", Warnings: []string{"create warning"}},
+		update: client.ContainerUpdateResult{Warnings: []string{"update warning"}},
+	}
+	created := createContainer(
+		context.Background(),
+		fake,
+		Request{Name: "web"},
+		&container.Config{},
+		&container.HostConfig{},
+	)
+	if created.Failed || !created.Changed || !reflect.DeepEqual(created.Warnings, []string{"Docker warning: create warning"}) {
+		t.Fatalf("create response = %#v", created)
+	}
+	updated := updateContainer(
+		context.Background(),
+		fake,
+		"container-id",
+		Request{},
+		&container.HostConfig{},
+	)
+	if updated.Failed || !updated.Changed || !reflect.DeepEqual(updated.Warnings, []string{"Docker warning: update warning"}) {
+		t.Fatalf("update response = %#v", updated)
+	}
+
+	fake.inspectErr = errdefs.ErrNotFound
+	fake.afterCreate = &container.InspectResponse{
+		ID:         "container-id",
+		Name:       "/web",
+		Config:     &container.Config{Image: "alpine"},
+		HostConfig: &container.HostConfig{},
+		State:      &container.State{Status: container.StateCreated},
+	}
+	response := ExecuteWithDependencies(Request{
+		Name: "web", Image: "alpine", State: "present", Pull: PullNever,
+	}, docker.Dependencies{
+		Environment: docker.StaticEnvironment{},
+		NewClient:   func(docker.CommonArgs) (client.APIClient, error) { return fake, nil },
+	})
+	if response.Failed || !reflect.DeepEqual(response.Warnings, []string{"Docker warning: create warning"}) {
+		t.Fatalf("execute response = %#v", response)
+	}
+}
+
 func TestPresentStateAllowsOmittedImageForExistingContainer(t *testing.T) {
 	request := normalizeDefaults(Request{Name: "web", State: "present"})
 	if err := validateRequest(request); err != nil {
@@ -359,7 +458,7 @@ func TestPlatformNormalizationMatchesUpstreamSinglePartForms(t *testing.T) {
 func TestImageIDIgnoresPullAlways(t *testing.T) {
 	fake := &fakeContainerClient{}
 	id := "sha256:" + strings.Repeat("a", 64)
-	changed, action, response := ensureImage(context.Background(), fake, normalizeDefaults(Request{Name: "web", Image: id, Pull: PullAlways}), false, false)
+	changed, action, response := ensureImage(context.Background(), fake, normalizeDefaults(Request{Name: "web", Image: id, Pull: PullAlways}), false, false, docker.Dependencies{})
 	if changed || action != nil || response.Failed {
 		t.Fatalf("image-ID pull result = changed %v, action %#v, response %#v", changed, action, response)
 	}
@@ -367,16 +466,46 @@ func TestImageIDIgnoresPullAlways(t *testing.T) {
 
 func TestCheckModePullActionsMatchPinnedUpstream(t *testing.T) {
 	missing := &fakeContainerClient{imageErr: errdefs.ErrNotFound.WithMessage("missing")}
-	changed, action, response := ensureImage(context.Background(), missing, normalizeDefaults(Request{Name: "web", Image: "alpine:latest"}), false, true)
+	changed, action, response := ensureImage(context.Background(), missing, normalizeDefaults(Request{Name: "web", Image: "alpine:latest"}), false, true, docker.Dependencies{})
 	if !changed || response.Failed || !reflect.DeepEqual(action, map[string]any{"pulled_image": "alpine:latest", "changed": true}) {
 		t.Fatalf("missing-image check result = changed %v, action %#v, response %#v", changed, action, response)
 	}
 	present := &fakeContainerClient{}
 	changed, action, response = ensureImage(context.Background(), present, normalizeDefaults(Request{
 		Name: "web", Image: "alpine:latest", Pull: PullAlways, PullCheckModeBehavior: "always",
-	}), true, true)
+	}), true, true, docker.Dependencies{})
 	if !changed || response.Failed || !reflect.DeepEqual(action, map[string]any{"pulled_image": "alpine:latest"}) {
 		t.Fatalf("always-pull check result = changed %v, action %#v, response %#v", changed, action, response)
+	}
+}
+
+func TestContainerPullReadsRegistryAuthenticationFromDockerConfig(t *testing.T) {
+	directory := t.TempDir()
+	credentials := base64.StdEncoding.EncodeToString([]byte("config-user:config-pass"))
+	if err := os.WriteFile(filepath.Join(directory, "config.json"), []byte(
+		`{"auths":{"registry.example.test:5000":{"auth":"`+credentials+`"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeContainerClient{imageErr: errdefs.ErrNotFound.WithMessage("missing")}
+	changed, _, response := ensureImage(context.Background(), fake, normalizeDefaults(Request{
+		Name: "web", Image: "registry.example.test:5000/team/app:latest",
+	}), false, false, docker.Dependencies{
+		Environment: docker.StaticEnvironment{"DOCKER_CONFIG": directory},
+		FileSystem:  docker.OSFileSystem{},
+	})
+	if response.Failed || !changed {
+		t.Fatalf("result = changed %v response %#v", changed, response)
+	}
+	raw, err := base64.URLEncoding.DecodeString(fake.pull.RegistryAuth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var auth registry.AuthConfig
+	if err := json.Unmarshal(raw, &auth); err != nil {
+		t.Fatal(err)
+	}
+	if auth.Username != "config-user" || auth.Password != "config-pass" {
+		t.Fatalf("auth = %#v", auth)
 	}
 }
 

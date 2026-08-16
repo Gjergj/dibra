@@ -109,6 +109,9 @@ func ParsePortBinding(spec string) (PortBinding, error) {
 			result.ContainerPort = parts[1]
 		} else {
 			// hostPort:containerPort
+			if parts[0] == "" {
+				return result, fmt.Errorf("invalid port %q: host port cannot be empty without a host IP", spec)
+			}
 			result.HostPort = parts[0]
 			result.ContainerPort = parts[1]
 		}
@@ -118,17 +121,22 @@ func ParsePortBinding(spec string) (PortBinding, error) {
 		}
 		// ip:hostPort:containerPort
 		ip := parts[0]
-		// Validate it's an IP, not a hostname
-		if ip != "" {
-			if net.ParseIP(ip) == nil {
-				return result, fmt.Errorf("bind addresses for published ports must be IPv4 or IPv6 addresses, not hostnames. Use the dig lookup to resolve hostnames. (Found hostname: %s)", ip)
-			}
+		if net.ParseIP(ip) == nil {
+			return result, fmt.Errorf("bind addresses for published ports must be IPv4 or IPv6 addresses, not hostnames. Use the dig lookup to resolve hostnames. (Found hostname: %s)", ip)
 		}
 		result.HostIP = ip
 		result.HostPort = parts[1]
 		result.ContainerPort = parts[2]
 	default:
-		return result, fmt.Errorf("invalid port description %q - expected 1 to 3 colon-separated parts, but got %d. Maybe you forgot to use square brackets ([...]) around an IPv6 address?", spec, len(parts))
+		// community.docker also accepts an unbracketed IPv6 host followed by
+		// host and container ports. Parse those two fields from the right.
+		ip := strings.Join(parts[:len(parts)-2], ":")
+		if net.ParseIP(ip) == nil {
+			return result, fmt.Errorf("invalid port description %q - expected a valid IPv6 address followed by host and container ports", spec)
+		}
+		result.HostIP = ip
+		result.HostPort = parts[len(parts)-2]
+		result.ContainerPort = parts[len(parts)-1]
 	}
 
 	// Validate container port
@@ -224,10 +232,10 @@ func BuildPortBindings(specs []string) (nat.PortMap, nat.PortSet, error) {
 	return ToNatPortMap(bindings)
 }
 
-// ExpandPortBinding expands container and host ranges. When both sides are
-// ranges, only the shorter length is used, matching community.docker's zip
-// semantics. A host range paired with one container port is preserved because
-// Docker treats it as a range from which it may select an available host port.
+// ExpandPortBinding expands container and host ranges. Paired ranges must have
+// equal lengths. A host range paired with one container port is preserved
+// because Docker treats it as a range from which it may select an available
+// host port.
 func ExpandPortBinding(binding PortBinding) ([]PortBinding, error) {
 	containerPorts, err := ExpandPortRange(binding.ContainerPort)
 	if err != nil {
@@ -242,10 +250,8 @@ func ExpandPortBinding(binding PortBinding) ([]PortBinding, error) {
 		}
 		if len(containerPorts) == 1 && len(hostPorts) > 1 {
 			hostPorts = []string{binding.HostPort}
-		} else if len(hostPorts) < len(containerPorts) {
-			containerPorts = containerPorts[:len(hostPorts)]
-		} else if len(containerPorts) < len(hostPorts) {
-			hostPorts = hostPorts[:len(containerPorts)]
+		} else if len(hostPorts) != len(containerPorts) {
+			return nil, fmt.Errorf("Port ranges don't match in length")
 		}
 	}
 

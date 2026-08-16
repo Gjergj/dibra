@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gjergjiramku/dibra/internal/execution"
@@ -47,35 +48,40 @@ func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependenci
 
 	ctx, cancel := docker.GetContextWithEnvironment(req.CommonArgs, dependencies.Environment)
 	defer cancel()
+	connection, _ := docker.ResolveConnectionWithEnvironment(req.CommonArgs, dependencies.Environment)
 
 	manager := &pluginManager{
-		req:        req,
-		stateName:  stateName,
-		checkMode:  state.CheckMode,
-		diffMode:   state.DiffMode,
-		cli:        cli,
-		ctx:        ctx,
-		before:     map[string]any{},
-		after:      map[string]any{},
-		pluginName: req.preferredName(),
+		req:          req,
+		stateName:    stateName,
+		checkMode:    state.CheckMode,
+		diffMode:     state.DiffMode,
+		debug:        connection.Debug,
+		cli:          cli,
+		ctx:          ctx,
+		dependencies: dependencies,
+		before:       map[string]any{},
+		after:        map[string]any{},
+		pluginName:   req.preferredName(),
 	}
 	return manager.run()
 }
 
 type pluginManager struct {
-	req        Request
-	stateName  string
-	checkMode  bool
-	diffMode   bool
-	cli        client.APIClient
-	ctx        context.Context
-	existing   map[string]any
-	plugin     map[string]any
-	before     map[string]any
-	after      map[string]any
-	actions    []string
-	changed    bool
-	pluginName string
+	req          Request
+	stateName    string
+	checkMode    bool
+	diffMode     bool
+	debug        bool
+	cli          client.APIClient
+	ctx          context.Context
+	dependencies docker.Dependencies
+	existing     map[string]any
+	plugin       map[string]any
+	before       map[string]any
+	after        map[string]any
+	actions      []string
+	changed      bool
+	pluginName   string
 }
 
 func (manager *pluginManager) run() Response {
@@ -105,8 +111,12 @@ func (manager *pluginManager) run() Response {
 	}
 
 	response := Response{Changed: manager.changed, Plugin: manager.plugin}
-	if manager.stateName != "present" || manager.checkMode {
-		response.Actions = manager.actions
+	if manager.stateName != "present" || manager.checkMode || manager.debug {
+		actions := manager.actions
+		if actions == nil {
+			actions = []string{}
+		}
+		response.Actions = &actions
 	}
 	if manager.diffMode {
 		response.Diff = &Diff{Before: manager.before, After: manager.after}
@@ -170,9 +180,14 @@ func (manager *pluginManager) install() error {
 		if err != nil {
 			return err
 		}
+		registryAuth, err := docker.ResolveRegistryAuthForImageContext(manager.ctx, manager.req.PluginName, manager.dependencies, false)
+		if err != nil {
+			return docker.WrapError("resolve registry authentication", manager.req.PluginName, err)
+		}
 		stream, err := manager.cli.PluginInstall(manager.ctx, manager.pluginName, client.PluginInstallOptions{
 			Disabled:             true,
 			AcceptAllPermissions: true,
+			RegistryAuth:         registryAuth,
 			RemoteRef:            manager.req.PluginName,
 			Args:                 args,
 		})
@@ -274,42 +289,136 @@ func (manager *pluginManager) refresh() error {
 	return nil
 }
 
-func prepareOptions(options map[string]any) ([]string, error) {
+func prepareOptions(options PluginOptions) ([]string, error) {
 	if len(options) == 0 {
 		return nil, nil
 	}
-	stringified, err := docker.StringifyAPIMap(options)
-	if err != nil {
-		return nil, err
-	}
-	keys := make([]string, 0, len(stringified))
-	for key := range stringified {
+	keys := make([]string, 0, len(options))
+	for key := range options {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	args := make([]string, 0, len(keys))
 	for _, key := range keys {
-		args = append(args, key+"="+stringified[key])
+		args = append(args, key+"="+pythonPluginOptionText(options[key], false))
 	}
 	return args, nil
 }
 
-func optionDifferences(requested map[string]any, existing map[string]any) map[string][2]any {
+func optionDifferences(requested PluginOptions, existing map[string]any) map[string][2]any {
 	if len(requested) == 0 {
 		return nil
 	}
-	stringified, err := docker.StringifyAPIMap(requested)
-	if err != nil {
-		return map[string][2]any{"plugin_options": {requested, nil}}
+	settings, found := existing["Settings"]
+	if !found || pythonFalsey(settings) {
+		return map[string][2]any{"plugin_options": {settings, requested}}
 	}
 	active := parseOptions(existing)
 	differences := map[string][2]any{}
-	for key, value := range stringified {
-		if active[key] != value {
-			differences["plugin_options."+key] = [2]any{active[key], value}
+	for key, value := range requested {
+		activeValue := active[key]
+		if (activeValue == "" && !pythonFalsey(value)) ||
+			pythonFalsey(value) ||
+			!pluginOptionEqualsExisting(value, activeValue) {
+			differences["plugin_options."+key] = [2]any{activeValue, value}
 		}
 	}
 	return differences
+}
+
+func pluginOptionEqualsExisting(requested any, existing string) bool {
+	value, ok := requested.(string)
+	return ok && value == existing
+}
+
+func pythonFalsey(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return true
+	case bool:
+		return !typed
+	case string:
+		return typed == ""
+	case json.Number:
+		number, err := typed.Float64()
+		return err == nil && number == 0
+	case float64:
+		return typed == 0
+	case []any:
+		return len(typed) == 0
+	case map[string]any:
+		return len(typed) == 0
+	case PluginOptions:
+		return len(typed) == 0
+	default:
+		return false
+	}
+}
+
+func pythonPluginOptionText(value any, nested bool) string {
+	switch typed := value.(type) {
+	case nil:
+		if nested {
+			return "None"
+		}
+		return ""
+	case string:
+		if nested {
+			return pythonStringRepr(typed)
+		}
+		return typed
+	case bool:
+		if typed {
+			return "True"
+		}
+		return "False"
+	case json.Number:
+		return typed.String()
+	case float64:
+		text := strconv.FormatFloat(typed, 'g', -1, 64)
+		if !strings.ContainsAny(text, ".eE") {
+			text += ".0"
+		}
+		return text
+	case []any:
+		items := make([]string, len(typed))
+		for index, item := range typed {
+			items[index] = pythonPluginOptionText(item, true)
+		}
+		return "[" + strings.Join(items, ", ") + "]"
+	case map[string]any:
+		return pythonPluginOptionMapText(typed)
+	case PluginOptions:
+		return pythonPluginOptionMapText(map[string]any(typed))
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
+func pythonPluginOptionMapText(values map[string]any) string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	items := make([]string, 0, len(keys))
+	for _, key := range keys {
+		items = append(items, pythonStringRepr(key)+": "+pythonPluginOptionText(values[key], true))
+	}
+	return "{" + strings.Join(items, ", ") + "}"
+}
+
+func pythonStringRepr(value string) string {
+	quote := byte('\'')
+	if strings.Contains(value, "'") && !strings.Contains(value, `"`) {
+		quote = '"'
+	}
+	escaped := strings.ReplaceAll(value, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, "\n", `\n`)
+	escaped = strings.ReplaceAll(escaped, "\r", `\r`)
+	escaped = strings.ReplaceAll(escaped, "\t", `\t`)
+	escaped = strings.ReplaceAll(escaped, string(quote), `\`+string(quote))
+	return string(quote) + escaped + string(quote)
 }
 
 func parseOptions(plugin map[string]any) map[string]string {

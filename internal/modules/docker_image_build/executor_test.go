@@ -2,6 +2,7 @@ package docker_image_build
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"slices"
@@ -223,6 +224,37 @@ func TestQuoteCSVMatchesUpstreamFieldQuoting(t *testing.T) {
 	for _, test := range tests {
 		if got := quoteCSV([]string{test.value}); got != test.expected {
 			t.Errorf("quoteCSV(%q) = %q, want %q", test.value, got, test.expected)
+		}
+	}
+}
+
+func TestBuildOptionValuesMatchUpstreamPythonConversion(t *testing.T) {
+	var request Request
+	if err := json.Unmarshal([]byte(`{
+		"args": {
+			"BOOL": true,
+			"FLOAT": 1.0,
+			"INTEGER": 1,
+			"LIST": ["value", true, null],
+			"MAP": {"enabled": false},
+			"NONE": null
+		}
+	}`), &request); err != nil {
+		t.Fatal(err)
+	}
+	command := []string{}
+	appendSortedMapArguments(&command, "--build-arg", request.Args, "=")
+	want := [][]string{
+		{"--build-arg", "BOOL=true"},
+		{"--build-arg", "FLOAT=1.0"},
+		{"--build-arg", "INTEGER=1"},
+		{"--build-arg", "LIST=['value', True, None]"},
+		{"--build-arg", "MAP={'enabled': False}"},
+		{"--build-arg", "NONE=None"},
+	}
+	for _, expected := range want {
+		if !containsSequence(command, expected) {
+			t.Errorf("command %q does not contain %q", command, expected)
 		}
 	}
 }

@@ -102,6 +102,9 @@ func TestPlaybook_DockerContainerCopyIntoParity(t *testing.T) {
 		skipped := success("file-force-false", forceFalse, "    diff: true\n")
 		assertCopyChanged(t, skipped, false)
 		assertCopyDiff(t, skipped, "Content 1\n", "Content 1\n")
+		if copyDiff(t, skipped)["after_header"] != "/file" {
+			t.Fatalf("force=false diff = %#v", copyDiff(t, skipped))
+		}
 		assertContainerFile(t, client, containerName, "/file", "Content 1\n", "644", "0", "0", "regular file")
 
 		modified := success("file-modify", fileArgs(root+"/file_2", "/file"), "    diff: true\n")
@@ -115,6 +118,16 @@ func TestPlaybook_DockerContainerCopyIntoParity(t *testing.T) {
 		assertCopyChanged(t, success("file-metadata", metadataArgs, ""), true)
 		assertCopyChanged(t, success("file-metadata-idempotent", metadataArgs, "    diff: true\n"), false)
 		assertContainerFile(t, client, containerName, "/file", "Content 2\nExtra line", "707", "12", "910", "regular file")
+		secondMetadataArgs := fileArgs(root+"/file_2", "/file") +
+			"      mode: \"0707\"\n      mode_parse: modern\n" +
+			"      owner_id: 13\n      group_id: 13\n"
+		assertCopyChanged(t, success("file-metadata-second", secondMetadataArgs, ""), true)
+		assertCopyChanged(t, success("file-metadata-second-idempotent", secondMetadataArgs, "    diff: true\n"), false)
+		assertContainerFile(t, client, containerName, "/file", "Content 2\nExtra line", "707", "13", "13", "regular file")
+		noDiff := success("file-diff-disabled", secondMetadataArgs, "")
+		if _, found := noDiff["diff"]; found {
+			t.Fatalf("diff disabled result = %#v", noDiff)
+		}
 
 		mustRemote(t, client, "docker exec "+containerName+" mkdir -p /replace-dir")
 		directory := success("file-directory", fileArgs(root+"/file_1", "/replace-dir"), "    check_mode: true\n    diff: true\n")
@@ -218,6 +231,8 @@ func TestPlaybook_DockerContainerCopyIntoParity(t *testing.T) {
 			t.Fatalf("copied local symlink target = %q", got)
 		}
 		assertCopyChanged(t, success("local-link-idempotent", localLink, "    diff: true\n"), false)
+		mustRemote(t, client, "docker exec "+containerName+" chown -h 123:321 /local-link")
+		assertCopyChanged(t, success("local-link-metadata-ignored", localLink, "    check_mode: true\n    diff: true\n"), false)
 
 		localFollow := fileArgs(root+"/link_1", "/local-target") +
 			"      local_follow: true\n      owner_id: 0\n      group_id: 0\n"

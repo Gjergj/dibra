@@ -106,12 +106,15 @@ func inspectionMap(value client.ImageInspectResult) (map[string]any, error) {
 }
 
 func isImageID(value string) bool {
-	trimmed := strings.TrimPrefix(strings.ToLower(value), "sha256:")
-	if len(trimmed) < 12 || len(trimmed) > 64 {
+	if !strings.HasPrefix(value, "sha256:") {
 		return false
 	}
-	for _, character := range trimmed {
-		if character < '0' || character > '9' && character < 'a' || character > 'f' {
+	hash := strings.TrimPrefix(value, "sha256:")
+	if len(hash) != 64 {
+		return false
+	}
+	for _, character := range hash {
+		if character < '0' || character > '9' && character < 'A' || character > 'F' && character < 'a' || character > 'f' {
 			return false
 		}
 	}

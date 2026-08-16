@@ -785,9 +785,8 @@ func TestPlaybook_DockerContainerPullPolicy(t *testing.T) {
 	}
 }
 
-// Mirrors community.docker's host/container range scenarios, including its
-// shorter-range truncation, and proves that Docker receives individual
-// exposed-port keys (required by current Engine versions).
+// Mirrors community.docker's host/container range validation and proves that
+// Docker receives individual exposed-port keys for matching ranges.
 func TestPlaybook_DockerContainerPortRangeExpansion(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
@@ -796,8 +795,8 @@ func TestPlaybook_DockerContainerPortRangeExpansion(t *testing.T) {
 	remoteExec(t, client, "docker rm -f "+containerName+" 2>/dev/null || true")
 	defer remoteExec(t, client, "docker rm -f "+containerName+" 2>/dev/null || true")
 
-	playbook := playbookHeader + `
-  - name: Publish differently sized port ranges
+	mismatched := playbookHeader + `
+  - name: Reject differently sized port ranges
     community.docker.docker_container:
       name: ` + containerName + `
       image: alpine:latest
@@ -806,18 +805,33 @@ func TestPlaybook_DockerContainerPortRangeExpansion(t *testing.T) {
       ports:
         - "127.0.0.1:48100-48102:80-81/tcp"
 `
-	output := runPlaybook(t, playbook)
+	output := runPlaybook(t, mismatched)
+	if !strings.Contains(output, "FAILED") || !strings.Contains(output, "Port ranges don't match in length") {
+		t.Fatalf("mismatched port ranges were not rejected: %s", output)
+	}
+	if exists := remoteExec(t, client, "docker inspect "+containerName+" >/dev/null 2>&1 && echo present || echo absent"); !strings.Contains(exists, "absent") {
+		t.Fatalf("mismatched port ranges created a container: %s", exists)
+	}
+
+	playbook := playbookHeader + `
+  - name: Publish matching port ranges
+    community.docker.docker_container:
+      name: ` + containerName + `
+      image: alpine:latest
+      state: started
+      command: ["sleep", "60"]
+      published_ports:
+        - "127.0.0.1:48100-48101:80-81/tcp"
+`
+	output = runPlaybook(t, playbook)
 	if strings.Contains(output, "FAILED") {
-		t.Fatalf("Port-range create failed: %s", output)
+		t.Fatalf("matching port-range create failed: %s", output)
 	}
 	bindings := remoteExec(t, client, "docker inspect --format '{{json .HostConfig.PortBindings}}' "+containerName)
 	for _, expected := range []string{"80/tcp", "81/tcp", "48100", "48101"} {
 		if !strings.Contains(bindings, expected) {
 			t.Errorf("Port bindings %s do not contain %q", bindings, expected)
 		}
-	}
-	if strings.Contains(bindings, "48102") {
-		t.Errorf("Port bindings did not truncate to the shorter range: %s", bindings)
 	}
 
 	output = runPlaybook(t, playbook)
