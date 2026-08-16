@@ -89,7 +89,7 @@ make test-docker-compose-integration
 # Run that lane with the integration container already running
 make test-docker-compose-integration-only
 
-# Run the Engine 29.7.2 Swarm node/service/config/secret certification lane
+# Run the Engine 29.7.2 Swarm node/service/config/secret/stack certification lane
 make test-docker-swarm-integration
 
 # Run that lane with the integration container already running
@@ -1530,6 +1530,72 @@ Important behavior:
   environment dependencies.
 
 Run `make test-docker-swarm-integration` for the Engine 29.7.2 stack lane.
+
+### docker_stack_info
+
+Implements the pinned `community.docker.docker_stack_info` 5.2.2 CLI contract
+through the installed Docker CLI. This is a read-only CLI-backed module; it
+does not use the Engine API.
+
+```yaml
+- name: List stacks
+  docker_stack_info:
+  register: result
+```
+
+Important behavior:
+
+- There are no module-specific options. Shared CLI connection arguments and
+  aliases apply, including `docker_cli`, `docker_host`/`docker_url`,
+  `cli_context`, TLS options, and `api_version`.
+- The module runs `docker stack ls --format={{json .}}` and returns `results`
+  as a list of dictionaries with Docker's original PascalCase keys. Upstream
+  asserts `Name` and `Services`; `Services` is a string. Engine 29's CLI JSON
+  includes those two fields and may omit empty `Namespace`/`Orchestrator`
+  keys. Docs samples that use lowercase keys are not the CLI output.
+- Successful results always include `results` (an empty list when no stacks
+  exist), `rc`, `stdout`, and `stderr`, and always report `changed: false`.
+- Off-swarm and worker hosts fail with Docker's
+  `Error response from daemon: This node is not a swarm manager` message.
+- Check mode is fully implemented and does not skip execution. Diff mode is
+  not applicable. The module uses injected Docker CLI and environment
+  dependencies.
+
+Run `make test-docker-swarm-integration` for the Engine 29.7.2 stack info lane.
+
+### docker_stack_task_info
+
+Implements the pinned `community.docker.docker_stack_task_info` 5.2.2 CLI
+contract through the installed Docker CLI. This is a read-only CLI-backed
+module; it does not use the Engine API.
+
+```yaml
+- name: List tasks for a stack
+  docker_stack_task_info:
+    name: mystack
+  register: result
+```
+
+Important behavior:
+
+- `name` is required and selects the stack. Shared CLI connection arguments
+  and aliases apply, including `docker_cli`, `docker_host`/`docker_url`,
+  `cli_context`, TLS options, and `api_version`.
+- The module runs `docker stack ps {name} --format={{json .}}` and returns
+  `results` as a list of dictionaries with Docker's original PascalCase keys.
+  Upstream asserts `DesiredState`, `Image`, and `Name` (`{stack}_{service}.1`).
+  Engine 29's CLI JSON also includes `ID`, `CurrentState`, `Node`, `Error`,
+  and `Ports`. Docs samples that use lowercase keys are not the CLI output.
+- Successful results always include `results`, `rc`, `stdout`, and `stderr`,
+  and always report `changed: false`.
+- Off-swarm hosts fail with Docker's
+  `Error response from daemon: This node is not a swarm manager` message.
+  A missing stack fails with Docker's `nothing found in stack` message.
+- Check mode is fully implemented and does not skip execution. Diff mode is
+  not applicable. The module uses injected Docker CLI and environment
+  dependencies.
+
+Run `make test-docker-swarm-integration` for the Engine 29.7.2 stack task info lane.
 
 ### docker_container_exec
 
@@ -5021,6 +5087,8 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_DockerConfigHashIdempotency` | Config hash-based idempotency, label-only updates (Phase 7.3) |
 | `TestPlaybook_DockerConfigParity` | Swarm config parity: data/data_src/base64, ansible_key, rolling versions, versions_to_keep, template_driver, check mode, labels, force, in-use rotation |
 | `TestPlaybook_DockerStackParity` | Swarm stack parity: compose paths/dicts, absent retries, prune, detach, docker_cli, stack_spec_diff, check-mode skip |
+| `TestPlaybook_DockerStackInfoParity` | Swarm stack info parity: off-swarm failure, empty list, Name/Services, multiple stacks, docker_cli, check/diff, idempotency |
+| `TestPlaybook_DockerStackTaskInfoParity` | Swarm stack task info parity: required name, off-swarm failure, missing stack, DesiredState/Image/Name, two services, docker_cli, check/diff, idempotency |
 | `TestPlaybook_DockerVolumePrune` | Prune filter improvements (Phase 7.2) |
 | `TestPlaybook_Find` | Find module: recursive/non-recursive search, glob/regex patterns, excludes, file_type (file/directory/link/any), age/size filters, hidden files, symlinks, depth limit, mode filtering, checksum algorithms, contains content matching, multiple paths, limit, path/pattern/exclude aliases, template variables, idempotency |
 | `TestPlaybook_Register` | Register keyword: basic shell register, register on failure, overwrite, command module, ping module-specific fields, stdout_lines access, chained registers, file/copy/tempfile module fields, multiple modules, idempotency tracking, template expressions with registered vars, include_tasks/import_tasks boundary, invalid variable names (numeric, hyphen, space), underscore prefix, no side effects without register, rerun idempotency |

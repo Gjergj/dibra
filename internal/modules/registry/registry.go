@@ -42,6 +42,8 @@ import (
 	"github.com/gjergjiramku/dibra/internal/modules/docker_prune"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_secret"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_stack"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_stack_info"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_stack_task_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_swarm"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_swarm_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_swarm_service"
@@ -134,6 +136,8 @@ var definitions = []Definition{
 	stateModule("docker_secret", Capabilities{SupportFull, SupportNone}, sensitivity("data"), normalizeDockerAPIArguments, docker_secret.ExecuteWithState),
 	stateModule("docker_config", Capabilities{SupportFull, SupportNone}, sensitivity("data"), normalizeDockerAPIArguments, docker_config.ExecuteWithState),
 	moduleWithAliases("docker_stack", []string{"docker_stack"}, Capabilities{SupportNone, SupportNone}, sensitivity(), normalizeDockerAPIArguments, docker_stack.Execute),
+	readOnlyModuleWithNormalizer("docker_stack_info", sensitivity(), normalizeDockerAPIArguments, docker_stack_info.Execute),
+	readOnlyModuleWithNormalizer("docker_stack_task_info", sensitivity(), normalizeDockerAPIArguments, docker_stack_task_info.Execute),
 	moduleWithAliases("docker_container_exec", []string{"docker_container_exec"}, Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), normalizeDockerContainerExecArguments, docker_container_exec.Execute),
 	stateModule("docker_container_copy_into", Capabilities{SupportFull, SupportFull}, sensitivity("content"), normalizeDockerAPIArguments, docker_container_copy_into.ExecuteWithState),
 	stateModule("docker_image_build", Capabilities{SupportFull, SupportNone}, sensitivity("args", "secrets.value"), normalizeDockerAPIArguments, docker_image_build.ExecuteWithState),

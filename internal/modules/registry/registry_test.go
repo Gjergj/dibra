@@ -29,13 +29,15 @@ import (
 	"github.com/gjergjiramku/dibra/internal/modules/docker_node_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_prune"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_stack"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_stack_info"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_stack_task_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_swarm_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_volume"
 )
 
 func TestDefinitionsAreCompleteAndResolvable(t *testing.T) {
 	entries := Definitions()
-	if got, want := len(entries), 36; got != want {
+	if got, want := len(entries), 38; got != want {
 		t.Fatalf("Definitions() has %d entries, want %d", got, want)
 	}
 
@@ -394,6 +396,8 @@ func TestModulesWithImplementedCheckModeAreDeclared(t *testing.T) {
 		"docker_swarm_info":          true,
 		"docker_swarm_service_info":  true,
 		"docker_node_info":           true,
+		"docker_stack_info":          true,
+		"docker_stack_task_info":     true,
 	}
 	for _, definition := range Definitions() {
 		want := implemented[definition.ShortName()]
@@ -889,6 +893,8 @@ func TestCapabilitiesMatchUpstreamDeclarations(t *testing.T) {
 		"docker_swarm_info":          {SupportFull, SupportNA},
 		"docker_swarm_service_info":  {SupportFull, SupportNA},
 		"docker_node_info":           {SupportFull, SupportNA},
+		"docker_stack_info":          {SupportFull, SupportNA},
+		"docker_stack_task_info":     {SupportFull, SupportNA},
 	}
 	for name, want := range expected {
 		definition, ok := Lookup(name)
@@ -1145,5 +1151,73 @@ func TestDockerStackDecode(t *testing.T) {
 	alias := aliasInvocation.Arguments.(docker_stack.Request)
 	if alias.ComposeFile != "/opt/stack.yml" {
 		t.Fatalf("compose_file alias = %#v", alias)
+	}
+}
+
+func TestDockerStackInfoDecode(t *testing.T) {
+	invocation, err := Decode("community.docker.docker_stack_info", json.RawMessage(`{
+		"docker_cli":"/usr/bin/docker",
+		"docker_url":"unix:///run/docker.sock",
+		"api_version":"1.48",
+		"tls":true,
+		"validate_certs":true
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := invocation.Arguments.(docker_stack_info.Request)
+	if request.DockerCLI != "/usr/bin/docker" {
+		t.Fatalf("docker_cli = %#v", request.DockerCLI)
+	}
+	if request.DockerHost == nil || *request.DockerHost != "unix:///run/docker.sock" {
+		t.Fatalf("docker_host = %#v", request.DockerHost)
+	}
+	if request.APIVersion == nil || *request.APIVersion != "1.48" || request.TLS == nil || !*request.TLS {
+		t.Fatalf("connection = %#v", request)
+	}
+	if request.ValidateCerts == nil || !*request.ValidateCerts {
+		t.Fatalf("validate_certs = %#v", request.ValidateCerts)
+	}
+
+	short, err := Decode("docker_stack_info", json.RawMessage(`{"cli_context":"desktop-linux"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias := short.Arguments.(docker_stack_info.Request)
+	if alias.CLIContext == nil || *alias.CLIContext != "desktop-linux" {
+		t.Fatalf("cli_context = %#v", alias)
+	}
+}
+
+func TestDockerStackTaskInfoDecode(t *testing.T) {
+	invocation, err := Decode("community.docker.docker_stack_task_info", json.RawMessage(`{
+		"name":"test_stack",
+		"docker_cli":"/usr/bin/docker",
+		"docker_url":"unix:///run/docker.sock",
+		"api_version":"1.48",
+		"tls":true,
+		"validate_certs":true
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := invocation.Arguments.(docker_stack_task_info.Request)
+	if request.Name != "test_stack" || request.DockerCLI != "/usr/bin/docker" {
+		t.Fatalf("request = %#v", request)
+	}
+	if request.DockerHost == nil || *request.DockerHost != "unix:///run/docker.sock" {
+		t.Fatalf("docker_host = %#v", request.DockerHost)
+	}
+	if request.APIVersion == nil || *request.APIVersion != "1.48" || request.TLS == nil || !*request.TLS {
+		t.Fatalf("connection = %#v", request)
+	}
+
+	short, err := Decode("docker_stack_task_info", json.RawMessage(`{"name":"web","cli_context":"desktop-linux"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias := short.Arguments.(docker_stack_task_info.Request)
+	if alias.Name != "web" || alias.CLIContext == nil || *alias.CLIContext != "desktop-linux" {
+		t.Fatalf("short = %#v", alias)
 	}
 }
