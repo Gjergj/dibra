@@ -303,12 +303,32 @@ func TestPlaybook_DockerContainerResources(t *testing.T) {
 	// Clean up
 	remoteExec(t, client, "docker rm -f "+containerName+" || true")
 	defer remoteExec(t, client, "docker rm -f "+containerName+" || true")
+	runResourceTask := func(suffix, arguments string) map[string]any {
+		t.Helper()
+		templatePath := writeResultTemplate(t, "resource_result")
+		remotePath := "/tmp/dibra-container-resource-" + suffix + ".json"
+		playbook := playbookHeader + `
+  - name: Manage container resources
+    docker_container:
+` + arguments + `
+    register: resource_result
+
+  - name: Persist resource result
+    check_mode: false
+    template:
+      src: ` + templatePath + `
+      dest: ` + remotePath + `
+`
+		output := runPlaybookWithArgs(t, playbook, "--diff")
+		if strings.Contains(output, "FAILED") {
+			t.Fatalf("%s resource task failed: %s", suffix, output)
+		}
+		return readRemoteJSONMap(t, client, remotePath)
+	}
 
 	t.Log("Step 1: Create container with resource limits")
-	playbook := playbookHeader + `
-  - name: Create container with resources
-    docker_container:
-      name: ` + containerName + `
+	created := runResourceTask("create", `
+      name: `+containerName+`
       image: alpine:latest
       state: started
       command: ["sleep", "300"]
@@ -316,10 +336,9 @@ func TestPlaybook_DockerContainerResources(t *testing.T) {
       memory: "256m"
       memory_swap: "512m"
       pids_limit: 100
-`
-	output := runPlaybook(t, playbook)
-	if strings.Contains(output, "FAILED") {
-		t.Fatalf("Create with resources failed: %s", output)
+`)
+	if created["changed"] != true {
+		t.Fatalf("create result = %#v", created)
 	}
 
 	// Verify CPU limit (0.5 CPU = 500000000 NanoCPUs)
@@ -343,21 +362,26 @@ func TestPlaybook_DockerContainerResources(t *testing.T) {
 
 	// memory is one of the resource fields updated through ContainerUpdate.
 	t.Log("Step 2: Update a live-mutable resource")
-	playbookUpdate := playbookHeader + `
-  - name: Update container resources
-    docker_container:
-      name: ` + containerName + `
+	updated := runResourceTask("update", `
+      name: `+containerName+`
       image: alpine:latest
       state: started
       command: ["sleep", "300"]
       memory: "512m"
-`
-	output2 := runPlaybook(t, playbookUpdate)
-	if strings.Contains(output2, "FAILED") {
-		t.Fatalf("Update resources failed: %s", output2)
+`)
+	if updated["changed"] != true {
+		t.Fatalf("update result = %#v", updated)
 	}
-	if !strings.Contains(output2, "CHANGED") {
-		t.Error("Expected CHANGED on resource update")
+	updateDiff, ok := updated["diff"].(map[string]any)
+	if !ok {
+		t.Fatalf("update diff = %#v", updated["diff"])
+	}
+	updateBefore, beforeOK := updateDiff["before"].(map[string]any)
+	updateAfter, afterOK := updateDiff["after"].(map[string]any)
+	if !beforeOK || !afterOK ||
+		numberValue(updateBefore["memory"]) != 268435456 ||
+		numberValue(updateAfter["memory"]) != 536870912 {
+		t.Fatalf("memory update diff = %#v", updateDiff)
 	}
 
 	if currentID := remoteExec(t, client, "docker inspect --format '{{.Id}}' "+containerName); currentID != originalID {
@@ -371,19 +395,25 @@ func TestPlaybook_DockerContainerResources(t *testing.T) {
 	// community.docker implementation even though the Engine update API can
 	// accept related values.
 	t.Log("Step 3: Recreate for non-live resource fields")
-	playbookRecreate := playbookHeader + `
-  - name: Recreate container for CPU and PID limits
-    docker_container:
-      name: ` + containerName + `
+	recreated := runResourceTask("recreate", `
+      name: `+containerName+`
       image: alpine:latest
       state: started
       command: ["sleep", "300"]
       cpus: 1.0
       pids_limit: 200
-`
-	output3 := runPlaybook(t, playbookRecreate)
-	if strings.Contains(output3, "FAILED") || !strings.Contains(output3, "CHANGED") {
-		t.Fatalf("Recreate resources failed: %s", output3)
+`)
+	if recreated["changed"] != true {
+		t.Fatalf("recreate result = %#v", recreated)
+	}
+	recreateDiff, ok := recreated["diff"].(map[string]any)
+	if !ok {
+		t.Fatalf("recreate diff = %#v", recreated["diff"])
+	}
+	recreateAfter, ok := recreateDiff["after"].(map[string]any)
+	if !ok || numberValue(recreateAfter["cpus"]) != 1000000000 ||
+		numberValue(recreateAfter["pids_limit"]) != 200 {
+		t.Fatalf("recreate diff = %#v", recreateDiff)
 	}
 	if currentID := remoteExec(t, client, "docker inspect --format '{{.Id}}' "+containerName); currentID == originalID {
 		t.Fatalf("cpus/pids_limit did not recreate the container: %s", currentID)
@@ -391,6 +421,20 @@ func TestPlaybook_DockerContainerResources(t *testing.T) {
 	nanoCpus2 := remoteExec(t, client, "docker inspect --format '{{.HostConfig.NanoCPUs}}' "+containerName)
 	if !strings.Contains(nanoCpus2, "1000000000") {
 		t.Errorf("Recreated NanoCPUs not set correctly: %s", nanoCpus2)
+	}
+	unchanged := runResourceTask("recreate-idempotent", `
+      name: `+containerName+`
+      image: alpine:latest
+      state: started
+      command: ["sleep", "300"]
+      cpus: 1.0
+      pids_limit: 200
+`)
+	if unchanged["changed"] != false {
+		t.Fatalf("repeated recreate configuration = %#v", unchanged)
+	}
+	if _, found := unchanged["diff"]; found {
+		t.Fatalf("unchanged result returned diff = %#v", unchanged["diff"])
 	}
 }
 

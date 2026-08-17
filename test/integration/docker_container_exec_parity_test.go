@@ -164,7 +164,7 @@ func TestPlaybook_DockerContainerExecParity(t *testing.T) {
 		assertStringLines(t, result, "stderr_lines")
 	})
 
-	t.Run("detach returns exec_id and omits rc stdout stderr", func(t *testing.T) {
+	t.Run("detach returns exec id and omits rc stdout stderr", func(t *testing.T) {
 		result := runContainerExec(t, client, "detach", `
       container: `+container+`
       argv:

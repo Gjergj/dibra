@@ -3,21 +3,26 @@
 package integration
 
 import (
+	"net"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 // resetIptables clears all iptables rules and chains
-func resetIptables(t *testing.T, client interface{ Run(string) (string, string, error) }) {
+func resetIptables(t *testing.T, client interface {
+	Run(string) (string, string, error)
+}) {
+	// Reset policies before flushing. Flushing INPUT while a DROP policy is
+	// active can remove the SSH allow rule and prevent the remaining cleanup.
+	client.Run("iptables -P INPUT ACCEPT")
+	client.Run("iptables -P FORWARD ACCEPT")
+	client.Run("iptables -P OUTPUT ACCEPT")
 	// Flush all chains in all tables
 	for _, table := range []string{"filter", "nat", "mangle", "raw"} {
 		client.Run("iptables -t " + table + " -F")
 		client.Run("iptables -t " + table + " -X")
 	}
-	// Reset policies to ACCEPT
-	client.Run("iptables -P INPUT ACCEPT")
-	client.Run("iptables -P FORWARD ACCEPT")
-	client.Run("iptables -P OUTPUT ACCEPT")
 }
 
 // TestPlaybook_IptablesBasicRule tests basic rule creation
@@ -1033,7 +1038,27 @@ func TestPlaybook_IptablesRealWorldWebServer(t *testing.T) {
 	defer client.Close()
 
 	resetIptables(t, client)
-	defer resetIptables(t, client)
+	managementConnection := strings.Fields(mustRemote(t, client, `printf '%s' "$SSH_CONNECTION"`))
+	if len(managementConnection) == 0 {
+		t.Fatalf("invalid SSH_CONNECTION source: %#v", managementConnection)
+	}
+	managementIP := net.ParseIP(managementConnection[0])
+	if managementIP == nil {
+		t.Fatalf("invalid SSH_CONNECTION source: %#v", managementConnection)
+	}
+	prefixLength := "128"
+	if managementIP.To4() != nil {
+		prefixLength = "32"
+	}
+	managementSource := managementConnection[0] + "/" + prefixLength
+	recoveryPID := mustRemote(t, client, `nohup sh -c 'sleep 60; iptables -P INPUT ACCEPT; iptables -F INPUT' >/tmp/dibra-iptables-recovery.log 2>&1 </dev/null & echo $!`)
+	if _, err := strconv.Atoi(recoveryPID); err != nil {
+		t.Fatalf("invalid iptables recovery PID %q: %v", recoveryPID, err)
+	}
+	defer func() {
+		resetIptables(t, client)
+		_, _, _ = client.Run("kill " + recoveryPID + " >/dev/null 2>&1 || true")
+	}()
 
 	playbook := playbookHeader + `
   - name: Allow loopback traffic
@@ -1053,7 +1078,7 @@ func TestPlaybook_IptablesRealWorldWebServer(t *testing.T) {
   - name: Allow SSH from management network
     iptables:
       chain: INPUT
-      source: 10.0.0.0/8
+      source: ` + managementSource + `
       protocol: tcp
       destination_port: "22"
       ctstate:
@@ -1336,7 +1361,7 @@ func TestPlaybook_IptablesSafeDeployment(t *testing.T) {
 	// Verify the order is correct - use -v to see interfaces
 	rules := remoteExec(t, client, "iptables -L INPUT -n -v --line-numbers")
 	lines := strings.Split(rules, "\n")
-	
+
 	// Find positions (line numbers in first column)
 	loLine, estLine, sshLine, dropLine := 0, 0, 0, 0
 	for i, line := range lines {
@@ -1357,7 +1382,7 @@ func TestPlaybook_IptablesSafeDeployment(t *testing.T) {
 
 	// Verify order: lo < established < ssh < drop
 	if loLine == 0 || estLine == 0 || sshLine == 0 || dropLine == 0 {
-		t.Errorf("Missing expected rules in output (lo=%d, est=%d, ssh=%d, drop=%d):\n%s", 
+		t.Errorf("Missing expected rules in output (lo=%d, est=%d, ssh=%d, drop=%d):\n%s",
 			loLine, estLine, sshLine, dropLine, rules)
 	} else if !(loLine < estLine && estLine < sshLine && sshLine < dropLine) {
 		t.Errorf("Rules are in wrong order. lo=%d, est=%d, ssh=%d, drop=%d\n%s",

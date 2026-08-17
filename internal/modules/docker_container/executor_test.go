@@ -479,6 +479,24 @@ func TestCheckModePullActionsMatchPinnedUpstream(t *testing.T) {
 	}
 }
 
+func TestMissingImageErrorsMatchPinnedUpstream(t *testing.T) {
+	missing := &fakeContainerClient{imageErr: errdefs.ErrNotFound.WithMessage("missing")}
+	_, _, response := ensureImage(context.Background(), missing, normalizeDefaults(Request{
+		Name: "web", Image: "registry.example.test/team/app:latest", Pull: PullNever,
+	}), false, false, docker.Dependencies{})
+	if !response.Failed || response.Msg != "Cannot find image with name registry.example.test/team/app:latest, and pull=never" {
+		t.Fatalf("named image response = %#v", response)
+	}
+
+	id := "sha256:" + strings.Repeat("a", 64)
+	_, _, response = ensureImage(context.Background(), missing, normalizeDefaults(Request{
+		Name: "web", Image: id, Pull: PullAlways,
+	}), false, false, docker.Dependencies{})
+	if !response.Failed || response.Msg != "Cannot find image with ID "+id {
+		t.Fatalf("image ID response = %#v", response)
+	}
+}
+
 func TestContainerPullReadsRegistryAuthenticationFromDockerConfig(t *testing.T) {
 	directory := t.TempDir()
 	credentials := base64.StdEncoding.EncodeToString([]byte("config-user:config-pass"))

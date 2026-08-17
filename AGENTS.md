@@ -679,6 +679,9 @@ Important behavior:
   trigger pulls. Pull policies, registry authentication, image/name/label
   mismatch policies, platform normalization, and image-derived environment,
   label, port, volume, and command defaults follow the pinned upstream rules.
+  A missing named image with `pull: never` fails with
+  `Cannot find image with name {reference}, and pull=never`; a missing image ID
+  fails with `Cannot find image with ID {id}`.
 - `mounts` supports the current Engine bind, volume, tmpfs, npipe, cluster, and
   image forms and validates type-specific options. `tmpfs_options` uses the
   upstream list-of-one-key-dictionaries shape.

@@ -294,13 +294,13 @@ func ensureImage(ctx context.Context, cli client.APIClient, req Request, contain
 	}
 	if isImageID(req.Image) {
 		if !present {
-			return false, nil, Response{Failed: true, Msg: fmt.Sprintf("cannot find image %s", req.Image)}
+			return false, nil, Response{Failed: true, Msg: fmt.Sprintf("Cannot find image with ID %s", req.Image)}
 		}
 		return false, nil, Response{}
 	}
 	if req.Pull == PullNever {
 		if !present {
-			return false, nil, Response{Failed: true, Msg: fmt.Sprintf("cannot find image %s, and pull=never", req.Image)}
+			return false, nil, Response{Failed: true, Msg: fmt.Sprintf("Cannot find image with name %s, and pull=never", req.Image)}
 		}
 		return false, nil, Response{}
 	}
