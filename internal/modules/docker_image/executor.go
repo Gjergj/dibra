@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -18,8 +17,6 @@ import (
 	"github.com/moby/moby/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
-
-var imageIDPattern = regexp.MustCompile(`^(?:sha256:)?[0-9a-fA-F]{12,64}$`)
 
 func Execute(req Request) Response {
 	return ExecuteWithDependenciesAndState(req, docker.Dependencies{}, execution.State{})
@@ -97,9 +94,11 @@ func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependenci
 			if isImageID(req.Name) {
 				return failedResponse(fmt.Sprintf("Image name must not be an image ID for source=build; got: %s", req.Name))
 			}
-			info, statErr := dependencies.FileSystem.Stat(req.Build.Path)
-			if statErr != nil || !info.IsDir() {
-				return failedResponse(fmt.Sprintf("Requested build path %s could not be found or you do not have access.", req.Build.Path))
+			if !isRemoteBuildContext(req.Build.Path) {
+				info, statErr := dependencies.FileSystem.Stat(req.Build.Path)
+				if statErr != nil || !info.IsDir() {
+					return failedResponse(fmt.Sprintf("Requested build path %s could not be found or you do not have access.", req.Build.Path))
+				}
 			}
 			action := fmt.Sprintf("Built image %s from %s", reference, req.Build.Path)
 			result.Actions = append(result.Actions, action)
@@ -149,7 +148,7 @@ func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependenci
 		if archiveAction != "" {
 			result.Actions = append(result.Actions, archiveAction)
 		}
-		result.Changed = archiveChanged
+		result.Changed = result.Changed || archiveChanged
 	}
 
 	if req.Repository != "" {
@@ -296,7 +295,7 @@ func repositoryReference(repository, tag string) (string, error) {
 }
 
 func isImageID(value string) bool {
-	return imageIDPattern.MatchString(value)
+	return docker.IsImageID(value)
 }
 
 func validTag(value string) bool {
@@ -352,7 +351,7 @@ func imageID(inspect map[string]any) string {
 }
 
 func removeImage(ctx context.Context, cli client.APIClient, reference string, force, checkMode bool) Response {
-	_, raw, found, err := inspectImage(ctx, cli, reference)
+	_, _, found, err := inspectImage(ctx, cli, reference)
 	if err != nil {
 		return failedResponse(fmt.Sprintf("An unexpected Docker error occurred: %v", err))
 	}
@@ -362,8 +361,7 @@ func removeImage(ctx context.Context, cli client.APIClient, reference string, fo
 	result := emptyResponse()
 	result.Changed = true
 	result.Actions = append(result.Actions, fmt.Sprintf("Removed image %s", reference))
-	result.Image = raw
-	result.Image["state"] = "Deleted"
+	result.Image = map[string]any{"state": "Deleted"}
 	if checkMode {
 		return result
 	}
@@ -410,15 +408,21 @@ func pullImage(ctx context.Context, cli client.APIClient, reference string, req 
 
 func buildImage(ctx context.Context, cli client.APIClient, reference string, req Request, dependencies docker.Dependencies) (map[string]any, string, error) {
 	build := req.Build
-	info, err := dependencies.FileSystem.Stat(build.Path)
-	if err != nil || !info.IsDir() {
-		return nil, "", fmt.Errorf("Requested build path %s could not be found or you do not have access.", build.Path)
+	var contextReader io.ReadCloser
+	effectiveDockerfile := build.Dockerfile
+	var err error
+	if !isRemoteBuildContext(build.Path) {
+		info, statErr := dependencies.FileSystem.Stat(build.Path)
+		if statErr != nil || !info.IsDir() {
+			return nil, "", fmt.Errorf("Requested build path %s could not be found or you do not have access.", build.Path)
+		}
+		contextReader, effectiveDockerfile, err = buildContextArchive(
+			build.Path, build.Dockerfile, dependencies.FileSystem)
+		if err != nil {
+			return nil, "", fmt.Errorf("Error preparing build context %s - %v", build.Path, err)
+		}
+		defer contextReader.Close()
 	}
-	contextReader, err := buildContextArchive(build.Path, dependencies.FileSystem)
-	if err != nil {
-		return nil, "", fmt.Errorf("Error preparing build context %s - %v", build.Path, err)
-	}
-	defer contextReader.Close()
 
 	options := client.ImageBuildOptions{
 		Tags:        []string{reference},
@@ -430,12 +434,15 @@ func buildImage(ctx context.Context, cli client.APIClient, reference string, req
 		CPUSetCPUs:  containerLimitCPUSet(build.ContainerLimits),
 		CPUShares:   containerLimitCPUShares(build.ContainerLimits),
 		NetworkMode: build.Network,
-		Dockerfile:  build.Dockerfile,
+		Dockerfile:  effectiveDockerfile,
 		BuildArgs:   stringifyPointerMap(build.Args),
 		Labels:      stringifyMap(build.Labels),
 		CacheFrom:   build.CacheFrom,
 		ExtraHosts:  extraHosts(build.EtcHosts),
 		Target:      build.Target,
+	}
+	if isRemoteBuildContext(build.Path) {
+		options.RemoteContext = build.Path
 	}
 	options.AuthConfigs, err = dockerConfigAuthConfigs(ctx, req, reference, dependencies)
 	if err != nil {
@@ -495,6 +502,15 @@ func buildImage(ctx context.Context, cli client.APIClient, reference string, req
 		return nil, stdout, fmt.Errorf("Error building %s - resulting image was not found", req.Name)
 	}
 	return raw, stdout, nil
+}
+
+func isRemoteBuildContext(value string) bool {
+	for _, prefix := range []string{"http://", "https://", "git://", "github.com/", "git@"} {
+		if strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func loadImage(ctx context.Context, cli client.APIClient, reference, requestedName, path string, dependencies docker.Dependencies) (map[string]any, string, error) {
@@ -739,7 +755,7 @@ func stringifyMap(values map[string]any) map[string]string {
 	}
 	result := make(map[string]string, len(values))
 	for key, value := range values {
-		result[key] = fmt.Sprint(value)
+		result[key] = docker.PythonString(value)
 	}
 	return result
 }
@@ -750,7 +766,7 @@ func stringifyPointerMap(values map[string]any) map[string]*string {
 	}
 	result := make(map[string]*string, len(values))
 	for key, value := range values {
-		text := fmt.Sprint(value)
+		text := docker.PythonToText(value)
 		result[key] = &text
 	}
 	return result
@@ -767,7 +783,7 @@ func extraHosts(values map[string]any) []string {
 	sort.Strings(keys)
 	result := make([]string, 0, len(keys))
 	for _, key := range keys {
-		result = append(result, fmt.Sprintf("%s:%v", key, values[key]))
+		result = append(result, fmt.Sprintf("%s:%s", key, docker.PythonString(values[key])))
 	}
 	return result
 }

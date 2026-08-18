@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +31,10 @@ type imageClient struct {
 	removed       []string
 	tagged        []client.ImageTagOptions
 	archive       []byte
+	buildOptions  client.ImageBuildOptions
+	buildContext  io.Reader
+	buildStream   string
+	builtImage    client.ImageInspectResult
 	closed        bool
 }
 
@@ -64,6 +69,15 @@ func (fake *imageClient) ImageTag(_ context.Context, options client.ImageTagOpti
 
 func (fake *imageClient) ImageSave(_ context.Context, _ []string, _ ...client.ImageSaveOption) (client.ImageSaveResult, error) {
 	return io.NopCloser(bytes.NewReader(fake.archive)), nil
+}
+
+func (fake *imageClient) ImageBuild(_ context.Context, context io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
+	fake.buildContext = context
+	fake.buildOptions = options
+	if fake.builtImage.ID != "" && len(options.Tags) > 0 {
+		fake.images[options.Tags[0]] = fake.builtImage
+	}
+	return client.ImageBuildResult{Body: io.NopCloser(strings.NewReader(fake.buildStream))}, nil
 }
 
 func (fake *imageClient) Close() error {
@@ -149,11 +163,32 @@ func TestCheckModeRemovalDoesNotCallEngine(t *testing.T) {
 		State: "absent",
 	}, imageDependencies(fake), execution.State{CheckMode: true})
 
-	if response.Failed || !response.Changed || response.Image["state"] != "Deleted" {
+	if response.Failed || !response.Changed || response.Image["state"] != "Deleted" || len(response.Image) != 1 {
 		t.Fatalf("response = %#v", response)
 	}
 	if len(fake.removed) != 0 {
 		t.Fatalf("removed = %#v", fake.removed)
+	}
+}
+
+func TestFailedResponseOmitsSuccessFieldsButPreservesLoadStdout(t *testing.T) {
+	response := failedResponse("boom")
+	response.Stdout = "load output"
+	data, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["stdout"] != "load output" {
+		t.Fatalf("stdout = %#v", result["stdout"])
+	}
+	for _, field := range []string{"actions", "image"} {
+		if _, found := result[field]; found {
+			t.Fatalf("failed response contains %q: %s", field, data)
+		}
 	}
 }
 
@@ -208,6 +243,20 @@ func TestCheckModeStillValidatesBuildPath(t *testing.T) {
 	}
 }
 
+func TestCheckModeMissingSourceWithArchivePreservesPredictedChange(t *testing.T) {
+	fake := &imageClient{images: map[string]client.ImageInspectResult{}}
+	archivePath := filepath.Join(t.TempDir(), "image.tar")
+	response := ExecuteWithDependenciesAndState(Request{
+		Name: "example", State: "present", Source: "pull", ArchivePath: archivePath,
+	}, imageDependencies(fake), execution.State{CheckMode: true})
+	if response.Failed || !response.Changed {
+		t.Fatalf("response = %#v", response)
+	}
+	if _, err := os.Stat(archivePath); !os.IsNotExist(err) {
+		t.Fatalf("check mode created archive: %v", err)
+	}
+}
+
 func TestPullOptionsRetainCompatibilityPolicies(t *testing.T) {
 	for input, expected := range map[string]string{
 		`"always"`: "always",
@@ -221,6 +270,26 @@ func TestPullOptionsRetainCompatibilityPolicies(t *testing.T) {
 		if options.Policy != expected {
 			t.Fatalf("UnmarshalJSON(%s).Policy = %q, want %q", input, options.Policy, expected)
 		}
+	}
+}
+
+func TestBuildValueConversionMatchesPinnedUpstream(t *testing.T) {
+	arguments := stringifyPointerMap(map[string]any{
+		"boolean": true,
+		"null":    nil,
+		"list":    []any{"one", false},
+	})
+	if *arguments["boolean"] != "True" || *arguments["null"] != "None" ||
+		*arguments["list"] != "['one', False]" {
+		t.Fatalf("build arguments = %#v", arguments)
+	}
+	labels := stringifyMap(map[string]any{"boolean": true, "null": nil})
+	if labels["boolean"] != "true" || labels["null"] != "None" {
+		t.Fatalf("build labels = %#v", labels)
+	}
+	hosts := extraHosts(map[string]any{"enabled": false, "null": nil})
+	if strings.Join(hosts, ",") != "enabled:false,null:None" {
+		t.Fatalf("extra hosts = %#v", hosts)
 	}
 }
 
@@ -275,7 +344,7 @@ func TestBuildContextArchiveHonorsDockerIgnore(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	archive, err := buildContextArchive(root, docker.OSFileSystem{})
+	archive, _, err := buildContextArchive(root, "", docker.OSFileSystem{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,6 +364,89 @@ func TestBuildContextArchiveHonorsDockerIgnore(t *testing.T) {
 	}
 	if !names["Dockerfile"] || !names[".dockerignore"] || !names["included.txt"] || names["ignored.txt"] {
 		t.Fatalf("archive names = %#v", names)
+	}
+}
+
+func TestBuildContextArchiveSupportsNegationsAndSelectedDockerfile(t *testing.T) {
+	root := t.TempDir()
+	for _, directory := range []string{"ignored", "custom", "other"} {
+		if err := os.MkdirAll(filepath.Join(root, directory), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, content := range map[string]string{
+		".dockerignore":       "ignored/\n!ignored/kept.txt\ncustom/*\n**/Dockerfile\n",
+		"Dockerfile":          "FROM scratch\n",
+		"ignored/kept.txt":    "keep",
+		"ignored/dropped.txt": "drop",
+		"custom/Buildfile":    "FROM busybox\n",
+		"other/Dockerfile":    "FROM alpine\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	archive, effective, err := buildContextArchive(root, "custom/Buildfile", docker.OSFileSystem{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+	names := archiveEntries(t, archive)
+	if effective != "custom/Buildfile" || !names["custom/Buildfile"] || !names["ignored/kept.txt"] ||
+		names["ignored/dropped.txt"] || names["other/Dockerfile"] {
+		t.Fatalf("effective Dockerfile = %q; archive names = %#v", effective, names)
+	}
+}
+
+func TestBuildContextArchiveInjectsDockerfileOutsideContext(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "OutsideDockerfile")
+	if err := os.WriteFile(outside, []byte("FROM scratch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	archive, effective, err := buildContextArchive(root, outside, docker.OSFileSystem{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+	entries := archiveEntries(t, archive)
+	if !strings.HasPrefix(effective, ".dockerfile.") || !entries[effective] || !entries[".dockerignore"] {
+		t.Fatalf("effective Dockerfile = %q; archive names = %#v", effective, entries)
+	}
+}
+
+func TestRemoteBuildContextIsForwardedWithoutFilesystemValidation(t *testing.T) {
+	reference := "example:latest"
+	fake := &imageClient{
+		images:      map[string]client.ImageInspectResult{},
+		buildStream: `{"stream":"Successfully built new\n"}`,
+		builtImage:  imageInspect("sha256:new", reference),
+	}
+	response := ExecuteWithDependencies(Request{
+		Name: "example", State: "present", Source: "build",
+		Build: &BuildOptions{Path: "https://example.test/context.git", Dockerfile: "Dockerfile.custom"},
+	}, imageDependencies(fake))
+	if response.Failed || !response.Changed || fake.buildContext != nil ||
+		fake.buildOptions.RemoteContext != "https://example.test/context.git" ||
+		fake.buildOptions.Dockerfile != "Dockerfile.custom" {
+		t.Fatalf("response = %#v; build options = %#v; context = %#v",
+			response, fake.buildOptions, fake.buildContext)
+	}
+}
+
+func archiveEntries(t *testing.T, archive io.Reader) map[string]bool {
+	t.Helper()
+	names := map[string]bool{}
+	reader := tar.NewReader(archive)
+	for {
+		header, err := reader.Next()
+		if err == io.EOF {
+			return names
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		names[header.Name] = true
 	}
 }
 

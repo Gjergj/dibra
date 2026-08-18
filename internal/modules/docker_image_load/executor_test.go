@@ -2,6 +2,7 @@ package docker_image_load
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/containerd/errdefs"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 	imagetypes "github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
@@ -36,6 +38,9 @@ func (fake *loadClient) ImageLoad(_ context.Context, input io.Reader, options ..
 
 func (fake *loadClient) ImageInspect(_ context.Context, reference string, _ ...client.ImageInspectOption) (client.ImageInspectResult, error) {
 	fake.inspected = append(fake.inspected, reference)
+	if reference == "missing-not-found:latest" {
+		return client.ImageInspectResult{}, fmt.Errorf("%w: not found", errdefs.ErrNotFound)
+	}
 	image, found := fake.images[reference]
 	if !found {
 		return client.ImageInspectResult{}, fmt.Errorf("not found")
@@ -148,6 +153,14 @@ func TestLoadRejectsMissingCorruptAndInspectionFailures(t *testing.T) {
 			t.Fatalf("response = %#v", response)
 		}
 	})
+
+	t.Run("missing loaded name is returned as null inspection", func(t *testing.T) {
+		fake := &loadClient{stream: `{"stream":"Loaded image: missing-not-found:latest\n"}`}
+		response := ExecuteWithDependencies(Request{Path: archivePath(t)}, loadDependencies(fake))
+		if response.Failed || !response.Changed || len(response.Images) != 1 || response.Images[0] != nil {
+			t.Fatalf("response = %#v", response)
+		}
+	})
 }
 
 func TestUntaggedLoadedNameWarnsAndRemainsInImageNames(t *testing.T) {
@@ -181,5 +194,28 @@ func TestLoadedImageIDRecognitionMatchesPinnedUpstream(t *testing.T) {
 	if response.Failed || !response.Changed || len(response.ImageNames) != 1 ||
 		len(response.Images) != 0 || len(response.Warnings) != 1 || len(fake.inspected) != 0 {
 		t.Errorf("bare ID response = %#v inspected = %#v", response, fake.inspected)
+	}
+}
+
+func TestFailedResponseOmitsImageLists(t *testing.T) {
+	response := Response{
+		Failed: true, Msg: "boom", ImageNames: []string{}, Images: []map[string]any{},
+		Stdout: "partial output",
+	}
+	data, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["stdout"] != "partial output" {
+		t.Fatalf("stdout = %#v", result["stdout"])
+	}
+	for _, field := range []string{"image_names", "images"} {
+		if _, found := result[field]; found {
+			t.Fatalf("failed response contains %q: %s", field, data)
+		}
 	}
 }

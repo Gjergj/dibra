@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -111,7 +112,7 @@ func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependenci
 		return failedResponse(fmt.Sprintf("Error pulling image %s - image was not present after pull", reference.Reference))
 	}
 	result.Image = after
-	result.Changed = !found || imageID(before) != imageID(after)
+	result.Changed = !found || !imagesEqual(before, after)
 	result.Diff.After = imageState(after, true)
 	return result
 }
@@ -197,69 +198,42 @@ func imageID(image map[string]any) string {
 	return value
 }
 
-func resolvePlatform(ctx context.Context, apiClient client.APIClient, value string) (ocispec.Platform, error) {
-	parts := strings.Split(strings.ToLower(value), "/")
-	if len(parts) < 1 || len(parts) > 3 {
-		return ocispec.Platform{}, fmt.Errorf("invalid platform %q; expected os[/architecture[/variant]]", value)
-	}
-	for _, part := range parts {
-		if part == "" {
-			return ocispec.Platform{}, fmt.Errorf("invalid platform %q", value)
+func imagesEqual(first, second map[string]any) bool {
+	filtered := func(image map[string]any) map[string]any {
+		result := make(map[string]any, len(image))
+		for key, value := range image {
+			if key != "Metadata" && key != "Identity" {
+				result[key] = value
+			}
 		}
+		return result
 	}
-	if len(parts) == 1 {
+	return reflect.DeepEqual(filtered(first), filtered(second))
+}
+
+func resolvePlatform(ctx context.Context, apiClient client.APIClient, value string) (ocispec.Platform, error) {
+	if !strings.Contains(value, "/") {
 		info, err := apiClient.Info(ctx, client.InfoOptions{})
 		if err != nil {
 			return ocispec.Platform{}, docker.WrapError("inspect Docker daemon platform", "", err)
 		}
-		part := parts[0]
-		if part == "linux" || part == "windows" || part == "freebsd" {
-			return ocispec.Platform{OS: part, Architecture: normalizeArchitecture(info.Info.Architecture)}, nil
-		}
-		return ocispec.Platform{OS: strings.ToLower(info.Info.OSType), Architecture: normalizeArchitecture(part)}, nil
+		return docker.ParsePlatform(value, info.Info.OSType, info.Info.Architecture)
 	}
-	result := ocispec.Platform{OS: parts[0], Architecture: normalizeArchitecture(parts[1])}
-	if len(parts) == 3 {
-		result.Variant = parts[2]
-	}
-	return result, nil
-}
-
-func normalizeArchitecture(value string) string {
-	switch strings.ToLower(value) {
-	case "x86_64", "x86-64":
-		return "amd64"
-	case "aarch64":
-		return "arm64"
-	case "armhf":
-		return "arm"
-	default:
-		return strings.ToLower(value)
-	}
+	return docker.ParsePlatform(value, "", "")
 }
 
 func imageMatchesPlatform(image map[string]any, wanted ocispec.Platform) bool {
 	operatingSystem, _ := image["Os"].(string)
 	architecture, _ := image["Architecture"].(string)
 	variant, _ := image["Variant"].(string)
-	if !strings.EqualFold(operatingSystem, wanted.OS) ||
-		normalizeArchitecture(architecture) != normalizeArchitecture(wanted.Architecture) {
-		return false
-	}
-	return wanted.Variant == "" || strings.EqualFold(variant, wanted.Variant)
+	current := docker.ComposePlatform(operatingSystem, architecture, variant, "", "")
+	return current.OS == wanted.OS &&
+		current.Architecture == wanted.Architecture &&
+		current.Variant == wanted.Variant
 }
 
 func isImageID(value string) bool {
-	trimmed := strings.TrimPrefix(strings.ToLower(value), "sha256:")
-	if len(trimmed) < 12 || len(trimmed) > 64 {
-		return false
-	}
-	for _, character := range trimmed {
-		if character < '0' || character > '9' && character < 'a' || character > 'f' {
-			return false
-		}
-	}
-	return true
+	return docker.IsImageID(value)
 }
 
 func validTag(value string, allowEmpty bool) bool {

@@ -47,16 +47,20 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 
 	images := make([]map[string]any, 0, len(req.Name))
 	for _, requestedName := range req.Name {
-		reference := requestedName
-		if !isImageID(reference) {
-			reference, err = docker.JoinImageNameTag(reference, "latest")
-			if err != nil {
-				return failedResponse(fmt.Sprintf("invalid image name %q: %v", requestedName, err))
+		var image map[string]any
+		var found bool
+		var inspectErr error
+		if isImageID(requestedName) {
+			image, found, inspectErr = inspectImageMap(ctx, apiClient, requestedName)
+		} else {
+			repository, tag := splitRepositoryTag(requestedName)
+			if tag == "" {
+				tag = "latest"
 			}
+			image, found, inspectErr = findNamedImage(ctx, apiClient, repository, tag)
 		}
-		image, found, inspectErr := inspectImageMap(ctx, apiClient, reference)
 		if inspectErr != nil {
-			return failedResponse(docker.WrapError("inspect image", reference, inspectErr).Error())
+			return failedResponse(inspectErr.Error())
 		}
 		if !found {
 			continue
@@ -64,6 +68,54 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 		images = append(images, image)
 	}
 	return Response{Images: images}
+}
+
+func findNamedImage(
+	ctx context.Context,
+	apiClient client.APIClient,
+	repository string,
+	tag string,
+) (map[string]any, bool, error) {
+	filters := make(client.Filters)
+	filters.Add("reference", repository)
+	summaries, err := apiClient.ImageList(ctx, client.ImageListOptions{All: false, Filters: filters})
+	if err != nil {
+		return nil, false, fmt.Errorf("Error searching for image %s - %v", repository, err)
+	}
+	taggedReference := repository + ":" + tag
+	digestReference := repository + "@" + tag
+	for _, summary := range summaries.Items {
+		if !containsString(summary.RepoTags, taggedReference) &&
+			!containsString(summary.RepoDigests, digestReference) {
+			continue
+		}
+		image, found, err := inspectImageMap(ctx, apiClient, summary.ID)
+		if err != nil {
+			return nil, false, fmt.Errorf("Error inspecting image %s:%s - %v", repository, tag, err)
+		}
+		return image, found, nil
+	}
+	return nil, false, nil
+}
+
+func splitRepositoryTag(value string) (string, string) {
+	if index := strings.LastIndex(value, "@"); index >= 0 {
+		return value[:index], value[index+1:]
+	}
+	lastSlash := strings.LastIndex(value, "/")
+	if lastColon := strings.LastIndex(value, ":"); lastColon > lastSlash {
+		return value[:lastColon], value[lastColon+1:]
+	}
+	return value, ""
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func inspectImageMap(ctx context.Context, apiClient client.APIClient, reference string) (map[string]any, bool, error) {

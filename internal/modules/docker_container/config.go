@@ -72,7 +72,7 @@ func buildContainerConfig(req Request, fileSystem docker.FileSystem) (*container
 
 	portBindings, exposedPorts, err := docker.BuildPortBindings(req.PublishedPorts)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid published port: %w", err)
+		return nil, nil, err
 	}
 	for _, specification := range req.ExposedPorts {
 		ports, expandErr := expandExposedPort(specification)
@@ -476,17 +476,17 @@ func buildMount(value Mount) (mounttypes.Mount, error) {
 		}
 	case "volume":
 		if value.NoCopy != nil || value.Labels != nil || value.Subpath != "" || value.VolumeDriver != "" {
-			result.VolumeOptions = &mounttypes.VolumeOptions{Labels: value.Labels, Subpath: value.Subpath}
+			result.VolumeOptions = &mounttypes.VolumeOptions{Labels: mountOptionStrings(value.Labels), Subpath: value.Subpath}
 			if value.NoCopy != nil {
 				result.VolumeOptions.NoCopy = *value.NoCopy
 			}
 			if value.VolumeDriver != "" {
-				result.VolumeOptions.DriverConfig = &mounttypes.Driver{Name: value.VolumeDriver, Options: value.VolumeOptions}
+				result.VolumeOptions.DriverConfig = &mounttypes.Driver{Name: value.VolumeDriver, Options: mountOptionStrings(value.VolumeOptions)}
 			}
 		}
 	case "tmpfs":
 		result.Source = ""
-		options, err := buildTmpfsOptions(value.TmpfsOptions)
+		options, err := buildTmpfsOptions(value.TmpfsOptions, value.Target)
 		if err != nil {
 			return mounttypes.Mount{}, err
 		}
@@ -518,19 +518,43 @@ func buildMount(value Mount) (mounttypes.Mount, error) {
 	return result, nil
 }
 
-func buildTmpfsOptions(values []map[string]*string) ([][]string, error) {
+func mountOptionStrings(values MountOptionMap) map[string]string {
+	if values == nil {
+		return nil
+	}
+	result := make(map[string]string, len(values))
+	for key, value := range values {
+		result[key] = docker.PythonString(value)
+	}
+	return result
+}
+
+func buildTmpfsOptions(values []TmpfsOption, target ...string) ([][]string, error) {
 	result := make([][]string, 0, len(values))
 	for index, value := range values {
 		if len(value) != 1 {
+			if len(target) > 0 {
+				return nil, fmt.Errorf(
+					"tmpfs_options[%d] of mount %q must be a one-element dictionary!",
+					index+1, target[0],
+				)
+			}
 			return nil, fmt.Errorf("tmpfs_options[%d] must be a one-element dictionary", index+1)
 		}
 		for key, optionValue := range value {
-			if key == "" {
-				return nil, fmt.Errorf("tmpfs_options[%d] key must not be empty", index+1)
-			}
 			item := []string{key}
-			if optionValue != nil {
-				item = append(item, *optionValue)
+			switch typed := optionValue.(type) {
+			case nil:
+			case string:
+				item = append(item, typed)
+			default:
+				if len(target) > 0 {
+					return nil, fmt.Errorf(
+						"value %s in tmpfs_options[%d] of mount %q must be a string or null/none!",
+						docker.PythonRepr(optionValue), index+1, target[0],
+					)
+				}
+				return nil, fmt.Errorf("tmpfs_options[%d] value must be a string or null/none", index+1)
 			}
 			result = append(result, item)
 		}
@@ -541,7 +565,15 @@ func buildTmpfsOptions(values []map[string]*string) ([][]string, error) {
 func validateMountOptionApplicability(value Mount) error {
 	invalid := func(condition bool, option string, allowed ...string) error {
 		if condition && !oneOf(value.Type, allowed...) {
-			return fmt.Errorf("mount option %s is not valid for type %s", option, value.Type)
+			plural := ""
+			if len(allowed) > 1 {
+				plural = "s"
+			}
+			quotedTypes := `"` + strings.Join(allowed, `", "`) + `"`
+			return fmt.Errorf(
+				"%s cannot be specified for mount %q of type %q (needs type%s %s)",
+				option, value.Target, value.Type, plural, quotedTypes,
+			)
 		}
 		return nil
 	}
@@ -570,14 +602,17 @@ func validateMountTargets(req Request) error {
 	seen := make(map[string]string)
 	for _, value := range req.Mounts {
 		if previous := seen[value.Target]; previous != "" {
-			return fmt.Errorf("mount point %q appears twice in %s", value.Target, previous)
+			return fmt.Errorf("The mount point %q appears twice in the mounts option", value.Target)
 		}
 		seen[value.Target] = "mounts"
 	}
 	for _, value := range req.Volumes {
 		target := volumeTarget(value)
 		if previous := seen[target]; previous != "" {
-			return fmt.Errorf("mount point %q appears both in volumes and %s", target, previous)
+			if previous == "volumes" {
+				return fmt.Errorf("The mount point %q appears twice in the volumes option", target)
+			}
+			return fmt.Errorf("The mount point %q appears both in the volumes and %s option", target, previous)
 		}
 		seen[target] = "volumes"
 	}

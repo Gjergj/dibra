@@ -1,6 +1,10 @@
 package docker_image_push
 
-import "github.com/gjergjiramku/dibra/internal/modules/docker"
+import (
+	"encoding/json"
+
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
+)
 
 type Request struct {
 	docker.CommonArgs
@@ -27,4 +31,16 @@ type Response struct {
 	Msg     string         `json:"msg,omitempty"`
 	Actions []string       `json:"actions"`
 	Image   map[string]any `json:"image"`
+}
+
+func (response Response) MarshalJSON() ([]byte, error) {
+	type responseAlias Response
+	if !response.Failed {
+		return json.Marshal(responseAlias(response))
+	}
+	return json.Marshal(struct {
+		Changed bool   `json:"changed"`
+		Failed  bool   `json:"failed"`
+		Msg     string `json:"msg,omitempty"`
+	}{Changed: response.Changed, Failed: response.Failed, Msg: response.Msg})
 }

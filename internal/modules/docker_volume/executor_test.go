@@ -306,3 +306,30 @@ func TestInvalidStateAndRecreate(t *testing.T) {
 		t.Fatalf("recreate = %#v", response)
 	}
 }
+
+func TestLabelMapMatchesUpstreamSanitization(t *testing.T) {
+	var request Request
+	err := json.Unmarshal([]byte(`{"volume_name":"data","labels":{"string":"value","integer":2,"empty":null}}`), &request)
+	if err != nil {
+		t.Fatalf("valid labels failed: %v", err)
+	}
+	expected := LabelMap{"string": "value", "integer": "2", "empty": ""}
+	if len(request.Labels) != len(expected) {
+		t.Fatalf("labels = %#v, want %#v", request.Labels, expected)
+	}
+	for key, value := range expected {
+		if request.Labels[key] != value {
+			t.Fatalf("labels = %#v, want %#v", request.Labels, expected)
+		}
+	}
+
+	for _, input := range []string{
+		`{"volume_name":"data","labels":{"foo":1.0}}`,
+		`{"volume_name":"data","labels":{"foo":true}}`,
+	} {
+		err = json.Unmarshal([]byte(input), &request)
+		if err == nil || !strings.Contains(err.Error(), "of labels is not a string or something than can be safely converted to a string!") {
+			t.Fatalf("invalid labels error = %v", err)
+		}
+	}
+}

@@ -38,10 +38,10 @@ func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependenci
 	if req.Path == "" {
 		return Response{Failed: true, Msg: "path is required", Images: []map[string]any{}}
 	}
-	if req.Tag == "" {
+	if req.Tag == "" && (req.providedArguments == nil || !req.providedArguments["tag"]) {
 		req.Tag = "latest"
 	}
-	if !validTag(req.Tag) {
+	if !docker.IsValidImageTag(req.Tag, true) {
 		return Response{Failed: true, Msg: fmt.Sprintf("%q is not a valid docker tag", req.Tag), Images: []map[string]any{}}
 	}
 
@@ -71,10 +71,11 @@ func ExecuteWithDependenciesAndState(req Request, dependencies docker.Dependenci
 	for _, name := range req.Names {
 		joined := name
 		if !isImageID(name) {
-			joined, err = docker.JoinImageNameTag(name, req.Tag)
-			if err != nil {
-				return Response{Failed: true, Msg: fmt.Sprintf("invalid image name %q: %v", name, err), Images: images}
+			repository, embeddedTag := splitRepositoryTag(name)
+			if embeddedTag == "" {
+				embeddedTag = req.Tag
 			}
+			joined = repository + ":" + embeddedTag
 		}
 		inspection, inspectErr := client.ImageInspect(ctx, joined)
 		if inspectErr != nil {
@@ -185,51 +186,22 @@ func inspectionMap(value mobyclient.ImageInspectResult) (map[string]any, error) 
 }
 
 func isImageID(value string) bool {
-	trimmed := strings.TrimPrefix(strings.ToLower(value), "sha256:")
-	if len(trimmed) < 12 || len(trimmed) > 64 {
-		return false
-	}
-	for _, character := range trimmed {
-		if character < '0' || character > '9' && character < 'a' || character > 'f' {
-			return false
-		}
-	}
-	return true
+	return docker.IsImageID(value)
 }
 
-func validTag(value string) bool {
-	if value == "" || len(value) > 128 || value[0] == '.' || value[0] == '-' {
-		return false
+func splitRepositoryTag(value string) (string, string) {
+	if index := strings.LastIndex(value, "@"); index >= 0 {
+		return value[:index], value[index+1:]
 	}
-	for _, character := range value {
-		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' ||
-			character >= '0' && character <= '9' || character == '_' || character == '.' || character == '-' {
-			continue
-		}
-		return false
+	lastSlash := strings.LastIndex(value, "/")
+	if lastColon := strings.LastIndex(value, ":"); lastColon > lastSlash {
+		return value[:lastColon], value[lastColon+1:]
 	}
-	return true
+	return value, ""
 }
 
 func parsePlatform(value string) (ocispec.Platform, error) {
-	parts := strings.Split(value, "/")
-	if len(parts) < 1 || len(parts) > 3 || parts[0] == "" {
-		return ocispec.Platform{}, fmt.Errorf("invalid platform %q: expected os[/architecture[/variant]]", value)
-	}
-	result := ocispec.Platform{OS: parts[0]}
-	if len(parts) > 1 {
-		if parts[1] == "" {
-			return ocispec.Platform{}, fmt.Errorf("invalid platform %q: architecture is empty", value)
-		}
-		result.Architecture = parts[1]
-	}
-	if len(parts) > 2 {
-		if parts[2] == "" {
-			return ocispec.Platform{}, fmt.Errorf("invalid platform %q: variant is empty", value)
-		}
-		result.Variant = parts[2]
-	}
-	return result, nil
+	return docker.ParsePlatform(value, "", "")
 }
 
 func effectiveAPIVersion(common docker.CommonArgs, environment docker.Environment) string {

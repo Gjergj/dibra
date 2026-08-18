@@ -10,8 +10,8 @@ type Response struct {
 	Changed            bool          `json:"changed"`
 	Failed             bool          `json:"failed"`
 	Msg                string        `json:"msg,omitempty"`
-	Contexts           []ContextInfo `json:"contexts"`
-	CurrentContextName string        `json:"current_context_name"`
+	Contexts           []ContextInfo `json:"contexts,omitempty"`
+	CurrentContextName string        `json:"current_context_name,omitempty"`
 }
 
 type ContextInfo struct {

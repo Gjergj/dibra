@@ -7,13 +7,13 @@ import (
 	"testing"
 )
 
-func TestControllerFlagsParseCheckAndDiff(t *testing.T) {
+func TestControllerFlagsParseCheckDiffAndForceHandlers(t *testing.T) {
 	var options controllerFlags
 	flags := newControllerFlagSet(&options, flag.ContinueOnError, &bytes.Buffer{})
-	if err := flags.Parse([]string{"--check", "--diff"}); err != nil {
+	if err := flags.Parse([]string{"--check", "--diff", "--force-handlers"}); err != nil {
 		t.Fatal(err)
 	}
-	if !options.CheckMode || !options.DiffMode {
+	if !options.CheckMode || !options.DiffMode || !options.ForceHandlers {
 		t.Fatalf("parsed options = %#v", options)
 	}
 }
@@ -34,14 +34,14 @@ func TestControllerGeneratesEverySupportedCompletion(t *testing.T) {
 	}
 }
 
-func TestControllerDynamicCompletionIncludesCheckAndDiffFlags(t *testing.T) {
+func TestControllerDynamicCompletionIncludesExecutionFlags(t *testing.T) {
 	var options controllerFlags
 	flags := newControllerFlagSet(&options, flag.ContinueOnError, &bytes.Buffer{})
 	var output bytes.Buffer
 	if err := runCompletionRequest([]string{"__complete", "--"}, flags, &output, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"--check", "--diff"} {
+	for _, name := range []string{"--check", "--diff", "--force-handlers"} {
 		if !strings.Contains(output.String(), name) {
 			t.Errorf("dynamic completion does not contain %s:\n%s", name, output.String())
 		}

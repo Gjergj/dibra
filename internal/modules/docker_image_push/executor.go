@@ -146,16 +146,7 @@ func pushFailure(reference pushReference, err error) Response {
 }
 
 func isImageID(value string) bool {
-	trimmed := strings.TrimPrefix(strings.ToLower(value), "sha256:")
-	if len(trimmed) < 12 || len(trimmed) > 64 {
-		return false
-	}
-	for _, character := range trimmed {
-		if character < '0' || character > '9' && character < 'a' || character > 'f' {
-			return false
-		}
-	}
-	return true
+	return docker.IsImageID(value)
 }
 
 func validTag(value string, allowEmpty bool) bool {

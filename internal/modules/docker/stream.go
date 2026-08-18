@@ -1,7 +1,6 @@
 package docker
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,6 +30,7 @@ type PullPushProgress struct {
 // BuildProgress represents a progress message from docker build.
 type BuildProgress struct {
 	Stream      string `json:"stream"`
+	Status      string `json:"status"`
 	Error       string `json:"error"`
 	ErrorDetail struct {
 		Code    int    `json:"code"`
@@ -135,16 +135,12 @@ func ParseBuildStream(reader io.Reader) BuildResult {
 			result.ImageID = progress.Aux.ID
 		}
 
-		// Capture stream output (build logs)
-		if progress.Stream != "" {
-			// Remove trailing newline for cleaner logs
-			line := strings.TrimRight(progress.Stream, "\n\r")
-			if line != "" {
-				result.Logs = append(result.Logs, line)
-			}
-
-			// Try to extract image ID from stream
-			// Format: "Successfully built <id>"
+		text := progress.Stream
+		if text == "" {
+			text = progress.Status
+		}
+		for _, line := range splitOutputLines(text) {
+			result.Logs = append(result.Logs, line)
 			if strings.HasPrefix(line, "Successfully built ") {
 				parts := strings.Fields(line)
 				if len(parts) >= 3 {
@@ -200,12 +196,9 @@ func ParseLoadStream(reader io.Reader) LoadResult {
 		if text == "" {
 			text = msg.Status
 		}
-		for _, outputLine := range strings.Split(text, "\n") {
-			line := strings.TrimSpace(outputLine)
-			if line != "" {
-				result.Logs = append(result.Logs, line)
-				extractLoadedImage(&result, line)
-			}
+		for _, line := range splitOutputLines(text) {
+			result.Logs = append(result.Logs, line)
+			extractLoadedImage(&result, line)
 		}
 		return nil
 	})
@@ -216,20 +209,26 @@ func ParseLoadStream(reader io.Reader) LoadResult {
 
 	// If JSON parsing didn't work, try plain text
 	if !jsonParsed {
-		scanner := bufio.NewScanner(strings.NewReader(string(data)))
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line != "" {
-				result.Logs = append(result.Logs, line)
-				extractLoadedImage(&result, line)
-			}
-		}
-		if err := scanner.Err(); err != nil {
-			result.Error = err
+		for _, line := range splitOutputLines(string(data)) {
+			result.Logs = append(result.Logs, line)
+			extractLoadedImage(&result, line)
 		}
 	}
 
 	return result
+}
+
+func splitOutputLines(value string) []string {
+	if value == "" {
+		return nil
+	}
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	value = strings.ReplaceAll(value, "\r", "\n")
+	lines := strings.Split(value, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
 }
 
 // extractLoadedImage extracts image names from load output lines.

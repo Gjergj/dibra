@@ -94,7 +94,7 @@ func newBuilder(req Request, dependencies docker.Dependencies) (*builder, *Respo
 		result := failedResponse("path is required")
 		return nil, &result
 	}
-	if req.Tag == "" {
+	if req.Tag == "" && (req.providedArguments == nil || !req.providedArguments["tag"]) {
 		req.Tag = "latest"
 	}
 	if req.Rebuild == "" {
@@ -104,11 +104,11 @@ func newBuilder(req Request, dependencies docker.Dependencies) (*builder, *Respo
 		result := failedResponse("rebuild must be one of never or always")
 		return nil, &result
 	}
-	if !validTag(req.Tag) {
+	if !docker.IsValidImageTag(req.Tag, true) {
 		result := failedResponse(fmt.Sprintf("%q is not a valid docker tag", req.Tag))
 		return nil, &result
 	}
-	if isImageID(req.Name) || strings.Contains(req.Name, "@") {
+	if isImageID(req.Name) {
 		result := failedResponse("Image name must not be a digest")
 		return nil, &result
 	}
@@ -121,7 +121,7 @@ func newBuilder(req Request, dependencies docker.Dependencies) (*builder, *Respo
 		req.Name = repository
 		req.Tag = parsedTag
 	}
-	if !validTag(req.Tag) || strings.Contains(req.Tag, "@") {
+	if docker.IsImageID(req.Tag) {
 		result := failedResponse("Image name must not contain a digest, but have a tag")
 		return nil, &result
 	}
@@ -364,10 +364,10 @@ func validateOutputs(outputs []Output) error {
 		default:
 			return fmt.Errorf("outputs[%d].type must be one of local, tar, oci, docker, or image", index)
 		}
-		if output.Dest != "" && (len(output.Name) > 0 || output.Push) {
+		if output.hasDest() && (len(output.Name) > 0 || output.Push) {
 			return fmt.Errorf("outputs[%d] dest is mutually exclusive with name and push", index)
 		}
-		if output.Context != "" && (len(output.Name) > 0 || output.Push) {
+		if output.hasContext() && (len(output.Name) > 0 || output.Push) {
 			return fmt.Errorf("outputs[%d] context is mutually exclusive with name and push", index)
 		}
 	}
@@ -457,10 +457,10 @@ func outputParts(output Output) []string {
 	case "local", "tar", "oci":
 		parts = append(parts, "dest="+output.Dest)
 	case "docker":
-		if output.Dest != "" {
+		if output.hasDest() {
 			parts = append(parts, "dest="+output.Dest)
 		}
-		if output.Context != "" {
+		if output.hasContext() {
 			parts = append(parts, "context="+output.Context)
 		}
 	case "image":
@@ -503,50 +503,18 @@ func cloneOutputs(outputs []Output) []Output {
 }
 
 func splitImageName(value string) (string, string, error) {
-	reference := docker.ParseImageReference(value)
-	if err := reference.Validate(); err != nil {
-		return "", "", fmt.Errorf("invalid image name %q: %w", value, err)
+	if index := strings.LastIndex(value, "@"); index >= 0 {
+		return value[:index], value[index+1:], nil
 	}
-	if reference.Digest != "" {
-		return "", "", fmt.Errorf("Image name must not be a digest")
+	lastSlash := strings.LastIndex(value, "/")
+	if lastColon := strings.LastIndex(value, ":"); lastColon > lastSlash {
+		return value[:lastColon], value[lastColon+1:], nil
 	}
-	tag := reference.Tag
-	reference.Tag = ""
-	if tag != "" {
-		return reference.String(), tag, nil
-	}
-	return reference.String(), "", nil
+	return value, "", nil
 }
 
 func isImageID(value string) bool {
-	trimmed := strings.TrimPrefix(strings.ToLower(value), "sha256:")
-	if len(trimmed) < 12 || len(trimmed) > 64 {
-		return false
-	}
-	for _, character := range trimmed {
-		if character < '0' || character > '9' && character < 'a' || character > 'f' {
-			return false
-		}
-	}
-	return true
-}
-
-func validTag(value string) bool {
-	if value == "" || len(value) > 128 {
-		return false
-	}
-	for index, character := range value {
-		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' ||
-			character >= '0' && character <= '9' || character == '_' || character == '.' || character == '-' {
-			continue
-		}
-		if index == 0 {
-			return false
-		}
-		return false
-	}
-	first := value[0]
-	return first != '.' && first != '-'
+	return docker.IsImageID(value)
 }
 
 func parseBuildxVersion(output string) ([3]int, error) {

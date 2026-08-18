@@ -29,6 +29,7 @@ const (
 	testPassword             = "rootpass"
 	testDockerEngineVersion  = "29.7.2"
 	testDockerComposeVersion = docker.SupportedComposeVersion
+	testDockerBuildxVersion  = "0.30.0"
 )
 
 func TestMain(m *testing.M) {
@@ -42,6 +43,10 @@ func TestMain(m *testing.M) {
 	}
 	if err := requireDockerComposeVersion(); err != nil {
 		println("Docker Compose baseline unavailable:", err.Error())
+		os.Exit(1)
+	}
+	if err := requireDockerBuildxVersion(); err != nil {
+		println("Docker buildx baseline unavailable:", err.Error())
 		os.Exit(1)
 	}
 	os.Exit(m.Run())
@@ -85,6 +90,29 @@ func requireDockerComposeVersion() error {
 	}
 	if actual := strings.TrimPrefix(strings.TrimSpace(response.Version), "v"); actual != testDockerComposeVersion {
 		return fmt.Errorf("got %s, require exact %s", actual, testDockerComposeVersion)
+	}
+	return nil
+}
+
+func requireDockerBuildxVersion() error {
+	client, err := ssh.Connect(ssh.Config{
+		Host: testHost, Port: testPort, User: testUser, Password: testPassword,
+	})
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	stdout, stderr, err := client.Run("docker buildx version")
+	if err != nil {
+		return fmt.Errorf("inspect Docker buildx version: %w (%s)", err, strings.TrimSpace(stderr))
+	}
+	fields := strings.Fields(stdout)
+	if len(fields) < 2 {
+		return fmt.Errorf("parse Docker buildx version output %q", strings.TrimSpace(stdout))
+	}
+	actual := strings.TrimPrefix(fields[1], "v")
+	if actual != testDockerBuildxVersion {
+		return fmt.Errorf("got %s, require exact %s", actual, testDockerBuildxVersion)
 	}
 	return nil
 }

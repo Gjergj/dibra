@@ -16,7 +16,7 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 	dependencies = dependencies.Resolve()
 	cli, err := dependencies.NewClient(req.CommonArgs)
 	if err != nil {
-		return Response{Failed: true, CanTalkToDocker: false, Msg: docker.WrapError("create docker client", "", err).Error()}
+		return Response{Failed: true, CanTalkToDocker: false, Msg: fmt.Sprintf("An unexpected Docker error occurred: %v", err)}
 	}
 	defer cli.Close()
 
@@ -25,7 +25,7 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 
 	infoResult, err := cli.Info(ctx, client.InfoOptions{})
 	if err != nil {
-		return Response{Failed: true, CanTalkToDocker: false, Msg: docker.WrapError("inspect docker host", "", err).Error()}
+		return Response{Failed: true, CanTalkToDocker: false, Msg: fmt.Sprintf("Error inspecting docker host: %v", err)}
 	}
 	hostInfo, err := docker.InspectionMap(infoResult.Info)
 	if err != nil {
@@ -37,7 +37,7 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 	if req.DiskUsage {
 		usage, err := diskUsageFacts(ctx, cli, req.VerboseOutput)
 		if err != nil {
-			return Response{Failed: true, CanTalkToDocker: true, Msg: docker.WrapError("inspect docker host", "", err).Error()}
+			return Response{Failed: true, CanTalkToDocker: true, Msg: fmt.Sprintf("Error inspecting docker host: %v", err)}
 		}
 		response.DiskUsage = usage
 	}
@@ -45,28 +45,28 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 	if req.Containers {
 		items, err := listContainers(ctx, cli, req)
 		if err != nil {
-			return Response{Failed: true, CanTalkToDocker: true, Msg: docker.WrapError("inspect docker host for object 'containers'", "", err).Error()}
+			return Response{Failed: true, CanTalkToDocker: true, Msg: fmt.Sprintf("Error inspecting docker host for object 'containers': %v", err)}
 		}
 		response.Containers = &items
 	}
 	if req.Images {
 		items, err := listImages(ctx, cli, req)
 		if err != nil {
-			return Response{Failed: true, CanTalkToDocker: true, Msg: docker.WrapError("inspect docker host for object 'images'", "", err).Error()}
+			return Response{Failed: true, CanTalkToDocker: true, Msg: fmt.Sprintf("Error inspecting docker host for object 'images': %v", err)}
 		}
 		response.Images = &items
 	}
 	if req.Networks {
 		items, err := listNetworks(ctx, cli, req)
 		if err != nil {
-			return Response{Failed: true, CanTalkToDocker: true, Msg: docker.WrapError("inspect docker host for object 'networks'", "", err).Error()}
+			return Response{Failed: true, CanTalkToDocker: true, Msg: fmt.Sprintf("Error inspecting docker host for object 'networks': %v", err)}
 		}
 		response.Networks = &items
 	}
 	if req.Volumes {
 		items, err := listVolumes(ctx, cli, req)
 		if err != nil {
-			return Response{Failed: true, CanTalkToDocker: true, Msg: docker.WrapError("inspect docker host for object 'volumes'", "", err).Error()}
+			return Response{Failed: true, CanTalkToDocker: true, Msg: fmt.Sprintf("Error inspecting docker host for object 'volumes': %v", err)}
 		}
 		response.Volumes = &items
 	}

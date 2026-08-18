@@ -37,6 +37,19 @@ func TestPlaybook_DockerImageExportParity(t *testing.T) {
 	}
 	architecture := strings.TrimSpace(remoteExec(t, client, "docker image inspect --format '{{.Architecture}}' "+alpine))
 
+	t.Run("diff mode executes without diff output", func(t *testing.T) {
+		result := runImageExportWithArgs(t, client, "diff-mode", `
+      names: [`+alpine+`]
+      path: `+root+`/diff-mode.tar
+`, "--diff")
+		if result["changed"] != true {
+			t.Fatalf("diff mode result = %#v", result)
+		}
+		if _, found := result["diff"]; found {
+			t.Fatalf("unsupported diff mode returned a diff: %#v", result["diff"])
+		}
+	})
+
 	t.Run("missing image fails", func(t *testing.T) {
 		output := runImageExportOutput(t, `
       names: [definitely-missing-image-export:latest]

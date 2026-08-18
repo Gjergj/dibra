@@ -1,6 +1,6 @@
 #!/bin/sh
 # dibra installer script
-# Usage: curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install.sh | sh
+# Usage: curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra.sh | sh
 # Or with a specific version: curl -fsSL ... | VERSION=v1.2.3 sh
 
 set -e

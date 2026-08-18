@@ -49,6 +49,9 @@ func TestDibraDeployBlackBox(t *testing.T) {
 		waitForCondition(t, 10*time.Second, "job cleanup", func() bool {
 			return jobDirectoriesEmpty(client)
 		})
+		waitForCondition(t, 10*time.Second, "successful outcome report", func() bool {
+			return strings.Contains(readRemoteFile(t, client, requestLog), "outcome 001-happy succeeded")
+		})
 		if !serviceIsActive(client) {
 			t.Fatal("dibra-deploy service stopped after a successful non-reboot job")
 		}
@@ -87,6 +90,9 @@ func TestDibraDeployBlackBox(t *testing.T) {
 		if !serviceIsActive(client) {
 			t.Error("daemon exited after a failed job instead of continuing to poll")
 		}
+		waitForCondition(t, 10*time.Second, "failed outcome report", func() bool {
+			return strings.Contains(readRemoteFile(t, client, requestLog), "outcome 001-failure failed")
+		})
 	})
 
 	t.Run("rejects_an_unsafe_archive_and_remains_running", func(t *testing.T) {
@@ -106,6 +112,9 @@ func TestDibraDeployBlackBox(t *testing.T) {
 		}
 		waitForCondition(t, 10*time.Second, "invalid job cleanup", func() bool {
 			return jobDirectoriesEmpty(client)
+		})
+		waitForCondition(t, 10*time.Second, "unsafe archive outcome report", func() bool {
+			return strings.Contains(readRemoteFile(t, client, requestLog), "outcome 001-traversal failed")
 		})
 	})
 
@@ -154,6 +163,9 @@ func TestDibraDeployBlackBox(t *testing.T) {
 		}
 		if !jobDirectoriesEmpty(client) {
 			t.Error("reboot job directory was not cleaned before exit")
+		}
+		if requests := readRemoteFile(t, client, requestLog); !strings.Contains(requests, "outcome 001-reboot succeeded") {
+			t.Errorf("reboot outcome was not reported:\n%s", requests)
 		}
 	})
 }

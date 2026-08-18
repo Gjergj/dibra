@@ -74,6 +74,7 @@ type RunOptions struct {
 	Verbose          bool
 	CheckMode        bool
 	DiffMode         bool
+	ForceHandlers    bool
 	AgentMode        agent.Mode
 	AgentPath        string
 	Version          string
@@ -289,6 +290,10 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 	if err != nil {
 		return runResult, fmt.Errorf("Failed to expand import_tasks: %v", err)
 	}
+	cfg.Handlers, err = config.ExpandImportTasks(cfg.Handlers, baseDir, renderImportPath)
+	if err != nil {
+		return runResult, fmt.Errorf("Failed to expand handler import_tasks: %v", err)
+	}
 	globalExecutionState := execution.State{CheckMode: opts.CheckMode, DiffMode: opts.DiffMode}
 
 	var groupsMap map[string][]string
@@ -429,6 +434,181 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 
 		taskQueue := make([]config.Task, len(cfg.Tasks))
 		copy(taskQueue, cfg.Tasks)
+		buildTaskContext := func(task config.Task) (map[string]interface{}, error) {
+			taskHostvars, err := buildHostvarsForTask(hostInfos, varsResolver, inventoryVars, playVars, task.Vars, extraVarsMap, hostRuntimeVars, groupsMap)
+			if err != nil {
+				return nil, fmt.Errorf("build hostvars: %w", err)
+			}
+			resolved, err := varsResolver.ResolveHostVars(vars.ResolveRequest{
+				Host: vars.HostInfo{
+					Name:   host.Name,
+					Groups: host.Groups,
+				},
+				InventoryVars: inventoryVars,
+				PlayVars:      playVars,
+				TaskVars:      task.Vars,
+				ExtraVars:     extraVarsMap,
+				RuntimeVars:   hostRuntimeVars[host.Name],
+			})
+			if err != nil {
+				return nil, fmt.Errorf("resolve vars: %w", err)
+			}
+			hostvarsContext := map[string]interface{}{}
+			for name, hv := range taskHostvars {
+				hostvarsContext[name] = hv
+			}
+			groupsContext := map[string]interface{}{}
+			for groupName, members := range groupsMap {
+				membersAny := make([]interface{}, len(members))
+				for i, member := range members {
+					membersAny[i] = member
+				}
+				groupsContext[groupName] = membersAny
+			}
+			for name, taskContext := range taskHostvars {
+				taskContext["hostvars"] = hostvarsContext
+				taskContext["groups"] = groupsContext
+				taskContext["inventory_hostname"] = name
+			}
+			hostContext := taskHostvars[host.Name]
+			groupNamesAny := make([]interface{}, len(host.Groups))
+			for i, group := range host.Groups {
+				groupNamesAny[i] = group
+			}
+			hostContext["group_names"] = groupNamesAny
+			hostContext["vars"] = resolved.Namespaces
+			return hostContext, nil
+		}
+
+		handlerDefinitions, err := buildHandlerIndex(cfg.Handlers, func(handler config.Task) (string, error) {
+			handlerContext, err := buildTaskContext(handler)
+			if err != nil {
+				return "", err
+			}
+			return vars.RenderString(handler.Name, handlerContext)
+		})
+		if err != nil {
+			printf("  ✗ Failed to prepare handlers: %v\n", err)
+			runResult.Failed = true
+			continue
+		}
+		pendingHandlers := make(map[int]struct{})
+		hostFailed := false
+
+		var flushHandlers = func() bool {
+			if len(pendingHandlers) == 0 {
+				return false
+			}
+			scheduled := pendingHandlers
+			pendingHandlers = make(map[int]struct{})
+			for definitionIndex, definition := range handlerDefinitions.definitions {
+				if _, ok := scheduled[definitionIndex]; !ok {
+					continue
+				}
+				printf("  Handler: %s\n", definition.name)
+				handlerQueue := []config.Task{definition.task}
+				for handlerTaskIndex := 0; handlerTaskIndex < len(handlerQueue); handlerTaskIndex++ {
+					handlerTask := handlerQueue[handlerTaskIndex]
+					if handlerTask.Meta != nil {
+						printf("    ✗ meta actions cannot be used from a handler\n")
+						return true
+					}
+					handlerContext, contextErr := buildTaskContext(handlerTask)
+					if contextErr != nil {
+						printf("    ✗ Failed to resolve handler variables: %v\n", contextErr)
+						return true
+					}
+					if handlerTask.Register != "" {
+						if registerErr := validateVarName(handlerTask.Register); registerErr != nil {
+							printf("    ✗ %v\n", registerErr)
+							return true
+						}
+					}
+					loopSpec, loopErr := resolveLoopSpec(handlerTask, handlerContext)
+					if loopErr != nil {
+						printf("    ✗ Failed to resolve handler loop: %v\n", loopErr)
+						return true
+					}
+					if loopSpec != nil {
+						if handlerTask.IncludeTasks != nil {
+							if includeErr := includeTasksForLoop(handlerTask, loopSpec, handlerContext, baseDir, &handlerQueue, handlerTaskIndex, renderImportPath); includeErr != nil {
+								printf("    ✗ handler include_tasks: %v\n", includeErr)
+								return true
+							}
+							continue
+						}
+						loopResults := []interface{}{}
+						loopChanged := false
+						loopFailed := false
+						loopSkippedAll := len(loopSpec.Items) == 0
+						for itemIndex, item := range loopSpec.Items {
+							loopInfo := buildLoopInfo(loopSpec.Items, itemIndex, loopSpec.Extended)
+							loopVars := buildLoopVars(loopSpec, item, itemIndex, loopInfo)
+							iterationContext := mergeContext(handlerContext, loopVars)
+							iterationTask := handlerTask
+							iterationTask.Loop = nil
+							iterationTask.WithItems = nil
+							iterationTask.WithList = nil
+							iterationTask.WithDict = nil
+							iterationTask.WithSequence = nil
+							iterationTask.LoopControl = nil
+							iterationTask.Vars = mergeTaskVars(handlerTask.Vars, loopVars)
+							result, hasResult := executeTaskOnce(iterationTask, iterationContext, host, client, agentExecutionPath, baseDir, &handlerQueue, handlerTaskIndex, renderImportPath, opts.Verbose, false, globalExecutionState)
+							if !hasResult {
+								loopFailed = true
+								break
+							}
+							if changedErr := applyChangedWhen(iterationTask, result, iterationContext); changedErr != nil {
+								result["failed"] = true
+								result["msg"] = changedErr.Error()
+							}
+							result = attachLoopResult(result, loopSpec, item, itemIndex, loopInfo)
+							result = normalizeRegisteredResult(result)
+							loopResults = append(loopResults, result)
+							if changed, _ := result["changed"].(bool); changed {
+								loopChanged = true
+							}
+							if failed, _ := result["failed"].(bool); failed {
+								loopFailed = true
+							}
+							if skipped, _ := result["skipped"].(bool); !skipped {
+								loopSkippedAll = false
+							}
+						}
+						if handlerTask.Register != "" {
+							registerResult(hostRuntimeVars, host.Name, handlerTask, map[string]interface{}{
+								"changed": loopChanged, "failed": loopFailed,
+								"skipped": loopSkippedAll, "results": loopResults,
+							})
+						}
+						if loopFailed {
+							return true
+						}
+						continue
+					}
+					result, hasResult := executeTaskOnce(handlerTask, handlerContext, host, client, agentExecutionPath, baseDir, &handlerQueue, handlerTaskIndex, renderImportPath, opts.Verbose, false, globalExecutionState)
+					if !hasResult {
+						if handlerTask.IncludeTasks != nil || handlerTask.ImportTasks != nil {
+							continue
+						}
+						return true
+					}
+					if changedErr := applyChangedWhen(handlerTask, result, handlerContext); changedErr != nil {
+						result["failed"] = true
+						result["msg"] = changedErr.Error()
+					}
+					applyGatheredFacts(hostRuntimeVars, host.Name, result)
+					if handlerTask.Register != "" {
+						registerResult(hostRuntimeVars, host.Name, handlerTask, result)
+					}
+					if failed, _ := result["failed"].(bool); failed {
+						return true
+					}
+					runResult.CompletedTaskCount++
+				}
+			}
+			return false
+		}
 
 		for taskIdx := 0; taskIdx < len(taskQueue); taskIdx++ {
 			if err := ctx.Err(); err != nil {
@@ -437,6 +617,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 			if opts.Local && countRebootTasks(taskQueue) > 1 {
 				printf("    ✗ deployment may contain at most one local reboot task\n")
 				runResult.Failed = true
+				hostFailed = true
 				break
 			}
 			task := taskQueue[taskIdx]
@@ -449,6 +630,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 				if err := validateVarName(task.Register); err != nil {
 					printf("    ✗ %v\n", err)
 					runResult.Failed = true
+					hostFailed = true
 					if opts.Local {
 						break
 					}
@@ -460,6 +642,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 			if err != nil {
 				printf("    ✗ Failed to build hostvars: %v\n", err)
 				runResult.Failed = true
+				hostFailed = true
 				if opts.Local {
 					break
 				}
@@ -480,6 +663,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 			if err != nil {
 				printf("    ✗ Failed to resolve vars: %v\n", err)
 				runResult.Failed = true
+				hostFailed = true
 				if opts.Local {
 					break
 				}
@@ -512,10 +696,39 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 			hostContext["vars"] = resolved.Namespaces
 			flattened := hostContext
 
+			if task.Meta != nil {
+				shouldRun, whenErr := template.EvaluateWhen(task.When, flattened)
+				if whenErr != nil {
+					printf("    ✗ Failed to evaluate when condition: %v\n", whenErr)
+					runResult.Failed = true
+					hostFailed = true
+					break
+				}
+				metaResult := map[string]interface{}{"changed": false, "failed": false}
+				if !shouldRun {
+					metaResult["skipped"] = true
+					metaResult["msg"] = "when condition false"
+				} else if task.Meta.Action == "flush_handlers" && flushHandlers() {
+					metaResult["failed"] = true
+					metaResult["msg"] = "a notified handler failed"
+				}
+				if task.Register != "" {
+					registerResult(hostRuntimeVars, host.Name, task, metaResult)
+				}
+				if failed, _ := metaResult["failed"].(bool); failed {
+					runResult.Failed = true
+					hostFailed = true
+					break
+				}
+				runResult.CompletedTaskCount++
+				continue
+			}
+
 			loopSpec, err := resolveLoopSpec(task, flattened)
 			if err != nil {
 				printf("    ✗ Failed to resolve loop: %v\n", err)
 				runResult.Failed = true
+				hostFailed = true
 				if opts.Local {
 					break
 				}
@@ -527,6 +740,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 					if err := includeTasksForLoop(task, loopSpec, flattened, baseDir, &taskQueue, taskIdx, renderImportPath); err != nil {
 						printf("    ✗ include_tasks: %v\n", err)
 						runResult.Failed = true
+						hostFailed = true
 						if opts.Local {
 							break
 						}
@@ -567,8 +781,14 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 
 					result, hasResult := executeTaskOnce(iterationTask, iterationContext, host, client, agentExecutionPath, baseDir, &taskQueue, taskIdx, renderImportPath, opts.Verbose, false, globalExecutionState)
 					if hasResult {
-						if iterationTask.GatherFacts != nil {
-							applyGatheredFacts(hostRuntimeVars, host.Name, result)
+						applyGatheredFacts(hostRuntimeVars, host.Name, result)
+						if changedErr := applyChangedWhen(iterationTask, result, iterationContext); changedErr != nil {
+							result["failed"] = true
+							result["msg"] = changedErr.Error()
+						}
+						if notifyErr := queueTaskNotifications(iterationTask, result, iterationContext, handlerDefinitions, pendingHandlers, printf); notifyErr != nil {
+							result["failed"] = true
+							result["msg"] = notifyErr.Error()
 						}
 						result = attachLoopResult(result, loopSpec, item, idx, loopInfo)
 						result = normalizeRegisteredResult(result)
@@ -604,6 +824,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 				if loopFailed {
 					printf("  ✗ Host %s failed; stopping remaining tasks\n", host.Name)
 					runResult.Failed = true
+					hostFailed = true
 					break
 				}
 				continue
@@ -611,8 +832,18 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 
 			allowReboot := opts.Local && opts.AllowReboot && taskIdx == len(taskQueue)-1
 			result, hasResult := executeTaskOnce(task, flattened, host, client, agentExecutionPath, baseDir, &taskQueue, taskIdx, renderImportPath, opts.Verbose, allowReboot, globalExecutionState)
-			if hasResult && task.GatherFacts != nil {
+			if hasResult {
 				applyGatheredFacts(hostRuntimeVars, host.Name, result)
+			}
+			if hasResult {
+				if changedErr := applyChangedWhen(task, result, flattened); changedErr != nil {
+					result["failed"] = true
+					result["msg"] = changedErr.Error()
+				}
+				if notifyErr := queueTaskNotifications(task, result, flattened, handlerDefinitions, pendingHandlers, printf); notifyErr != nil {
+					result["failed"] = true
+					result["msg"] = notifyErr.Error()
+				}
 			}
 			if hasResult && task.Register != "" {
 				registerResult(hostRuntimeVars, host.Name, task, result)
@@ -621,6 +852,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 				if failed, ok := result["failed"].(bool); ok && failed {
 					printf("  ✗ Host %s failed; stopping remaining tasks\n", host.Name)
 					runResult.Failed = true
+					hostFailed = true
 					break
 				}
 				runResult.CompletedTaskCount++
@@ -632,8 +864,13 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 			} else if task.ImportTasks == nil && task.IncludeTasks == nil {
 				printf("  ✗ Host %s could not execute task; stopping remaining tasks\n", host.Name)
 				runResult.Failed = true
+				hostFailed = true
 				break
 			}
+		}
+		if (!hostFailed || opts.ForceHandlers || cfg.ForceHandlers) && flushHandlers() {
+			printf("  ✗ Host %s handler failed\n", host.Name)
+			runResult.Failed = true
 		}
 	}
 
@@ -1365,6 +1602,7 @@ func printValidationSummary(configPath string, cfg *config.Config, inv *inventor
 	}
 	printf("Hosts: %d\n", len(cfg.Hosts))
 	printf("Tasks: %d\n", len(cfg.Tasks))
+	printf("Handlers: %d\n", len(cfg.Handlers))
 }
 
 func renderArgs(args map[string]interface{}, context map[string]interface{}) (map[string]interface{}, error) {

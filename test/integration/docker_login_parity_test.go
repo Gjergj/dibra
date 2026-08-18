@@ -6,13 +6,15 @@ import (
 	"encoding/base64"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestPlaybook_DockerLoginParity(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	mustRemote(t, client, "rm -f /tmp/dibra-login-*.json /tmp/dibra-docker-config.json /tmp/.dibra-agent")
+	mustRemote(t, client, "rm -f /tmp/dibra-login-*.json /tmp/dibra-docker-config.json /tmp/dibra-login-htpasswd /tmp/.dibra-agent")
 	templatePath := writeResultTemplate(t, "login_result")
 	configPath := "/tmp/dibra-docker-config.json"
 
@@ -51,8 +53,34 @@ func TestPlaybook_DockerLoginParity(t *testing.T) {
 
 	mustRemote(t, client, "docker rm -f dibra-login-registry >/dev/null 2>&1 || true")
 	mustRemote(t, client, "docker pull registry:2")
-	mustRemote(t, client, "docker run -d --name dibra-login-registry -p 127.0.0.1:5000:5000 registry:2")
-	defer mustRemote(t, client, "docker rm -f dibra-login-registry >/dev/null 2>&1 || true")
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("testpass"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	htpasswd := base64.StdEncoding.EncodeToString([]byte("testuser:" + string(passwordHash) + "\n"))
+	mustRemote(t, client, "printf '%s' '"+htpasswd+"' | base64 -d > /tmp/dibra-login-htpasswd && chmod 0600 /tmp/dibra-login-htpasswd")
+	mustRemote(t, client, "docker run -d --name dibra-login-registry -p 127.0.0.1:5000:5000 -v /tmp/dibra-login-htpasswd:/auth/htpasswd:ro -e REGISTRY_AUTH=htpasswd -e REGISTRY_AUTH_HTPASSWD_REALM=Registry -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd registry:2")
+	defer mustRemote(t, client, "docker rm -f dibra-login-registry >/dev/null 2>&1 || true; rm -f /tmp/dibra-login-htpasswd")
+
+	t.Run("wrong password fails in check and real mode", func(t *testing.T) {
+		arguments := "      registry_url: localhost:5000\n      username: testuser\n      password: wrong\n      config_path: " + configPath + "\n"
+		for _, test := range []struct {
+			name        string
+			taskOptions string
+		}{
+			{name: "real"},
+			{name: "check", taskOptions: "    check_mode: true\n"},
+		} {
+			mustRemote(t, client, "rm -f "+configPath)
+			result, output := runLogin("wrong-password-"+test.name, arguments, test.taskOptions)
+			if result != nil || !strings.Contains(output, "Logging into localhost:5000 for user testuser failed -") {
+				t.Fatalf("%s wrong password: result=%#v output=%s", test.name, result, output)
+			}
+			if remoteFileExists(t, client, configPath) {
+				t.Fatalf("%s wrong password wrote config.json", test.name)
+			}
+		}
+	})
 
 	t.Run("credential helper stores reuses and erases credentials", func(t *testing.T) {
 		const helperPath = "/usr/local/bin/docker-credential-dibra-test"

@@ -137,7 +137,7 @@ func TestPushValidationMatchesUpstreamFailures(t *testing.T) {
 		request Request
 		message string
 	}{
-		{Request{Name: strings.Repeat("a", 12)}, "Cannot push an image by ID"},
+		{Request{Name: "sha256:" + strings.Repeat("a", 64)}, "Cannot push an image by ID"},
 		{Request{Name: "example/app@" + digest}, "Cannot push an image by digest"},
 		{Request{Name: "example/app", Tag: "foo/bar"}, `"foo/bar" is not a valid docker tag!`},
 		{Request{Name: "example/app:foo bar"}, `"foo bar" is not a valid docker tag!`},
@@ -145,6 +145,11 @@ func TestPushValidationMatchesUpstreamFailures(t *testing.T) {
 		response := ExecuteWithDependencies(test.request, docker.Dependencies{})
 		if !response.Failed || response.Msg != test.message {
 			t.Fatalf("%#v returned %#v", test.request, response)
+		}
+	}
+	for _, name := range []string{strings.Repeat("a", 12), strings.Repeat("a", 64)} {
+		if _, reference, err := validateRequest(Request{Name: name}); err != nil || reference.Reference != name+":latest" {
+			t.Fatalf("hash-like repository %q was treated as an image ID: reference=%#v err=%v", name, reference, err)
 		}
 	}
 

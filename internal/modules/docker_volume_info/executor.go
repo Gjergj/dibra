@@ -31,7 +31,7 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 		if docker.IsNotFoundError(err) {
 			return Response{Changed: false, Exists: false, Volume: nil}
 		}
-		return Response{Failed: true, Msg: fmt.Sprintf("An unexpected Docker error occurred: %v", err)}
+		return Response{Failed: true, Msg: fmt.Sprintf("Error inspecting volume: %v", err)}
 	}
 
 	volume, err := inspectMap(result)

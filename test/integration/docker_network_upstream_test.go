@@ -237,7 +237,17 @@ func TestPlaybook_DockerNetworkUpstreamIPAMDriverOptions(t *testing.T) {
         a: b
 `)
 	if created == nil {
-		t.Skipf("Engine 29.7.2 rejected IPAM driver options (upstream ignores errors then asserts success): %s", output)
+		directName := name + "-direct"
+		remoteExec(t, client, "docker network rm "+directName+" || true")
+		defer remoteExec(t, client, "docker network rm "+directName+" || true")
+		stdout, stderr, err := client.Run("docker network create --ipam-driver default --ipam-opt a=b " + directName)
+		directOutput := stdout + stderr
+		if err == nil || !strings.Contains(strings.ToLower(directOutput), "invalid") ||
+			!strings.Contains(strings.ToLower(output), "invalid") {
+			t.Fatalf("Dibra rejected IPAM driver options without matching Engine rejection:\nDibra: %s\nDocker CLI: %s", output, directOutput)
+		}
+		t.Logf("Engine 29.7.2 rejects arbitrary default-driver IPAM options through both Dibra and Docker CLI: %s", strings.TrimSpace(directOutput))
+		return
 	}
 	if created["changed"] != true {
 		t.Fatalf("ipam_driver_options create = %#v", created)
@@ -250,7 +260,7 @@ func TestPlaybook_DockerNetworkUpstreamIPAMDriverOptions(t *testing.T) {
         a: b
 `, "--diff")
 	if idem == nil {
-		t.Skipf("Engine 29.7.2 rejected IPAM driver options idempotency: %s", output)
+		t.Fatalf("Engine accepted IPAM driver options during create but rejected idempotency: %s", output)
 	}
 	if idem["changed"] != false {
 		t.Fatalf("ipam_driver_options idempotent = %#v", idem)
@@ -263,7 +273,7 @@ func TestPlaybook_DockerNetworkUpstreamIPAMDriverOptions(t *testing.T) {
         a: c
 `, "--diff")
 	if changed == nil {
-		t.Skipf("Engine 29.7.2 rejected IPAM driver options change: %s", output)
+		t.Fatalf("Engine accepted IPAM driver options during create but rejected update: %s", output)
 	}
 	if changed["changed"] != true {
 		t.Fatalf("ipam_driver_options change = %#v", changed)

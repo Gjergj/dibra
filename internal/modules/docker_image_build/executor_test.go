@@ -172,6 +172,48 @@ func TestCheckModeValidatesButDoesNotBuild(t *testing.T) {
 	}
 }
 
+func TestExplicitEmptyTagAndOutputFieldsArePreserved(t *testing.T) {
+	var output Output
+	if err := json.Unmarshal([]byte(`{"type":"docker","dest":"","context":""}`), &output); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(outputParts(output), ","); got != "type=docker,dest=,context=" {
+		t.Fatalf("output parts = %q", got)
+	}
+	encoded, err := json.Marshal(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(encoded) != `{"context":"","dest":"","type":"docker"}` {
+		t.Fatalf("explicit empty output fields were not preserved: %s", encoded)
+	}
+	var omitted Output
+	if err := json.Unmarshal([]byte(`{"type":"docker"}`), &omitted); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err = json.Marshal(omitted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(encoded) != `{"type":"docker"}` {
+		t.Fatalf("omitted output fields were synthesized: %s", encoded)
+	}
+
+	runner := &buildRunner{replies: []cliReply{
+		{result: docker.CLIResult{Output: []byte("github.com/docker/buildx v0.13.1")}},
+		{result: docker.CLIResult{Output: []byte("No such image")}, err: errors.New("exit 1")},
+	}}
+	request := Request{Name: "example", Path: "/context"}
+	request.SetProvidedArguments([]string{"name", "path", "tag"})
+	response := ExecuteWithDependenciesAndState(request,
+		buildDependencies(runner, map[string]fs.FileMode{"/context": fs.ModeDir}),
+		execution.State{CheckMode: true})
+	if response.Failed || !response.Changed || len(runner.commands) != 2 ||
+		!containsSequence(runner.commands[1].Args, []string{"image", "inspect", "example:"}) {
+		t.Fatalf("response = %#v; commands = %#v", response, runner.commands)
+	}
+}
+
 func TestBuildxVersionAndNestedValidation(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -493,7 +535,7 @@ func TestRequestValidationFailures(t *testing.T) {
 		{name: "missing path", request: Request{Name: "example"}, want: "path is required"},
 		{name: "invalid rebuild", request: Request{Name: "example", Path: "/context", Rebuild: "sometimes"}, want: "rebuild must be one of never or always"},
 		{name: "image id", request: Request{Name: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", Path: "/context"}, want: "Image name must not be a digest"},
-		{name: "digest name", request: Request{Name: "alpine@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", Path: "/context"}, want: "Image name must not be a digest"},
+		{name: "digest name", request: Request{Name: "alpine@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", Path: "/context"}, want: "Image name must not contain a digest, but have a tag"},
 		{name: "invalid tag", request: Request{Name: "example", Tag: "-bad", Path: "/context"}, want: "is not a valid docker tag"},
 		{name: "secret missing id", request: Request{Name: "example", Path: "/context", Secrets: []Secret{{Type: "file", Src: "/context/token"}}}, want: "id is required"},
 		{name: "file secret missing src", request: Request{Name: "example", Path: "/context", Secrets: []Secret{{ID: "token", Type: "file"}}}, want: "src is required"},

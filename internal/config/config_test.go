@@ -197,6 +197,28 @@ tasks:
 	}
 }
 
+func TestLoad_RegisteredDockerModulePreservesExplicitFloat(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "playbook.yaml")
+	data := []byte(`
+hosts: []
+tasks:
+  - docker_volume:
+      name: data
+      labels:
+        foo: 1.0
+`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(path)
+	want := "The value 1.0 for 'foo' of labels is not a string or something than can be safely converted to a string!"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("Load() error = %v, want %q", err, want)
+	}
+}
+
 func TestLoad_RejectsMultipleRegisteredDockerModules(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "playbook.yaml")

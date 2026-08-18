@@ -76,6 +76,7 @@ func main() {
 		Verbose:          options.Verbose,
 		CheckMode:        options.CheckMode,
 		DiffMode:         options.DiffMode,
+		ForceHandlers:    options.ForceHandlers,
 		AgentMode:        resolverMode,
 		AgentPath:        options.AgentPath,
 		Version:          version.Version,

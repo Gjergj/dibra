@@ -1,8 +1,10 @@
 package docker_container
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -243,6 +245,32 @@ type DeviceIOPS struct {
 	Rate int64  `json:"rate"`
 }
 
+func (value *DeviceIOPS) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Path string          `json:"path"`
+		Rate json.RawMessage `json:"rate"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&raw); err != nil {
+		return err
+	}
+	value.Path = raw.Path
+	if err := json.Unmarshal(raw.Rate, &value.Rate); err == nil {
+		return nil
+	}
+	var text string
+	if err := json.Unmarshal(raw.Rate, &text); err != nil {
+		return fmt.Errorf("rate must be an integer")
+	}
+	rate, err := strconv.ParseInt(text, 10, 64)
+	if err != nil {
+		return fmt.Errorf("rate must be an integer: %w", err)
+	}
+	value.Rate = rate
+	return nil
+}
+
 type DeviceRequest struct {
 	Capabilities [][]string        `json:"capabilities"`
 	Count        *int              `json:"count"`
@@ -251,25 +279,51 @@ type DeviceRequest struct {
 	Options      map[string]string `json:"options"`
 }
 
+type MountOptionMap map[string]any
+
+func (values *MountOptionMap) UnmarshalJSON(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var decoded map[string]any
+	if err := decoder.Decode(&decoded); err != nil {
+		return err
+	}
+	*values = decoded
+	return nil
+}
+
+type TmpfsOption map[string]any
+
+func (value *TmpfsOption) UnmarshalJSON(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var decoded map[string]any
+	if err := decoder.Decode(&decoded); err != nil {
+		return err
+	}
+	*value = decoded
+	return nil
+}
+
 type Mount struct {
-	Target                 string               `json:"target"`
-	Source                 string               `json:"source"`
-	Type                   string               `json:"type"`
-	ReadOnly               *bool                `json:"read_only"`
-	Consistency            string               `json:"consistency"`
-	Propagation            string               `json:"propagation"`
-	NoCopy                 *bool                `json:"no_copy"`
-	Labels                 map[string]string    `json:"labels"`
-	VolumeDriver           string               `json:"volume_driver"`
-	VolumeOptions          map[string]string    `json:"volume_options"`
-	TmpfsSize              string               `json:"tmpfs_size"`
-	TmpfsMode              string               `json:"tmpfs_mode"`
-	NonRecursive           *bool                `json:"non_recursive"`
-	CreateMountpoint       *bool                `json:"create_mountpoint"`
-	ReadOnlyNonRecursive   *bool                `json:"read_only_non_recursive"`
-	ReadOnlyForceRecursive *bool                `json:"read_only_force_recursive"`
-	Subpath                string               `json:"subpath"`
-	TmpfsOptions           []map[string]*string `json:"tmpfs_options"`
+	Target                 string         `json:"target"`
+	Source                 string         `json:"source"`
+	Type                   string         `json:"type"`
+	ReadOnly               *bool          `json:"read_only"`
+	Consistency            string         `json:"consistency"`
+	Propagation            string         `json:"propagation"`
+	NoCopy                 *bool          `json:"no_copy"`
+	Labels                 MountOptionMap `json:"labels"`
+	VolumeDriver           string         `json:"volume_driver"`
+	VolumeOptions          MountOptionMap `json:"volume_options"`
+	TmpfsSize              string         `json:"tmpfs_size"`
+	TmpfsMode              string         `json:"tmpfs_mode"`
+	NonRecursive           *bool          `json:"non_recursive"`
+	CreateMountpoint       *bool          `json:"create_mountpoint"`
+	ReadOnlyNonRecursive   *bool          `json:"read_only_non_recursive"`
+	ReadOnlyForceRecursive *bool          `json:"read_only_force_recursive"`
+	Subpath                string         `json:"subpath"`
+	TmpfsOptions           []TmpfsOption  `json:"tmpfs_options"`
 }
 
 // UlimitList accepts the canonical community.docker string form and Dibra's

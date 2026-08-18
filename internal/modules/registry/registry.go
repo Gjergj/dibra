@@ -130,17 +130,17 @@ var definitions = []Definition{
 	stateModule("docker_swarm_service", Capabilities{SupportFull, SupportFull}, sensitivity(), normalizeDockerAPIArguments, docker_swarm_service.ExecuteWithState),
 	stateModule("docker_node", Capabilities{SupportFull, SupportNone}, sensitivity(), normalizeDockerAPIArguments, docker_node.ExecuteWithState),
 	stateModuleWithDeprecatedAlias("docker_compose_v2", "docker_compose", Capabilities{SupportFull, SupportNone}, sensitivity(), normalizeDockerComposeArguments, docker_compose.ExecuteWithState),
-	moduleWithAliases("docker_compose_v2_exec", []string{"docker_compose_v2_exec"}, Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), normalizeDockerAPIArguments, docker_compose_v2_exec.Execute),
-	stateModule("docker_compose_v2_pull", Capabilities{SupportFull, SupportNone}, sensitivity(), normalizeDockerAPIArguments, docker_compose_v2_pull.ExecuteWithState),
-	moduleWithAliases("docker_compose_v2_run", []string{"docker_compose_v2_run"}, Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), normalizeDockerAPIArguments, docker_compose_v2_run.Execute),
+	moduleWithAliases("docker_compose_v2_exec", []string{"docker_compose_v2_exec"}, Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), normalizeDockerCLIArguments, docker_compose_v2_exec.Execute),
+	stateModule("docker_compose_v2_pull", Capabilities{SupportFull, SupportNone}, sensitivity(), normalizeDockerCLIArguments, docker_compose_v2_pull.ExecuteWithState),
+	moduleWithAliases("docker_compose_v2_run", []string{"docker_compose_v2_run"}, Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), normalizeDockerCLIArguments, docker_compose_v2_run.Execute),
 	stateModule("docker_secret", Capabilities{SupportFull, SupportNone}, sensitivity("data"), normalizeDockerAPIArguments, docker_secret.ExecuteWithState),
 	stateModule("docker_config", Capabilities{SupportFull, SupportNone}, sensitivity("data"), normalizeDockerAPIArguments, docker_config.ExecuteWithState),
-	moduleWithAliases("docker_stack", []string{"docker_stack"}, Capabilities{SupportNone, SupportNone}, sensitivity(), normalizeDockerAPIArguments, docker_stack.Execute),
-	readOnlyModuleWithNormalizer("docker_stack_info", sensitivity(), normalizeDockerAPIArguments, docker_stack_info.Execute),
-	readOnlyModuleWithNormalizer("docker_stack_task_info", sensitivity(), normalizeDockerAPIArguments, docker_stack_task_info.Execute),
+	moduleWithAliases("docker_stack", []string{"docker_stack"}, Capabilities{SupportNone, SupportNone}, sensitivity(), normalizeDockerCLIArguments, docker_stack.Execute),
+	readOnlyModuleWithNormalizer("docker_stack_info", sensitivity(), normalizeDockerCLIArguments, docker_stack_info.Execute),
+	readOnlyModuleWithNormalizer("docker_stack_task_info", sensitivity(), normalizeDockerCLIArguments, docker_stack_task_info.Execute),
 	moduleWithAliases("docker_container_exec", []string{"docker_container_exec"}, Capabilities{SupportNone, SupportNone}, sensitivity("stdin"), normalizeDockerContainerExecArguments, docker_container_exec.Execute),
 	stateModule("docker_container_copy_into", Capabilities{SupportFull, SupportFull}, sensitivity("content"), normalizeDockerAPIArguments, docker_container_copy_into.ExecuteWithState),
-	stateModule("docker_image_build", Capabilities{SupportFull, SupportNone}, sensitivity("args", "secrets.value"), normalizeDockerAPIArguments, docker_image_build.ExecuteWithState),
+	stateModule("docker_image_build", Capabilities{SupportFull, SupportNone}, sensitivity("args", "secrets.value"), normalizeDockerImageBuildArguments, docker_image_build.ExecuteWithState),
 	moduleWithAliases("docker_image_load", []string{"docker_image_load"}, Capabilities{SupportNone, SupportNone}, sensitivity(), normalizeDockerAPIArguments, docker_image_load.Execute),
 	stateModule("docker_image_export", Capabilities{SupportFull, SupportNone}, sensitivity(), normalizeImageExportArguments, docker_image_export.ExecuteWithState),
 	stateModule("docker_image_pull", Capabilities{SupportPartial, SupportFull}, sensitivity(), normalizeDockerAPIArguments, docker_image_pull.ExecuteWithState),
@@ -150,7 +150,7 @@ var definitions = []Definition{
 	readOnlyModuleWithNormalizer("docker_container_info", sensitivity(), normalizeDockerContainerInfoArguments, docker_container_info.Execute),
 	readOnlyModuleWithNormalizer("docker_image_info", sensitivity(), normalizeDockerAPIArguments, docker_image_info.Execute),
 	readOnlyModuleWithNormalizer("docker_network_info", sensitivity(), normalizeDockerAPIArguments, docker_network_info.Execute),
-	readOnlyModuleWithNormalizer("docker_volume_info", sensitivity(), normalizeDockerAPIArguments, docker_volume_info.Execute),
+	readOnlyModuleWithNormalizer("docker_volume_info", sensitivity(), normalizeDockerVolumeInfoArguments, docker_volume_info.Execute),
 	readOnlyModuleWithNormalizer("docker_host_info", sensitivity(), normalizeDockerAPIArguments, docker_host_info.Execute),
 	readOnlyModuleWithNormalizer("docker_swarm_info", sensitivityWithResults(nil, []string{"swarm_facts.JoinTokens", "swarm_unlock_key"}), normalizeDockerSwarmInfoArguments, docker_swarm_info.Execute),
 	readOnlyModuleWithNormalizer("docker_swarm_service_info", sensitivity(), normalizeDockerAPIArguments, docker_swarm_service_info.Execute),
@@ -442,6 +442,16 @@ func normalizeDockerContainerInfoArguments(fields map[string]json.RawMessage) er
 }
 
 func normalizeDockerAPIArguments(fields map[string]json.RawMessage) error {
+	if err := normalizeDockerCLIArguments(fields); err != nil {
+		return err
+	}
+	if argumentIsNonNull(fields, "cli_context") {
+		return fmt.Errorf("cli_context is not supported by API-backed Docker modules")
+	}
+	return nil
+}
+
+func normalizeDockerCLIArguments(fields map[string]json.RawMessage) error {
 	aliases := map[string][]string{
 		"docker_host":    {"docker_url"},
 		"api_version":    {"docker_api_version"},
@@ -456,6 +466,30 @@ func normalizeDockerAPIArguments(fields map[string]json.RawMessage) error {
 		}
 	}
 	return nil
+}
+
+func normalizeDockerImageBuildArguments(fields map[string]json.RawMessage) error {
+	if err := normalizeDockerCLIArguments(fields); err != nil {
+		return err
+	}
+	for _, unsupported := range []string{"timeout", "debug", "use_ssh_client"} {
+		if argumentIsNonNull(fields, unsupported) {
+			return fmt.Errorf("%s is not supported by docker_image_build", unsupported)
+		}
+	}
+	return nil
+}
+
+func argumentIsNonNull(fields map[string]json.RawMessage, name string) bool {
+	raw, found := fields[name]
+	if !found {
+		return false
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		delete(fields, name)
+		return false
+	}
+	return true
 }
 
 func normalizeDockerNetworkArguments(fields map[string]json.RawMessage) error {
@@ -483,6 +517,13 @@ func normalizeDockerVolumeArguments(fields map[string]json.RawMessage) error {
 	return normalizeArgumentAliases(fields, "volume_name", "name")
 }
 
+func normalizeDockerVolumeInfoArguments(fields map[string]json.RawMessage) error {
+	if err := normalizeDockerAPIArguments(fields); err != nil {
+		return err
+	}
+	return normalizeArgumentAliases(fields, "name", "volume_name")
+}
+
 func normalizeDockerLoginArguments(fields map[string]json.RawMessage) error {
 	if err := normalizeDockerAPIArguments(fields); err != nil {
 		return err
@@ -504,7 +545,7 @@ func normalizeDockerPruneArguments(fields map[string]json.RawMessage) error {
 }
 
 func normalizeDockerComposeArguments(fields map[string]json.RawMessage) error {
-	if err := normalizeDockerAPIArguments(fields); err != nil {
+	if err := normalizeDockerCLIArguments(fields); err != nil {
 		return err
 	}
 	return normalizeArgumentAliases(fields, "timeout", "stop_timeout")

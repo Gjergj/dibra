@@ -57,6 +57,19 @@ func TestPlaybook_DockerImageParity(t *testing.T) {
 		remoteExec(t, client, "docker rmi -f "+name+" || true")
 	}
 
+	t.Run("diff mode executes without diff output", func(t *testing.T) {
+		result := runDockerImageWithArgs(t, client, "diff-mode", `
+      name: `+alpine+`
+      source: local
+`, "--diff")
+		if result["changed"] != false {
+			t.Fatalf("diff mode result = %#v", result)
+		}
+		if _, found := result["diff"]; found {
+			t.Fatalf("unsupported diff mode returned a diff: %#v", result["diff"])
+		}
+	})
+
 	t.Run("absent is idempotent", func(t *testing.T) {
 		removeImage(busybox)
 		defer remoteExec(t, client, "docker pull "+busybox)

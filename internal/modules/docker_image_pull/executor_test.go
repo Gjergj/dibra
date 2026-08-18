@@ -177,18 +177,47 @@ func TestExplicitEmptyTagKeepsUpstreamActionAndPullsLatest(t *testing.T) {
 	}
 }
 
+func TestImageComparisonIgnoresOnlyPinnedUnstableFields(t *testing.T) {
+	base := map[string]any{
+		"Id": "sha256:same", "Architecture": "amd64",
+		"Metadata": map[string]any{"LastTagTime": "first"},
+		"Identity": map[string]any{"Pull": []any{"one"}},
+	}
+	unstableOnly := map[string]any{
+		"Id": "sha256:same", "Architecture": "amd64",
+		"Metadata": map[string]any{"LastTagTime": "second"},
+		"Identity": map[string]any{"Pull": []any{"two"}},
+	}
+	if !imagesEqual(base, unstableOnly) {
+		t.Fatal("Metadata and Identity changes were treated as meaningful")
+	}
+	meaningful := map[string]any{
+		"Id": "sha256:same", "Architecture": "arm64",
+		"Metadata": map[string]any{"LastTagTime": "second"},
+	}
+	if imagesEqual(base, meaningful) {
+		t.Fatal("meaningful inspection change was ignored")
+	}
+}
+
 func TestPullValidationVersionAndStreamErrors(t *testing.T) {
 	for _, test := range []struct {
 		request Request
 		message string
 	}{
-		{Request{Name: strings.Repeat("a", 12)}, "Cannot pull an image by ID"},
+		{Request{Name: "sha256:" + strings.Repeat("a", 64)}, "Cannot pull an image by ID"},
 		{Request{Name: "alpine", Tag: "foo/bar"}, "not a valid docker tag"},
 		{Request{Name: "alpine", Pull: "sometimes"}, "always or not_present"},
 	} {
 		response := ExecuteWithDependencies(test.request, docker.Dependencies{})
 		if !response.Failed || !strings.Contains(response.Msg, test.message) {
 			t.Fatalf("%#v returned %#v", test.request, response)
+		}
+	}
+
+	for _, name := range []string{strings.Repeat("a", 12), strings.Repeat("a", 64)} {
+		if _, _, err := validateRequest(Request{Name: name}); err != nil {
+			t.Fatalf("hash-like repository %q was treated as an image ID: %v", name, err)
 		}
 	}
 

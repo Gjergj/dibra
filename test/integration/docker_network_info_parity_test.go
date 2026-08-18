@@ -19,13 +19,13 @@ func TestPlaybook_DockerNetworkInfoParity(t *testing.T) {
 	remoteExec(t, client, "rm -f /tmp/dibra-network-info-*.json")
 
 	templatePath := writeResultTemplate(t, "network_info")
-	runInfo := func(resultName, networkName string) map[string]any {
+	runInfo := func(resultName, arguments string) map[string]any {
 		t.Helper()
 		remotePath := "/tmp/dibra-network-info-" + resultName + ".json"
 		playbook := playbookHeader + `
   - name: Inspect network
     community.docker.docker_network_info:
-      name: ` + networkName + `
+` + arguments + `
     register: network_info
 
   - name: Persist network info result
@@ -41,7 +41,7 @@ func TestPlaybook_DockerNetworkInfoParity(t *testing.T) {
 	}
 
 	t.Run("missing network returns exists false and network null", func(t *testing.T) {
-		result := runInfo("missing", name)
+		result := runInfo("missing", "      name: "+name+"\n")
 		if result["changed"] != false || result["exists"] != false || result["network"] != nil {
 			t.Fatalf("missing result = %#v", result)
 		}
@@ -65,7 +65,7 @@ func TestPlaybook_DockerNetworkInfoParity(t *testing.T) {
 	}
 
 	t.Run("present network matches docker network inspect", func(t *testing.T) {
-		result := runInfo("present", name)
+		result := runInfo("present", "      name: "+name+"\n")
 		if result["changed"] != false || result["exists"] != true {
 			t.Fatalf("present result = %#v", result)
 		}
@@ -90,6 +90,21 @@ func TestPlaybook_DockerNetworkInfoParity(t *testing.T) {
 		}
 		if !reflect.DeepEqual(actual, inspected[0]) {
 			t.Fatalf("module inspection does not match docker inspect\nmodule: %#v\ndocker: %#v", actual, inspected[0])
+		}
+	})
+
+	t.Run("explicit API connection options inspect the same network", func(t *testing.T) {
+		result := runInfo("connection-options", `      name: `+name+`
+      docker_host: unix:///var/run/docker.sock
+      api_version: auto
+      timeout: 30
+      tls: false
+      validate_certs: false
+      debug: true
+      use_ssh_client: false
+`)
+		if result["changed"] != false || result["exists"] != true {
+			t.Fatalf("connection options result = %#v", result)
 		}
 	})
 

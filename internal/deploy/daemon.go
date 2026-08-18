@@ -1,14 +1,19 @@
 package deploy
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/gjergjiramku/dibra/internal/agent"
@@ -20,8 +25,17 @@ const (
 	DefaultPollInterval = 60 * time.Second
 	DefaultHTTPTimeout  = 30 * time.Second
 	DefaultStateDir     = "/var/lib/dibra-deploy"
+	TaskIDHeader        = "X-Dibra-Task-ID"
 	maxArchiveSize      = int64(256 << 20)
+	maxTaskIDLength     = 256
 )
+
+type taskOutcome struct {
+	TaskID          string `json:"task_id"`
+	Status          string `json:"status"`
+	Error           string `json:"error,omitempty"`
+	RebootInitiated bool   `json:"reboot_initiated,omitempty"`
+}
 
 type Config struct {
 	Endpoint         string
@@ -138,6 +152,29 @@ func (d *Daemon) PollOnce(ctx context.Context) (bool, error) {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
 		return false, fmt.Errorf("task server returned HTTP %d (%s)", response.StatusCode, response.Status)
 	}
+	taskID := strings.TrimSpace(response.Header.Get(TaskIDHeader))
+	if taskID == "" {
+		return false, fmt.Errorf("task server response is missing %s", TaskIDHeader)
+	}
+	if len(taskID) > maxTaskIDLength {
+		return false, fmt.Errorf("task ID exceeds %d bytes", maxTaskIDLength)
+	}
+
+	rebooted, taskErr := d.processTask(ctx, response, taskID)
+	outcomeErr := d.reportTaskOutcome(ctx, taskID, rebooted, taskErr)
+	if taskErr != nil && outcomeErr != nil {
+		return rebooted, errors.Join(taskErr, fmt.Errorf("report task outcome: %w", outcomeErr))
+	}
+	if taskErr != nil {
+		return rebooted, taskErr
+	}
+	if outcomeErr != nil {
+		return rebooted, fmt.Errorf("report task outcome: %w", outcomeErr)
+	}
+	return rebooted, nil
+}
+
+func (d *Daemon) processTask(ctx context.Context, response *http.Response, taskID string) (bool, error) {
 	if response.ContentLength > maxArchiveSize {
 		return false, fmt.Errorf("task archive is %d bytes; maximum is %d", response.ContentLength, maxArchiveSize)
 	}
@@ -152,13 +189,63 @@ func (d *Daemon) PollOnce(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	fmt.Fprintf(d.config.Stdout, "dibra-deploy: received job %x\n", hash[:8])
+	fmt.Fprintf(d.config.Stdout, "dibra-deploy: received job %s (%x)\n", taskID, hash[:8])
 
 	project, err := ExtractProject(archivePath, filepath.Join(jobDir, "project"))
 	if err != nil {
 		return false, fmt.Errorf("validate task archive: %w", err)
 	}
 	return d.executeProject(ctx, project)
+}
+
+func (d *Daemon) reportTaskOutcome(ctx context.Context, taskID string, rebooted bool, taskErr error) error {
+	status := "succeeded"
+	errorMessage := ""
+	if taskErr != nil {
+		status = "failed"
+		errorMessage = taskErr.Error()
+	}
+	payload, err := json.Marshal(taskOutcome{
+		TaskID:          taskID,
+		Status:          status,
+		Error:           errorMessage,
+		RebootInitiated: rebooted,
+	})
+	if err != nil {
+		return fmt.Errorf("encode outcome: %w", err)
+	}
+	outcomeEndpoint, err := deriveOutcomeEndpoint(d.config.Endpoint)
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, outcomeEndpoint, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("create outcome request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := d.config.HTTPClient.Do(request)
+	if err != nil {
+		return fmt.Errorf("send outcome: %w", err)
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("outcome server returned HTTP %d (%s)", response.StatusCode, response.Status)
+	}
+	fmt.Fprintf(d.config.Stdout, "dibra-deploy: reported task %s outcome: %s\n", taskID, status)
+	return nil
+}
+
+func deriveOutcomeEndpoint(taskEndpoint string) (string, error) {
+	parsed, err := url.Parse(taskEndpoint)
+	if err != nil {
+		return "", fmt.Errorf("parse task endpoint: %w", err)
+	}
+	reference, err := url.Parse("gettasks_outcome")
+	if err != nil {
+		return "", fmt.Errorf("parse outcome endpoint: %w", err)
+	}
+	return parsed.ResolveReference(reference).String(), nil
 }
 
 func saveArchive(input io.Reader, archivePath string) ([32]byte, error) {

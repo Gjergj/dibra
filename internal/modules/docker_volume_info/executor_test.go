@@ -117,7 +117,7 @@ func TestPresentVolumeReturnsRawEngineInspectKeys(t *testing.T) {
 func TestUnexpectedInspectErrorAndMissingName(t *testing.T) {
 	fake := &infoClient{err: errors.New("daemon unavailable")}
 	response := ExecuteWithDependencies(Request{Name: "data"}, infoDependencies(fake))
-	if !response.Failed || !strings.Contains(response.Msg, "An unexpected Docker error occurred: daemon unavailable") {
+	if !response.Failed || response.Msg != "Error inspecting volume: daemon unavailable" {
 		t.Fatalf("inspect error = %#v", response)
 	}
 

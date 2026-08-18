@@ -170,6 +170,15 @@ func TestParseBuildStream(t *testing.T) {
 			}
 		})
 	}
+
+	status := ParseBuildStream(strings.NewReader(
+		`{"status":"Pulling base layer"}` + "\n" +
+			`{"stream":"first\nsecond\n"}`))
+	if status.Error != nil || len(status.Logs) != 3 ||
+		status.Logs[0] != "Pulling base layer" ||
+		status.Logs[1] != "first" || status.Logs[2] != "second" {
+		t.Fatalf("mixed build output = %#v", status)
+	}
 }
 
 func TestParseLoadStream(t *testing.T) {
@@ -235,6 +244,15 @@ func TestParseLoadStream(t *testing.T) {
 				t.Errorf("Expected at least %d logs, got %d", tt.minLogs, len(result.Logs))
 			}
 		})
+	}
+
+	preserved := ParseLoadStream(strings.NewReader(
+		`{"stream":"  Loaded image: ignored:latest\nLoaded image: kept:latest  \n"}`))
+	if len(preserved.Logs) != 2 ||
+		preserved.Logs[0] != "  Loaded image: ignored:latest" ||
+		preserved.Logs[1] != "Loaded image: kept:latest  " ||
+		len(preserved.Images) != 1 || preserved.Images[0] != "kept:latest" {
+		t.Fatalf("preserved load output = %#v", preserved)
 	}
 }
 

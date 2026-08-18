@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "2222:22"
+      - "9090:80"
     privileged: true
     cgroup: host
     volumes:

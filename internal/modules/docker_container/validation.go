@@ -194,7 +194,7 @@ func validateRequest(req Request) error {
 		}
 	}
 	if _, _, err := docker.BuildPortBindings(req.PublishedPorts); err != nil {
-		return fmt.Errorf("invalid published port: %w", err)
+		return err
 	}
 	for _, port := range req.ExposedPorts {
 		if _, err := expandExposedPort(port); err != nil {

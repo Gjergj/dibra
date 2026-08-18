@@ -51,7 +51,7 @@ func compareContainer(req Request, desiredConfig *container.Config, desiredHost 
 	compare("domainname", req.argumentProvided("domainname", req.Domainname != ""), req.Domainname, config.Domainname, false)
 	compare("user", req.argumentProvided("user", req.User != ""), req.User, config.User, false)
 	compare("working_dir", req.argumentProvided("working_dir", req.WorkingDir != ""), req.WorkingDir, config.WorkingDir, false)
-	compare("labels", req.Labels != nil, req.Labels, config.Labels, false)
+	compare("labels", req.Labels != nil, desiredConfig.Labels, config.Labels, false)
 	compare("links", req.Links != nil, desiredHost.Links, host.Links, false)
 	compare("stop_signal", req.argumentProvided("stop_signal", req.StopSignal != ""), req.StopSignal, config.StopSignal, false)
 	compare("stop_timeout", req.StopTimeout != nil, desiredConfig.StopTimeout, config.StopTimeout, false)
@@ -144,7 +144,7 @@ func compareContainer(req Request, desiredConfig *container.Config, desiredHost 
 	compare("memory_reservation", req.MemoryReservation != nil, desiredHost.MemoryReservation, host.MemoryReservation, true)
 	compare("memory_swap", req.MemorySwap != nil, desiredHost.MemorySwap, host.MemorySwap, true)
 	compare("memory_swappiness", req.MemorySwappiness != nil, desiredHost.MemorySwappiness, host.MemorySwappiness, false)
-	compare("oom_killer", req.OOMKiller != nil, desiredHost.OomKillDisable, host.OomKillDisable, false)
+	compare("oom_killer", req.OOMKiller != nil, boolValue(desiredHost.OomKillDisable), boolValue(host.OomKillDisable), false)
 	compare("oom_score_adj", req.OOMScoreAdj != nil, desiredHost.OomScoreAdj, host.OomScoreAdj, false)
 	compare("shm_size", req.ShmSize != nil, desiredHost.ShmSize, host.ShmSize, false)
 	compare("pids_limit", req.PidsLimit != nil, desiredHost.PidsLimit, host.PidsLimit, false)
@@ -306,13 +306,13 @@ func desiredMountComparison(values []Mount) []map[string]any {
 			item["no_copy"] = *value.NoCopy
 		}
 		if value.Labels != nil {
-			item["labels"] = value.Labels
+			item["labels"] = mountOptionStrings(value.Labels)
 		}
 		if value.VolumeDriver != "" {
 			item["volume_driver"] = value.VolumeDriver
-		}
-		if value.VolumeOptions != nil {
-			item["volume_options"] = value.VolumeOptions
+			if value.VolumeOptions != nil {
+				item["volume_options"] = mountOptionStrings(value.VolumeOptions)
+			}
 		}
 		if value.TmpfsSize != "" {
 			if parsed, err := parseByteSize("tmpfs_size", &value.TmpfsSize, false); err == nil {
@@ -340,7 +340,7 @@ func desiredMountComparison(values []Mount) []map[string]any {
 			item["subpath"] = value.Subpath
 		}
 		if value.TmpfsOptions != nil {
-			if options, err := buildTmpfsOptions(value.TmpfsOptions); err == nil {
+			if options, err := buildTmpfsOptions(value.TmpfsOptions, value.Target); err == nil {
 				item["tmpfs_options"] = options
 			}
 		}

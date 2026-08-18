@@ -86,6 +86,20 @@ func TestPlaybook_DockerImageBuildParity(t *testing.T) {
 		remoteExec(t, client, "docker image rm -f "+name+" || true")
 	}
 
+	t.Run("diff mode executes without diff output", func(t *testing.T) {
+		run := runImageBuildWithArgs(t, client, "diff-mode", `
+      name: alpine:latest
+      path: `+context+`/files
+      rebuild: never
+`, "--diff")
+		if run.failed || run.result["changed"] != false {
+			t.Fatalf("diff mode execution failed: %s\n%#v", run.output, run.result)
+		}
+		if _, found := run.result["diff"]; found {
+			t.Fatalf("unsupported diff mode returned a diff: %#v", run.result["diff"])
+		}
+	})
+
 	t.Run("build args and two-run idempotency", func(t *testing.T) {
 		name := "dibra-image-build-args:latest"
 		removeImage(name)
@@ -199,7 +213,6 @@ func TestPlaybook_DockerImageBuildParity(t *testing.T) {
         - linux/arm64/v8
       pull: false
 `)
-		skipUnsupportedPlatforms(t, result)
 		assertBuildChanged(t, result, true)
 		assertRawImageInspection(t, result.result["image"], dockerInspectImage(t, client, name))
 		assertBuildCommand(t, result.result, "--platform", "linux/amd64", "linux/arm64/v8", "--tag")
@@ -443,10 +456,6 @@ func TestPlaybook_DockerImageBuildParity(t *testing.T) {
           dest: `+archive+`
 `)
 		if result.failed {
-			if stderr, _ := result.result["stderr"].(string); strings.Contains(result.output, "multiple outputs currently unsupported") ||
-				strings.Contains(stderr, "multiple outputs currently unsupported") {
-				t.Skip("BuildKit daemon rejected multiple outputs")
-			}
 			t.Fatalf("tar output build failed: %s", result.output)
 		}
 		assertBuildChanged(t, result, true)
@@ -482,7 +491,6 @@ func TestPlaybook_DockerImageBuildParity(t *testing.T) {
       outputs:
         - type: docker
 `)
-		skipUnsupportedMultipleOutputs(t, result)
 		assertBuildChanged(t, result, true)
 		assertRawImageInspection(t, result.result["image"], dockerInspectImage(t, client, name))
 		command := fmt.Sprint(result.result["command"])
@@ -509,7 +517,6 @@ func TestPlaybook_DockerImageBuildParity(t *testing.T) {
         - type: docker
           dest: `+archive+`
 `)
-		skipUnsupportedMultipleOutputs(t, result)
 		assertBuildChanged(t, result, true)
 		if !remoteFileExists(t, client, archive) {
 			t.Fatal("docker dest archive was not written")
@@ -599,7 +606,6 @@ func TestPlaybook_DockerImageBuildParity(t *testing.T) {
         - type: local
           dest: `+localDir+`
 `)
-		skipUnsupportedMultipleOutputs(t, localResult)
 		assertBuildChanged(t, localResult, true)
 		assertRawImageInspection(t, localResult.result["image"], dockerInspectImage(t, client, localName))
 		if !remoteFileExists(t, client, localDir) {
@@ -623,7 +629,6 @@ func TestPlaybook_DockerImageBuildParity(t *testing.T) {
         - type: oci
           dest: `+ociPath+`
 `)
-		skipUnsupportedMultipleOutputs(t, ociResult)
 		assertBuildChanged(t, ociResult, true)
 		if !remoteFileExists(t, client, ociPath) {
 			t.Fatal("oci archive was not written")
@@ -658,7 +663,6 @@ func TestPlaybook_DockerImageBuildParity(t *testing.T) {
       path: `+context+`/files
       docker_host: unix:///var/run/docker.sock
       api_version: auto
-      timeout: 120
       pull: true
 `)
 		assertBuildChanged(t, result, true)
@@ -761,7 +765,7 @@ func TestPlaybook_DockerImageBuildParity(t *testing.T) {
       path: ` + context + `/files
 `
 		if output := runPlaybook(t, digest); !strings.Contains(output, "FAILED") ||
-			!strings.Contains(output, "Image name must not be a digest") {
+			!strings.Contains(output, "Image name must not contain a digest, but have a tag") {
 			t.Fatalf("digest name: %s", output)
 		}
 
@@ -897,37 +901,6 @@ func assertBuildCommand(t *testing.T, result map[string]any, flags ...string) {
 	for _, flag := range flags {
 		if !strings.Contains(command, flag) {
 			t.Fatalf("command missing %s: %s", flag, command)
-		}
-	}
-}
-
-func skipUnsupportedMultipleOutputs(t *testing.T, run imageBuildRun) {
-	t.Helper()
-	if !run.failed {
-		return
-	}
-	if strings.Contains(run.output, "multiple outputs currently unsupported") {
-		t.Skip("BuildKit daemon rejected multiple outputs")
-	}
-}
-
-func skipUnsupportedPlatforms(t *testing.T, run imageBuildRun) {
-	t.Helper()
-	if !run.failed {
-		return
-	}
-	blob := strings.ToLower(run.output)
-	for _, marker := range []string{
-		"multiple platforms",
-		"multi-platform",
-		"no match for platform",
-		"unknown architecture",
-		"exec format error",
-		"binfmt",
-		"does not support",
-	} {
-		if strings.Contains(blob, marker) {
-			t.Skip("build driver rejected the documented multi-platform example")
 		}
 	}
 }

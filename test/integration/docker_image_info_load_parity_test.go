@@ -197,7 +197,7 @@ func TestPlaybook_DockerImageLoadParity(t *testing.T) {
 		t.Helper()
 		remoteExec(t, client, "docker image rm -f "+alpine+" "+busybox+" "+alpineID+" "+busyboxID+" >/dev/null 2>&1 || true")
 	}
-	load := func(name, path string) map[string]any {
+	load := func(name, path string, extra ...string) map[string]any {
 		t.Helper()
 		remotePath := base + "/result-" + name + ".json"
 		playbook := playbookHeader + `
@@ -213,7 +213,7 @@ func TestPlaybook_DockerImageLoadParity(t *testing.T) {
       src: ` + templatePath + `
       dest: ` + remotePath + `
 `
-		output := runPlaybook(t, playbook)
+		output := runPlaybookWithArgs(t, playbook, extra...)
 		if strings.Contains(output, "FAILED") {
 			t.Fatalf("%s load failed: %s", name, output)
 		}
@@ -233,6 +233,17 @@ func TestPlaybook_DockerImageLoadParity(t *testing.T) {
 		}
 		if imageExists(t, client, alpine) || imageExists(t, client, busybox) {
 			t.Fatal("check mode loaded images")
+		}
+	})
+
+	t.Run("diff mode loads without diff output", func(t *testing.T) {
+		removeImages()
+		result := load("diff-mode", archives["names"], "--diff")
+		if result["changed"] != true {
+			t.Fatalf("diff mode result = %#v", result)
+		}
+		if _, found := result["diff"]; found {
+			t.Fatalf("unsupported diff mode returned a diff: %#v", result["diff"])
 		}
 	})
 

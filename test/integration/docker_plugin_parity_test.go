@@ -12,7 +12,7 @@ func TestPlaybook_DockerPluginParity(t *testing.T) {
 	defer client.Close()
 
 	if strings.TrimSpace(remoteExec(t, client, "test -e /dev/fuse && echo yes || echo no")) != "yes" {
-		t.Skip("/dev/fuse is required to enable vieux/sshfs")
+		mustRemote(t, client, "mknod -m 0666 /dev/fuse c 10 229")
 	}
 
 	plugin := "vieux/sshfs"
@@ -61,6 +61,12 @@ func TestPlaybook_DockerPluginParity(t *testing.T) {
 		if result["changed"] != true {
 			t.Fatalf("check = %#v", result)
 		}
+		diff, _ := result["diff"].(map[string]any)
+		before, _ := diff["before"].(map[string]any)
+		after, _ := diff["after"].(map[string]any)
+		if before["exists"] != false || after["exists"] != true {
+			t.Fatalf("check diff = %#v", result["diff"])
+		}
 		if strings.TrimSpace(remoteExec(t, client, "docker plugin inspect "+alias+" >/dev/null 2>&1; echo $?")) == "0" {
 			t.Fatal("check mode installed the plugin")
 		}
@@ -98,6 +104,15 @@ func TestPlaybook_DockerPluginParity(t *testing.T) {
 		actions, found := debugged["actions"].([]any)
 		if !found || len(actions) != 0 {
 			t.Fatalf("debug actions = %#v", debugged)
+		}
+
+		updated, output := runPlugin("option-update", "      plugin_name: "+plugin+"\n      alias: "+alias+"\n      plugin_options:\n        DEBUG: \"1\"\n", "")
+		if updated == nil || updated["changed"] != true {
+			t.Fatalf("option update failed: result=%#v output=%s", updated, output)
+		}
+		updateAgain, output := runPlugin("option-update-idempotent", "      plugin_name: "+plugin+"\n      alias: "+alias+"\n      plugin_options:\n        DEBUG: \"1\"\n", "")
+		if updateAgain == nil || updateAgain["changed"] != false {
+			t.Fatalf("option update idempotency failed: result=%#v output=%s", updateAgain, output)
 		}
 
 		enabled, output := runPlugin("enable", "      plugin_name: "+plugin+"\n      alias: "+alias+"\n      state: enable\n", "")

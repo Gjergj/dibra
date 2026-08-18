@@ -69,10 +69,27 @@ func TestPollOnceHandlesNoContent(t *testing.T) {
 	}
 }
 
-func TestPollOnceExecutesEveryHTTP200(t *testing.T) {
+func TestPollOnceReportsSuccessfulTaskOutcome(t *testing.T) {
 	t.Parallel()
 	archive := deploymentZIP(t, "tasks:\n  - name: ping locally\n    ping:\n")
-	client := responseClient(http.StatusOK, archive)
+	var reported taskOutcome
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		switch request.Method {
+		case http.MethodGet:
+			return taskResponse(http.StatusOK, archive, "task-123", request), nil
+		case http.MethodPost:
+			if request.URL.Path != "/gettasks_outcome" {
+				t.Fatalf("outcome path = %q", request.URL.Path)
+			}
+			if err := json.NewDecoder(request.Body).Decode(&reported); err != nil {
+				t.Fatal(err)
+			}
+			return response(http.StatusNoContent, nil, request), nil
+		default:
+			t.Fatalf("unexpected request method %s", request.Method)
+			return nil, nil
+		}
+	})}
 
 	temporary := t.TempDir()
 	counter := filepath.Join(temporary, "agent-count")
@@ -89,17 +106,18 @@ func TestPollOnceExecutesEveryHTTP200(t *testing.T) {
 		config:    Config{Endpoint: "http://localhost/gettasks", HTTPClient: client, StateDir: stateDir, Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}},
 		agentPath: agentPath,
 	}
-	for index := 0; index < 2; index++ {
-		if rebooted, err := daemon.PollOnce(context.Background()); err != nil || rebooted {
-			t.Fatalf("PollOnce() attempt %d = rebooted %v, error %v", index, rebooted, err)
-		}
+	if rebooted, err := daemon.PollOnce(context.Background()); err != nil || rebooted {
+		t.Fatalf("PollOnce() = rebooted %v, error %v", rebooted, err)
 	}
 	data, err := os.ReadFile(counter)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Count(string(data), "run"); got != 2 {
-		t.Fatalf("agent ran %d times, want 2", got)
+	if got := strings.Count(string(data), "run"); got != 1 {
+		t.Fatalf("agent ran %d times, want 1", got)
+	}
+	if reported.TaskID != "task-123" || reported.Status != "succeeded" || reported.Error != "" || reported.RebootInitiated {
+		t.Fatalf("reported outcome = %#v", reported)
 	}
 	entries, err := os.ReadDir(filepath.Join(stateDir, "jobs"))
 	if err != nil {
@@ -107,6 +125,59 @@ func TestPollOnceExecutesEveryHTTP200(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("job directories were not cleaned up: %#v", entries)
+	}
+}
+
+func TestPollOnceReportsFailedTaskOutcome(t *testing.T) {
+	t.Parallel()
+	var reported taskOutcome
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Method == http.MethodGet {
+			return taskResponse(http.StatusOK, []byte("not a ZIP"), "bad-archive", request), nil
+		}
+		if err := json.NewDecoder(request.Body).Decode(&reported); err != nil {
+			t.Fatal(err)
+		}
+		return response(http.StatusNoContent, nil, request), nil
+	})}
+	stateDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(stateDir, "jobs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	daemon := &Daemon{config: Config{
+		Endpoint: "http://localhost/gettasks", HTTPClient: client, StateDir: stateDir,
+		Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{},
+	}}
+
+	_, err := daemon.PollOnce(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "validate task archive") {
+		t.Fatalf("PollOnce() error = %v", err)
+	}
+	if reported.TaskID != "bad-archive" || reported.Status != "failed" || !strings.Contains(reported.Error, "validate task archive") {
+		t.Fatalf("reported outcome = %#v", reported)
+	}
+}
+
+func TestPollOnceRequiresTaskID(t *testing.T) {
+	t.Parallel()
+	daemon := &Daemon{config: Config{
+		Endpoint: "http://localhost/gettasks", HTTPClient: responseClient(http.StatusOK, deploymentZIP(t, "tasks: []\n")),
+		StateDir: t.TempDir(), Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{},
+	}}
+	_, err := daemon.PollOnce(context.Background())
+	if err == nil || !strings.Contains(err.Error(), TaskIDHeader) {
+		t.Fatalf("PollOnce() error = %v", err)
+	}
+}
+
+func TestDeriveOutcomeEndpoint(t *testing.T) {
+	t.Parallel()
+	actual, err := deriveOutcomeEndpoint("http://host:8080/api/gettasks?token=test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual != "http://host:8080/api/gettasks_outcome" {
+		t.Fatalf("outcome endpoint = %q", actual)
 	}
 }
 
@@ -237,6 +308,12 @@ func response(status int, body []byte, request *http.Request) *http.Response {
 		Header:        make(http.Header),
 		Request:       request,
 	}
+}
+
+func taskResponse(status int, body []byte, taskID string, request *http.Request) *http.Response {
+	result := response(status, body, request)
+	result.Header.Set(TaskIDHeader, taskID)
+	return result
 }
 
 func deploymentZIP(t *testing.T, playbook string) []byte {

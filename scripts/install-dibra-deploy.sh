@@ -2,10 +2,10 @@
 # Install dibra-deploy and its systemd unit from a GitHub release.
 #
 # Latest release:
-#   curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-deploy.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra-deploy.sh | sh
 #
 # Pinned release, enabled immediately:
-#   curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-deploy.sh | \
+#   curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra-deploy.sh | \
 #     sh -s -- --version v1.2.3 --enable
 
 set -eu
@@ -34,7 +34,7 @@ usage() {
 Install dibra-deploy and its systemd service on Linux.
 
 Usage:
-  install-deploy.sh [options]
+  install-dibra-deploy.sh [options]
 
 Options:
   --version VERSION     Install a specific release (for example, v1.2.3).

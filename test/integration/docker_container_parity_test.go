@@ -187,6 +187,16 @@ func TestPlaybook_DockerContainerHealthyPausedAndCleanup(t *testing.T) {
 	if paused := remoteExec(t, client, "docker inspect --format '{{.State.Paused}}' "+healthyName); !strings.Contains(paused, "true") {
 		t.Fatalf("container was not paused: %s", paused)
 	}
+	unpausePlaybook := strings.Replace(pausePlaybook, "      paused: true", "      paused: false", 1)
+	unpauseFirst := runPlaybookWithArgs(t, unpausePlaybook, "--diff")
+	unpauseSecond := runPlaybookWithArgs(t, unpausePlaybook, "--diff")
+	if strings.Contains(unpauseFirst, "FAILED") || !strings.Contains(unpauseFirst, "CHANGED") ||
+		strings.Contains(unpauseSecond, "FAILED") || strings.Contains(unpauseSecond, "CHANGED") {
+		t.Fatalf("unpause lifecycle mismatch: first=%s second=%s", unpauseFirst, unpauseSecond)
+	}
+	if paused := remoteExec(t, client, "docker inspect --format '{{.State.Paused}}' "+healthyName); !strings.Contains(paused, "false") {
+		t.Fatalf("container was not unpaused: %s", paused)
+	}
 
 	cleanupPlaybook := playbookHeader + `
   - name: Run and clean up a foreground container
@@ -345,5 +355,15 @@ func TestPlaybook_DockerContainerPinnedRegressionMatrix(t *testing.T) {
 `
 	if output := runPlaybook(t, autoRemoveFailure); !strings.Contains(output, "FAILED") || !strings.Contains(output, "Cannot retrieve result as auto_remove is enabled") {
 		t.Fatalf("foreground auto-remove failure mismatch: %s", output)
+	}
+
+	statusName := "test-container-parity-status"
+	remoteExec(t, client, "docker rm -f "+statusName+" || true")
+	statusResult := runContainerAgentRequest(t, client, map[string]any{
+		"name": statusName, "image": "alpine:latest", "state": "started",
+		"command": []string{"sh", "-c", "exit 42"}, "detach": false, "cleanup": true,
+	})
+	if statusResult["failed"] != true || numberValue(statusResult["status"]) != 42 {
+		t.Fatalf("foreground non-zero status result = %#v", statusResult)
 	}
 }

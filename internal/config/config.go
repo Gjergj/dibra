@@ -13,12 +13,14 @@ import (
 )
 
 type Config struct {
-	Hosts     []Host                 `json:"hosts" yaml:"hosts"`
-	Tasks     []Task                 `json:"tasks" yaml:"tasks"`
-	Vars      map[string]interface{} `json:"vars,omitempty" yaml:"vars,omitempty"`
-	VarsFiles []string               `json:"vars_files,omitempty" yaml:"vars_files,omitempty"`
-	VarsMerge string                 `json:"vars_merge,omitempty" yaml:"vars_merge,omitempty"`
-	Inventory string                 `json:"inventory,omitempty" yaml:"inventory,omitempty"`
+	Hosts         []Host                 `json:"hosts" yaml:"hosts"`
+	Tasks         []Task                 `json:"tasks" yaml:"tasks"`
+	Handlers      []Task                 `json:"handlers,omitempty" yaml:"handlers,omitempty"`
+	ForceHandlers bool                   `json:"force_handlers,omitempty" yaml:"force_handlers,omitempty"`
+	Vars          map[string]interface{} `json:"vars,omitempty" yaml:"vars,omitempty"`
+	VarsFiles     []string               `json:"vars_files,omitempty" yaml:"vars_files,omitempty"`
+	VarsMerge     string                 `json:"vars_merge,omitempty" yaml:"vars_merge,omitempty"`
+	Inventory     string                 `json:"inventory,omitempty" yaml:"inventory,omitempty"`
 }
 
 type Host struct {
@@ -67,6 +69,50 @@ func (p *IncludeTasksParams) UnmarshalYAML(node *yaml.Node) error {
 	}
 	*p = IncludeTasksParams(a)
 	return nil
+}
+
+type MetaParams struct {
+	Action string `json:"action" yaml:"-"`
+}
+
+func (p *MetaParams) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.ScalarNode || node.Tag == "!!null" {
+		return fmt.Errorf("meta must be a scalar action")
+	}
+	if node.Value != "flush_handlers" {
+		return fmt.Errorf("unsupported meta action %q (only flush_handlers is supported)", node.Value)
+	}
+	p.Action = node.Value
+	return nil
+}
+
+type StringList []string
+
+func (s *StringList) UnmarshalYAML(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		if node.Tag == "!!null" {
+			*s = nil
+			return nil
+		}
+		if node.Tag != "!!str" {
+			return fmt.Errorf("must be a string or list of strings")
+		}
+		*s = StringList{node.Value}
+		return nil
+	case yaml.SequenceNode:
+		items := make(StringList, 0, len(node.Content))
+		for _, item := range node.Content {
+			if item.Kind != yaml.ScalarNode || item.Tag != "!!str" {
+				return fmt.Errorf("entries must be strings")
+			}
+			items = append(items, item.Value)
+		}
+		*s = items
+		return nil
+	default:
+		return fmt.Errorf("must be a string or list of strings")
+	}
 }
 
 type When []interface{}
@@ -145,6 +191,10 @@ type Task struct {
 	Register       string                 `json:"register,omitempty" yaml:"register,omitempty"`
 	CheckMode      *bool                  `json:"check_mode,omitempty" yaml:"check_mode,omitempty"`
 	Diff           *bool                  `json:"diff,omitempty" yaml:"diff,omitempty"`
+	Notify         StringList             `json:"notify,omitempty" yaml:"notify,omitempty"`
+	Listen         StringList             `json:"listen,omitempty" yaml:"listen,omitempty"`
+	ChangedWhen    When                   `json:"changed_when,omitempty" yaml:"changed_when,omitempty"`
+	Meta           *MetaParams            `json:"meta,omitempty" yaml:"meta,omitempty"`
 	Template       *TemplateParams        `json:"template,omitempty" yaml:"template,omitempty"`
 	Apt            *AptParams             `json:"apt,omitempty" yaml:"apt,omitempty"`
 	AptKey         *AptKeyParams          `json:"apt_key,omitempty" yaml:"apt_key,omitempty"`
@@ -797,7 +847,7 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 
 func isTaskModuleKey(key string) bool {
 	switch key {
-	case "name", "vars", "when", "loop", "with_items", "with_list", "with_dict", "with_sequence", "loop_control", "register", "check_mode", "diff":
+	case "name", "vars", "when", "loop", "with_items", "with_list", "with_dict", "with_sequence", "loop_control", "register", "check_mode", "diff", "notify", "listen", "changed_when":
 		return false
 	default:
 		return true
@@ -807,7 +857,9 @@ func isTaskModuleKey(key string) bool {
 func decodeRegisteredModuleYAML(name string, node *yaml.Node) (*registry.Invocation, error) {
 	var raw any = map[string]any{}
 	if node != nil && !(node.Kind == yaml.ScalarNode && node.Tag == "!!null") {
-		if err := node.Decode(&raw); err != nil {
+		var err error
+		raw, err = registeredModuleYAMLValue(node)
+		if err != nil {
 			return nil, fmt.Errorf("decode %s arguments: %w", name, err)
 		}
 	}
@@ -816,6 +868,56 @@ func decodeRegisteredModuleYAML(name string, node *yaml.Node) (*registry.Invocat
 		return nil, fmt.Errorf("encode %s arguments: %w", name, err)
 	}
 	return registry.Decode(name, data)
+}
+
+// registeredModuleYAMLValue preserves explicitly floating-point YAML scalars
+// through the YAML-to-JSON registry boundary. Decoding into interface{} first
+// turns 1.0 into float64(1), which json.Marshal writes as 1 and makes it
+// indistinguishable from an integer to module argument validators.
+func registeredModuleYAMLValue(node *yaml.Node) (any, error) {
+	switch node.Kind {
+	case yaml.MappingNode:
+		result := make(map[string]any, len(node.Content)/2)
+		for index := 0; index < len(node.Content); index += 2 {
+			var key string
+			if err := node.Content[index].Decode(&key); err != nil {
+				return nil, err
+			}
+			value, err := registeredModuleYAMLValue(node.Content[index+1])
+			if err != nil {
+				return nil, err
+			}
+			result[key] = value
+		}
+		return result, nil
+	case yaml.SequenceNode:
+		result := make([]any, 0, len(node.Content))
+		for _, item := range node.Content {
+			value, err := registeredModuleYAMLValue(item)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, value)
+		}
+		return result, nil
+	case yaml.ScalarNode:
+		if node.Tag == "!!float" {
+			return json.Number(node.Value), nil
+		}
+		var value any
+		if err := node.Decode(&value); err != nil {
+			return nil, err
+		}
+		return value, nil
+	case yaml.AliasNode:
+		return registeredModuleYAMLValue(node.Alias)
+	default:
+		var value any
+		if err := node.Decode(&value); err != nil {
+			return nil, err
+		}
+		return value, nil
+	}
 }
 
 func Load(path string) (*Config, error) {
@@ -845,9 +947,11 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
-	for i := range cfg.Tasks {
-		if cfg.Tasks[i].Apt != nil && cfg.Tasks[i].Apt.State == "" {
-			cfg.Tasks[i].Apt.State = "present"
+	for _, tasks := range [][]Task{cfg.Tasks, cfg.Handlers} {
+		for i := range tasks {
+			if tasks[i].Apt != nil && tasks[i].Apt.State == "" {
+				tasks[i].Apt.State = "present"
+			}
 		}
 	}
 

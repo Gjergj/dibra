@@ -133,7 +133,7 @@ printf '%s\n' "$*" >> "$SYSTEMCTL_LOG"
 
 func (f *installerFixture) run(args ...string) (string, error) {
 	f.t.Helper()
-	script, err := filepath.Abs("install-deploy.sh")
+	script, err := filepath.Abs("install-dibra-deploy.sh")
 	if err != nil {
 		f.t.Fatal(err)
 	}

@@ -60,76 +60,6 @@ test-integration-only:
 	go test -tags=integration -count=1 -v -timeout 60m ./test/integration/...
 	go test -tags=integration -count=1 -v -timeout 10m ./test/deploy_integration/...
 
-# Explicit certification-lane test names. Add new *_parity tests here; do not
-# use prefix matches, which pull in unrelated TestPlaybook_DockerContainer* names.
-DOCKER_CONTAINER_INTEGRATION_RUN := ^(TestPlaybook_DockerContainerLifecycle|TestPlaybook_DockerContainerStateParity|TestPlaybook_DockerContainerImagePullParity|TestPlaybook_DockerContainerImageIDsParity|TestPlaybook_DockerContainerComparisonsParity|TestPlaybook_DockerContainerEntrypoint|TestPlaybook_DockerContainerLogging|TestPlaybook_DockerContainerCapabilities|TestPlaybook_DockerContainerHealthcheck|TestPlaybook_DockerContainerInit|TestPlaybook_DockerContainerTmpfs|TestPlaybook_DockerContainerShmSize|TestPlaybook_DockerContainerResources|TestPlaybook_DockerContainerUlimits|TestPlaybook_DockerContainerSysctls|TestPlaybook_DockerContainerSecurityOpt|TestPlaybook_DockerContainerNetworks|TestPlaybook_DockerContainerRecreatePolicy|TestPlaybook_DockerContainerPullPolicy|TestPlaybook_DockerContainerPortRangeExpansion|TestPlaybook_DockerContainerExec|TestPlaybook_DockerContainerExecParity|TestPlaybook_DockerContainerCopyInto|TestPlaybook_DockerContainerCopyIntoParity|TestPlaybook_DockerContainerInfo|TestPlaybook_DockerContainerInfoParity|TestPlaybook_DockerContainerCanonicalParity|TestPlaybook_DockerContainerPinnedUpstreamOptions|TestPlaybook_DockerContainerHealthyPausedAndCleanup|TestPlaybook_DockerContainerPinnedRegressionMatrix|TestPlaybook_DockerContainerStates)
-DOCKER_IMAGE_INTEGRATION_RUN := ^(TestPlaybook_DockerImageLifecycle|TestPlaybook_DockerImageParity|TestPlaybook_DockerImagePullPolicies|TestPlaybook_DockerImageTagIdempotency|TestPlaybook_DockerImageStreamErrors|TestPlaybook_DockerImageForceRemove|TestPlaybook_DockerImageBackwardCompat|TestPlaybook_DockerImageBuild|TestPlaybook_DockerImageBuildParity|TestPlaybook_DockerImageExport|TestPlaybook_DockerImageExportParity|TestPlaybook_DockerImageInfoParity|TestPlaybook_DockerImageLoad|TestPlaybook_DockerImageLoadParity|TestPlaybook_DockerImagePullParity|TestPlaybook_DockerImagePushParity|TestPlaybook_DockerImageRemoveParity|TestPlaybook_DockerImageTagParity)
-DOCKER_RESOURCE_INTEGRATION_RUN := ^(TestPlaybook_DockerNetworkUpstreamSubstring|TestPlaybook_DockerNetworkUpstreamAttachable|TestPlaybook_DockerNetworkUpstreamScope|TestPlaybook_DockerNetworkUpstreamOverlay|TestPlaybook_DockerNetworkUpstreamIPAMDriverOptions|TestPlaybook_DockerNetworkUpstreamMacvlanDualIPv4|TestPlaybook_DockerNetworkDocsExamples|TestPlaybook_DockerNetworkBlogBridge|TestPlaybook_DockerNetworkBlogCustomIPAM|TestPlaybook_DockerNetworkBlogIsolationAndConnect|TestPlaybook_DockerNetworkBlogLabeled|TestPlaybook_DockerNetworkBlogCleanup|TestPlaybook_DockerNetworkBlogMicroservices|TestPlaybook_DockerNetworkOverlayIngress|TestPlaybook_DockerNetworkBlogMacvlan|TestPlaybook_DockerNetworkUnsupportedDrivers|TestPlaybook_DockerNetworkModes|TestPlaybook_DockerNetworkParityLifecycle|TestPlaybook_DockerNetworkParityConnected|TestPlaybook_DockerNetworkParityOptions|TestPlaybook_DockerNetworkParityIPAM|TestPlaybook_DockerNetworkParityCheckAndForce|TestPlaybook_DockerNetworkLifecycle|TestPlaybook_DockerNetworkEnableIPv6|TestPlaybook_DockerNetworkConnectedContainers|TestPlaybook_DockerNetworkStaticIP|TestPlaybook_DockerNetworkIdempotency|TestPlaybook_DockerNetworkForceRecreate|TestPlaybook_DockerNetworkIPAMDriver|TestPlaybook_DockerNetworkAttachable|TestPlaybook_DockerNetworkInternal|TestPlaybook_DockerNetworkInfoParity|TestPlaybook_DockerNetworkInfo|TestPlaybook_DockerVolumes|TestPlaybook_DockerVolumeParity|TestPlaybook_DockerVolumeInfoParity|TestPlaybook_DockerVolume|TestPlaybook_DockerVolumePrune|TestPlaybook_DockerVolumeInfo|TestPlaybook_DockerVolumeLifecycle|TestPlaybook_DockerLoginParity|TestPlaybook_DockerPruneParity|TestPlaybook_DockerImagePrune|TestPlaybook_DockerHostInfoParity|TestPlaybook_DockerHostInfo|TestPlaybook_DockerContextInfoParity|TestPlaybook_DockerPluginParity|TestPlaybook_CurrentContainerFactsParity|TestPlaybook_DockerTLSConnectionParity|TestDockerConnectionEnvironmentFallbackAndArgumentPrecedence)
-
-# Run the pinned Docker Engine 29.7.2 docker_container certification lane.
-test-docker-container-integration: test-integration-up
-	@echo "Running docker_container integration tests..."
-	go test -tags=integration -count=1 -v -timeout 30m ./test/integration -run '$(DOCKER_CONTAINER_INTEGRATION_RUN)$$' || (make test-integration-down && exit 1)
-	make test-integration-down
-
-# Run the certification lane against an already-running integration host.
-test-docker-container-integration-only:
-	go test -tags=integration -count=1 -v -timeout 30m ./test/integration -run '$(DOCKER_CONTAINER_INTEGRATION_RUN)$$'
-
-# Run the pinned Docker Engine 29.7.2 image-family certification lane.
-test-docker-image-integration: test-integration-up
-	@echo "Running Docker image-family integration tests..."
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_IMAGE_INTEGRATION_RUN)$$' || (make test-integration-down && exit 1)
-	make test-integration-down
-
-# Run the image-family lane against an already-running integration host.
-test-docker-image-integration-only:
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_IMAGE_INTEGRATION_RUN)$$'
-
-# Run the Engine 29.7.2 resource/info certification lane (network, volume, login, prune, host/context/plugin/facts).
-test-docker-resource-integration: test-integration-up
-	@echo "Running Docker resource-family integration tests..."
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_RESOURCE_INTEGRATION_RUN)$$' || (make test-integration-down && exit 1)
-	make test-integration-down
-
-# Run that lane with the integration container already running.
-test-docker-resource-integration-only:
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_RESOURCE_INTEGRATION_RUN)$$'
-
-# Run the pinned Compose 5.4.0 docker_compose_v2 certification lane.
-test-docker-compose-integration: test-integration-up
-	@echo "Running docker_compose_v2 integration tests..."
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerComposeLifecycle|TestPlaybook_DockerComposeV2Parity|TestPlaybook_DockerComposeV2Examples|TestPlaybook_DockerComposeV2ExecParity|TestPlaybook_DockerComposeV2PullParity|TestPlaybook_DockerComposeV2RunParity)$$' || (make test-integration-down && exit 1)
-	make test-integration-down
-
-test-docker-compose-integration-only:
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerComposeLifecycle|TestPlaybook_DockerComposeV2Parity|TestPlaybook_DockerComposeV2Examples|TestPlaybook_DockerComposeV2ExecParity|TestPlaybook_DockerComposeV2PullParity|TestPlaybook_DockerComposeV2RunParity)$$'
-
-# Run the Engine 29.7.2 Swarm node/service/config/secret certification lane.
-test-docker-swarm-integration: test-integration-up
-	@echo "Running Docker Swarm node/service/config/secret/stack-family integration tests..."
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerSwarmParity|TestPlaybook_DockerSwarmInfoParity|TestPlaybook_DockerSwarmLifecycle|TestPlaybook_DockerSwarmService|TestPlaybook_DockerSwarmServiceParity|TestPlaybook_DockerSwarmServiceInfo|TestPlaybook_DockerSwarmServiceInfoParity|TestPlaybook_DockerNode|TestPlaybook_DockerNodeLabelsToRemove|TestPlaybook_DockerNodeInfo|TestPlaybook_DockerNodeParity|TestPlaybook_DockerNodeInfoParity|TestPlaybook_DockerConfigLifecycle|TestPlaybook_DockerConfigHashIdempotency|TestPlaybook_DockerConfigParity|TestPlaybook_DockerSecretLifecycle|TestPlaybook_DockerSecretHashIdempotency|TestPlaybook_DockerSecretParity|TestPlaybook_DockerStackLifecycle|TestPlaybook_DockerStackParity|TestPlaybook_DockerStackInfoParity|TestPlaybook_DockerStackTaskInfoParity)$$' || (make test-integration-down && exit 1)
-	make test-integration-down
-
-test-docker-swarm-integration-only:
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerSwarmParity|TestPlaybook_DockerSwarmInfoParity|TestPlaybook_DockerSwarmLifecycle|TestPlaybook_DockerSwarmService|TestPlaybook_DockerSwarmServiceParity|TestPlaybook_DockerSwarmServiceInfo|TestPlaybook_DockerSwarmServiceInfoParity|TestPlaybook_DockerNode|TestPlaybook_DockerNodeLabelsToRemove|TestPlaybook_DockerNodeInfo|TestPlaybook_DockerNodeParity|TestPlaybook_DockerNodeInfoParity|TestPlaybook_DockerConfigLifecycle|TestPlaybook_DockerConfigHashIdempotency|TestPlaybook_DockerConfigParity|TestPlaybook_DockerSecretLifecycle|TestPlaybook_DockerSecretHashIdempotency|TestPlaybook_DockerSecretParity|TestPlaybook_DockerStackLifecycle|TestPlaybook_DockerStackParity|TestPlaybook_DockerStackInfoParity|TestPlaybook_DockerStackTaskInfoParity)$$'
-
-# Start the shared Linux/systemd test container for dibra-deploy tests
-test-deploy-integration-up: test-integration-up
-
-# Stop the shared Linux/systemd test container
-test-deploy-integration-down: test-integration-down
-
-# Run only the dibra-deploy black-box integration suite
-test-deploy-integration: test-deploy-integration-up
-	@echo "Running dibra-deploy integration tests..."
-	go test -tags=integration -count=1 -v -timeout 10m ./test/deploy_integration/... || (make test-deploy-integration-down && exit 1)
-	make test-deploy-integration-down
-
-# Run dibra-deploy integration tests with an already-running test container
-test-deploy-integration-only:
-	go test -tags=integration -count=1 -v -timeout 10m ./test/deploy_integration/...
-
 # Run dibra-deploy in Linux against an API on the Docker host.
 # make run-deploy-docker-host \
 #   DEPLOY_ENDPOINT=http://host.docker.internal:9000/gettasks
@@ -186,5 +116,81 @@ release-patch:
 release-check:
 	goreleaser check
 
-# go run ./cmd/controller -config playbook.yaml --force-agent-upload 2>&1 | head -10  
+# go run ./cmd/controller -config playbook.yaml --force-agent-upload 2>&1 | head -10
 # go test -tags=integration -v -timeout 10m -count=1 ./test/integration/... -run "TestPlaybook_GitCloneBareIdempotent" 2>&1
+
+
+
+### Docker specific tests (also inlcuded in test-integration) ###
+
+# Explicit certification-lane test names. Add new *_parity tests here; do not
+# use prefix matches, which pull in unrelated TestPlaybook_DockerContainer* names.
+DOCKER_CONTAINER_INTEGRATION_RUN := ^(TestPlaybook_DockerContainerLifecycle|TestPlaybook_DockerContainerConnectionParity|TestPlaybook_DockerContainerTopLevelOptionsParity|TestPlaybook_DockerContainerResourceUpdateParity|TestPlaybook_DockerContainerImagePolicyParity|TestPlaybook_DockerContainerNetworkModeParity|TestPlaybook_DockerContainerVolumeInheritanceParity|TestPlaybook_DockerContainerLifecycleOptionsParity|TestPlaybook_DockerContainerStateParity|TestPlaybook_DockerContainerImagePullParity|TestPlaybook_DockerContainerImageIDsParity|TestPlaybook_DockerContainerComparisonsParity|TestPlaybook_DockerContainerHealthyStateParity|TestPlaybook_DockerContainerNetworkEndpointParity|TestPlaybook_DockerContainerMountsParity|TestPlaybook_DockerContainerDeviceOptionsParity|TestPlaybook_DockerContainerPortsParity|TestPlaybook_DockerContainerEntrypoint|TestPlaybook_DockerContainerLogging|TestPlaybook_DockerContainerCapabilities|TestPlaybook_DockerContainerHealthcheck|TestPlaybook_DockerContainerInit|TestPlaybook_DockerContainerTmpfs|TestPlaybook_DockerContainerShmSize|TestPlaybook_DockerContainerResources|TestPlaybook_DockerContainerUlimits|TestPlaybook_DockerContainerSysctls|TestPlaybook_DockerContainerSecurityOpt|TestPlaybook_DockerContainerNetworks|TestPlaybook_DockerContainerRecreatePolicy|TestPlaybook_DockerContainerPullPolicy|TestPlaybook_DockerContainerPortRangeExpansion|TestPlaybook_DockerContainerExec|TestPlaybook_DockerContainerExecParity|TestPlaybook_DockerContainerCopyInto|TestPlaybook_DockerContainerCopyIntoParity|TestPlaybook_DockerContainerInfo|TestPlaybook_DockerContainerInfoParity|TestPlaybook_DockerContainerCanonicalParity|TestPlaybook_DockerContainerPinnedUpstreamOptions|TestPlaybook_DockerContainerHealthyPausedAndCleanup|TestPlaybook_DockerContainerPinnedRegressionMatrix|TestPlaybook_DockerContainerStates)
+DOCKER_IMAGE_INTEGRATION_RUN := ^(TestPlaybook_DockerImageLifecycle|TestPlaybook_DockerImageParity|TestPlaybook_DockerImagePullPolicies|TestPlaybook_DockerImageTagIdempotency|TestPlaybook_DockerImageStreamErrors|TestPlaybook_DockerImageForceRemove|TestPlaybook_DockerImageBackwardCompat|TestPlaybook_DockerImageBuild|TestPlaybook_DockerImageBuildParity|TestPlaybook_DockerImageExport|TestPlaybook_DockerImageExportParity|TestPlaybook_DockerImageInfoParity|TestPlaybook_DockerImageLoad|TestPlaybook_DockerImageLoadParity|TestPlaybook_DockerImagePullParity|TestPlaybook_DockerImagePushParity|TestPlaybook_DockerImageRemoveParity|TestPlaybook_DockerImageTagParity|TestPlaybook_DockerTLSConnectionParity)
+DOCKER_RESOURCE_INTEGRATION_RUN := ^(TestPlaybook_DockerNetworkUpstreamSubstring|TestPlaybook_DockerNetworkUpstreamAttachable|TestPlaybook_DockerNetworkUpstreamScope|TestPlaybook_DockerNetworkUpstreamOverlay|TestPlaybook_DockerNetworkUpstreamIPAMDriverOptions|TestPlaybook_DockerNetworkUpstreamMacvlanDualIPv4|TestPlaybook_DockerNetworkDocsExamples|TestPlaybook_DockerNetworkBlogBridge|TestPlaybook_DockerNetworkBlogCustomIPAM|TestPlaybook_DockerNetworkBlogIsolationAndConnect|TestPlaybook_DockerNetworkBlogLabeled|TestPlaybook_DockerNetworkBlogCleanup|TestPlaybook_DockerNetworkBlogMicroservices|TestPlaybook_DockerNetworkOverlayIngress|TestPlaybook_DockerNetworkBlogMacvlan|TestPlaybook_DockerNetworkUnsupportedDrivers|TestPlaybook_DockerNetworkModes|TestPlaybook_DockerNetworkParityLifecycle|TestPlaybook_DockerNetworkParityConnected|TestPlaybook_DockerNetworkParityOptions|TestPlaybook_DockerNetworkParityIPAM|TestPlaybook_DockerNetworkParityCheckAndForce|TestPlaybook_DockerNetworkLifecycle|TestPlaybook_DockerNetworkEnableIPv6|TestPlaybook_DockerNetworkConnectedContainers|TestPlaybook_DockerNetworkStaticIP|TestPlaybook_DockerNetworkIdempotency|TestPlaybook_DockerNetworkForceRecreate|TestPlaybook_DockerNetworkIPAMDriver|TestPlaybook_DockerNetworkAttachable|TestPlaybook_DockerNetworkInternal|TestPlaybook_DockerNetworkInfoParity|TestPlaybook_DockerNetworkInfo|TestPlaybook_DockerVolumes|TestPlaybook_DockerVolumeParity|TestPlaybook_DockerVolumeInfoParity|TestPlaybook_DockerVolume|TestPlaybook_DockerVolumePrune|TestPlaybook_DockerVolumeInfo|TestPlaybook_DockerVolumeLifecycle|TestPlaybook_DockerLoginParity|TestPlaybook_DockerPruneParity|TestPlaybook_DockerImagePrune|TestPlaybook_DockerHostInfoParity|TestPlaybook_DockerHostInfo|TestPlaybook_DockerContextInfoParity|TestPlaybook_DockerPluginParity|TestPlaybook_CurrentContainerFactsParity|TestPlaybook_DockerTLSConnectionParity|TestDockerConnectionEnvironmentFallbackAndArgumentPrecedence)
+
+# Run the pinned Docker Engine 29.7.2 docker_container certification lane.
+test-docker-container-integration: test-integration-up
+	@echo "Running docker_container integration tests..."
+	go test -tags=integration -count=1 -v -timeout 30m ./test/integration -run '$(DOCKER_CONTAINER_INTEGRATION_RUN)$$' || (make test-integration-down && exit 1)
+	make test-integration-down
+
+# Run the certification lane against an already-running integration host.
+test-docker-container-integration-only:
+	go test -tags=integration -count=1 -v -timeout 30m ./test/integration -run '$(DOCKER_CONTAINER_INTEGRATION_RUN)$$'
+
+# Run the pinned Docker Engine 29.7.2 image-family certification lane.
+test-docker-image-integration: test-integration-up
+	@echo "Running Docker image-family integration tests..."
+	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_IMAGE_INTEGRATION_RUN)$$' || (make test-integration-down && exit 1)
+	make test-integration-down
+
+# Run the image-family lane against an already-running integration host.
+test-docker-image-integration-only:
+	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_IMAGE_INTEGRATION_RUN)$$'
+
+# Run the Engine 29.7.2 resource/info certification lane (network, volume, login, prune, host/context/plugin/facts).
+test-docker-resource-integration: test-integration-up
+	@echo "Running Docker resource-family integration tests..."
+	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_RESOURCE_INTEGRATION_RUN)$$' || (make test-integration-down && exit 1)
+	make test-integration-down
+
+# Run that lane with the integration container already running.
+test-docker-resource-integration-only:
+	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_RESOURCE_INTEGRATION_RUN)$$'
+
+# Run the pinned Compose 5.4.0 docker_compose_v2 certification lane.
+test-docker-compose-integration: test-integration-up
+	@echo "Running docker_compose_v2 integration tests..."
+	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerComposeLifecycle|TestPlaybook_DockerComposeV2Parity|TestPlaybook_DockerComposeV2Examples|TestPlaybook_DockerComposeV2ExecParity|TestPlaybook_DockerComposeV2PullParity|TestPlaybook_DockerComposeV2RunParity)$$' || (make test-integration-down && exit 1)
+	make test-integration-down
+
+test-docker-compose-integration-only:
+	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerComposeLifecycle|TestPlaybook_DockerComposeV2Parity|TestPlaybook_DockerComposeV2Examples|TestPlaybook_DockerComposeV2ExecParity|TestPlaybook_DockerComposeV2PullParity|TestPlaybook_DockerComposeV2RunParity)$$'
+
+# Run the Engine 29.7.2 Swarm node/service/config/secret certification lane.
+test-docker-swarm-integration: test-integration-up
+	@echo "Running Docker Swarm node/service/config/secret/stack-family integration tests..."
+	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerSwarmParity|TestPlaybook_DockerSwarmInfoParity|TestPlaybook_DockerSwarmLifecycle|TestPlaybook_DockerSwarmService|TestPlaybook_DockerSwarmServiceParity|TestPlaybook_DockerSwarmServiceInfo|TestPlaybook_DockerSwarmServiceInfoParity|TestPlaybook_DockerNode|TestPlaybook_DockerNodeLabelsToRemove|TestPlaybook_DockerNodeInfo|TestPlaybook_DockerNodeParity|TestPlaybook_DockerNodeInfoParity|TestPlaybook_DockerConfigLifecycle|TestPlaybook_DockerConfigHashIdempotency|TestPlaybook_DockerConfigParity|TestPlaybook_DockerSecretLifecycle|TestPlaybook_DockerSecretHashIdempotency|TestPlaybook_DockerSecretParity|TestPlaybook_DockerStackLifecycle|TestPlaybook_DockerStackParity|TestPlaybook_DockerStackInfoParity|TestPlaybook_DockerStackTaskInfoParity)$$' || (make test-integration-down && exit 1)
+	make test-integration-down
+
+test-docker-swarm-integration-only:
+	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerSwarmParity|TestPlaybook_DockerSwarmInfoParity|TestPlaybook_DockerSwarmLifecycle|TestPlaybook_DockerSwarmService|TestPlaybook_DockerSwarmServiceParity|TestPlaybook_DockerSwarmServiceInfo|TestPlaybook_DockerSwarmServiceInfoParity|TestPlaybook_DockerNode|TestPlaybook_DockerNodeLabelsToRemove|TestPlaybook_DockerNodeInfo|TestPlaybook_DockerNodeParity|TestPlaybook_DockerNodeInfoParity|TestPlaybook_DockerConfigLifecycle|TestPlaybook_DockerConfigHashIdempotency|TestPlaybook_DockerConfigParity|TestPlaybook_DockerSecretLifecycle|TestPlaybook_DockerSecretHashIdempotency|TestPlaybook_DockerSecretParity|TestPlaybook_DockerStackLifecycle|TestPlaybook_DockerStackParity|TestPlaybook_DockerStackInfoParity|TestPlaybook_DockerStackTaskInfoParity)$$'
+
+
+### dibra-deploy specific integration tests (also inlcuded in test-integration) ###
+# Start the shared Linux/systemd test container for dibra-deploy tests
+test-deploy-integration-up: test-integration-up
+
+# Stop the shared Linux/systemd test container
+test-deploy-integration-down: test-integration-down
+
+# Run only the dibra-deploy black-box integration suite
+test-deploy-integration: test-deploy-integration-up
+	@echo "Running dibra-deploy integration tests..."
+	go test -tags=integration -count=1 -v -timeout 10m ./test/deploy_integration/... || (make test-deploy-integration-down && exit 1)
+	make test-deploy-integration-down
+
+# Run dibra-deploy integration tests with an already-running test container
+test-deploy-integration-only:
+	go test -tags=integration -count=1 -v -timeout 10m ./test/deploy_integration/...

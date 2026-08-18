@@ -78,6 +78,32 @@ func TestPlaybook_DockerVolumeInfoParity(t *testing.T) {
 				t.Fatalf("raw key %q missing from %#v", key, actual)
 			}
 		}
+
+		alias := runInfo("volume-name-alias", "      volume_name: "+name+"\n")
+		if alias["changed"] != false || alias["exists"] != true ||
+			!reflect.DeepEqual(alias["volume"], actual) {
+			t.Fatalf("volume_name alias result = %#v", alias)
+		}
+	})
+
+	t.Run("check and diff modes stay read only and idempotent", func(t *testing.T) {
+		playbook := playbookHeader + `
+  - name: Inspect volume in check and diff mode
+    docker_volume_info:
+      name: ` + name + `
+`
+		before := dockerInspectVolume(t, client, name)
+		for iteration := 0; iteration < 2; iteration++ {
+			output := runPlaybookWithArgs(t, playbook, "--check", "--diff")
+			if strings.Contains(output, "FAILED") || strings.Contains(output, "SKIPPED") ||
+				strings.Contains(output, "CHANGED") || !strings.Contains(output, "OK") {
+				t.Fatalf("read-only run %d failed: %s", iteration+1, output)
+			}
+		}
+		after := dockerInspectVolume(t, client, name)
+		if !reflect.DeepEqual(before, after) {
+			t.Fatalf("check/diff mode mutated volume\nbefore: %#v\nafter: %#v", before, after)
+		}
 	})
 }
 

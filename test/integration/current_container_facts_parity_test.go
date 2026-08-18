@@ -11,7 +11,8 @@ func TestPlaybook_CurrentContainerFactsParity(t *testing.T) {
 	client := getClient(t)
 	defer client.Close()
 
-	mustRemote(t, client, "rm -f /tmp/dibra-facts-*.json /tmp/.dibra-agent")
+	mustRemote(t, client, "rm -f /tmp/dibra-facts-*.json /tmp/dibra-facts-injected.txt /tmp/.dibra-agent")
+	defer mustRemote(t, client, "rm -f /tmp/dibra-facts-injected.txt")
 	templatePath := writeResultTemplate(t, "facts_result")
 	playbook := playbookHeader + `
   - name: Detect current container
@@ -63,4 +64,26 @@ func TestPlaybook_CurrentContainerFactsParity(t *testing.T) {
 	if checkResult["changed"] != false {
 		t.Fatalf("check result = %#v", checkResult)
 	}
+
+	t.Run("facts are injected without register", func(t *testing.T) {
+		playbook := playbookHeader + `
+  - name: Detect current container without register
+    community.docker.current_container_facts:
+
+  - name: Consume injected container facts
+    copy:
+      content: "{{ ansible_module_running_in_container }}|{{ ansible_module_container_type }}|{{ ansible_facts.ansible_module_container_id }}"
+      dest: /tmp/dibra-facts-injected.txt
+`
+		output := runPlaybook(t, playbook)
+		if strings.Contains(output, "FAILED") {
+			t.Fatalf("injected facts playbook failed: %s", output)
+		}
+		fields := strings.Split(remoteFileContent(t, client, "/tmp/dibra-facts-injected.txt"), "|")
+		if len(fields) != 3 || fields[0] != "true" ||
+			(fields[1] != "docker" && fields[1] != "podman") ||
+			len(fields[2]) < 12 {
+			t.Fatalf("injected facts = %#v", fields)
+		}
+	})
 }

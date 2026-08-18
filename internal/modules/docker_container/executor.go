@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/netip"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -787,7 +788,11 @@ func waitForHealthy(ctx context.Context, cli client.APIClient, id string, timeou
 			return convertContainer(inspect.Container), fmt.Errorf("encountered unexpected health state %q while waiting for container %q", status, id)
 		}
 		if timeout != nil && clock.Now().Sub(started) >= time.Duration(*timeout*float64(time.Second)) {
-			return convertContainer(inspect.Container), fmt.Errorf("timeout of %g seconds exceeded while waiting for container %q to become healthy", *timeout, id)
+			timeoutText := strconv.FormatFloat(*timeout, 'f', -1, 64)
+			if !strings.Contains(timeoutText, ".") {
+				timeoutText += ".0"
+			}
+			return convertContainer(inspect.Container), fmt.Errorf("Timeout of %s seconds exceeded while waiting for container %q", timeoutText, id)
 		}
 		clock.Sleep(time.Second)
 	}

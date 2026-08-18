@@ -1,8 +1,10 @@
 package docker_context_info
 
 import (
+	"encoding/json"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -161,6 +163,47 @@ func TestContextInfoCLIContextOverride(t *testing.T) {
 	}
 }
 
+func TestContextInfoDOCKERCONTEXTSelectsCurrentContext(t *testing.T) {
+	id := contextID("remote")
+	fileSystem := memoryFS{
+		home: "/home/user",
+		files: map[string]memoryFile{
+			"/home/user/.docker/contexts/meta/" + id + "/meta.json": {data: []byte(`{
+				"Name":"remote",
+				"Metadata":{},
+				"Endpoints":{"docker":{"Host":"unix:///var/run/docker.sock"}}
+			}`)},
+		},
+	}
+	response := ExecuteWithDependencies(Request{OnlyCurrent: true}, contextDependencies(fileSystem, docker.StaticEnvironment{
+		"DOCKER_CONTEXT": "remote",
+	}))
+	if response.Failed || response.CurrentContextName != "remote" || len(response.Contexts) != 1 || !response.Contexts[0].Current {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestContextInfoMissingConfiguredCurrentContextFails(t *testing.T) {
+	fileSystem := memoryFS{
+		home: "/home/user",
+		files: map[string]memoryFile{
+			"/home/user/.docker/config.json": {data: []byte(`{"currentContext":"missing"}`)},
+		},
+	}
+	response := ExecuteWithDependencies(Request{OnlyCurrent: true}, contextDependencies(fileSystem, docker.StaticEnvironment{}))
+	if !response.Failed || !strings.Contains(response.Msg, `There is no context of name "missing"`) ||
+		!strings.Contains(response.Msg, "configuration file /home/user/.docker/config.json") {
+		t.Fatalf("response = %#v", response)
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), `"contexts"`) || strings.Contains(string(encoded), `"current_context_name"`) {
+		t.Fatalf("failure response leaked success fields: %s", encoded)
+	}
+}
+
 func TestContextInfoNormalizesHTTPHost(t *testing.T) {
 	id := contextID("remote")
 	fileSystem := memoryFS{
@@ -175,6 +218,12 @@ func TestContextInfoNormalizesHTTPHost(t *testing.T) {
 	response := ExecuteWithDependencies(Request{Name: "remote"}, contextDependencies(fileSystem, docker.StaticEnvironment{}))
 	if response.Failed || response.Contexts[0].Config["docker_host"] != "tcp://127.0.0.1:2375" || response.Contexts[0].Config["tls"] != true {
 		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestContextInfoNormalizesHTTPUnixHost(t *testing.T) {
+	if got := normalizeDockerHost("http+unix://%2Fvar%2Frun%2Fdocker.sock"); got != "unix://%2Fvar%2Frun%2Fdocker.sock" {
+		t.Fatalf("normalized host = %q", got)
 	}
 }
 
@@ -282,6 +331,24 @@ func TestContextInfoRejectsNonObjectEndpoint(t *testing.T) {
 	}
 	response := ExecuteWithDependencies(Request{Name: "invalid"}, contextDependencies(fileSystem, docker.StaticEnvironment{}))
 	if !response.Failed || response.Msg == "" {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestContextInfoRejectsReservedDefaultMetadataName(t *testing.T) {
+	id := contextID("default")
+	fileSystem := memoryFS{
+		home: "/home/user",
+		files: map[string]memoryFile{
+			"/home/user/.docker/contexts/meta/" + id + "/meta.json": {data: []byte(`{
+				"Name":"default",
+				"Metadata":{},
+				"Endpoints":{"docker":{}}
+			}`)},
+		},
+	}
+	response := ExecuteWithDependencies(Request{}, contextDependencies(fileSystem, docker.StaticEnvironment{}))
+	if !response.Failed || !strings.Contains(response.Msg, `"default" is a reserved context name`) {
 		t.Fatalf("response = %#v", response)
 	}
 }

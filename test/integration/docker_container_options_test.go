@@ -91,6 +91,9 @@ func TestPlaybook_DockerContainerLogging(t *testing.T) {
 	if !strings.Contains(logOpts, "10m") {
 		t.Errorf("Log options not set correctly: %s", logOpts)
 	}
+	if second := runPlaybook(t, playbook); strings.Contains(second, "FAILED") || strings.Contains(second, "CHANGED") {
+		t.Fatalf("logging options were not idempotent: %s", second)
+	}
 }
 
 // TestPlaybook_DockerContainerCapabilities tests cap_add and cap_drop (2.7.8)
@@ -257,6 +260,9 @@ func TestPlaybook_DockerContainerTmpfs(t *testing.T) {
 	if !strings.Contains(tmpfs, "/run") || !strings.Contains(tmpfs, "/tmp") {
 		t.Errorf("Tmpfs not set correctly: %s", tmpfs)
 	}
+	if second := runPlaybook(t, playbook); strings.Contains(second, "FAILED") || strings.Contains(second, "CHANGED") {
+		t.Fatalf("tmpfs options were not idempotent: %s", second)
+	}
 }
 
 // TestPlaybook_DockerContainerShmSize tests shm_size option (2.7.8)
@@ -289,6 +295,9 @@ func TestPlaybook_DockerContainerShmSize(t *testing.T) {
 	shmSize := remoteExec(t, client, "docker inspect --format '{{.HostConfig.ShmSize}}' "+containerName)
 	if !strings.Contains(shmSize, "134217728") {
 		t.Errorf("ShmSize not set correctly: %s", shmSize)
+	}
+	if second := runPlaybook(t, playbook); strings.Contains(second, "FAILED") || strings.Contains(second, "CHANGED") {
+		t.Fatalf("shm_size was not idempotent: %s", second)
 	}
 }
 
@@ -475,6 +484,9 @@ func TestPlaybook_DockerContainerUlimits(t *testing.T) {
 	if !strings.Contains(ulimits, "nofile") || !strings.Contains(ulimits, "1024") {
 		t.Errorf("Ulimits not set correctly: %s", ulimits)
 	}
+	if second := runPlaybook(t, playbook); strings.Contains(second, "FAILED") || strings.Contains(second, "CHANGED") {
+		t.Fatalf("ulimits were not idempotent: %s", second)
+	}
 }
 
 // TestPlaybook_DockerContainerSysctls tests sysctls option (2.8.8)
@@ -510,6 +522,9 @@ func TestPlaybook_DockerContainerSysctls(t *testing.T) {
 	if !strings.Contains(sysctls, "somaxconn") || !strings.Contains(sysctls, "1024") {
 		t.Errorf("Sysctls not set correctly: %s", sysctls)
 	}
+	if second := runPlaybook(t, playbook); strings.Contains(second, "FAILED") || strings.Contains(second, "CHANGED") {
+		t.Fatalf("sysctls were not idempotent: %s", second)
+	}
 }
 
 // TestPlaybook_DockerContainerSecurityOpt tests security_opt option (2.8.8)
@@ -544,6 +559,9 @@ func TestPlaybook_DockerContainerSecurityOpt(t *testing.T) {
 	if !strings.Contains(secOpt, "no-new-privileges") {
 		t.Errorf("SecurityOpt not set correctly: %s", secOpt)
 	}
+	if second := runPlaybook(t, playbook); strings.Contains(second, "FAILED") || strings.Contains(second, "CHANGED") {
+		t.Fatalf("security options were not idempotent: %s", second)
+	}
 }
 
 // TestPlaybook_DockerContainerNetworks tests network reconciliation (2.5.7)
@@ -565,9 +583,11 @@ func TestPlaybook_DockerContainerNetworks(t *testing.T) {
 		remoteExec(t, client, "docker network rm "+network2+" || true")
 	}()
 
-	// Create networks
-	remoteExec(t, client, "docker network create "+network1)
-	remoteExec(t, client, "docker network create "+network2)
+	// Use explicit non-overlapping subnets. Auto-selected nested-Docker bridge
+	// subnets can overlap the integration container's management network and
+	// reset the SSH connection used by the rest of the certification lane.
+	mustRemote(t, client, "docker network create --subnet 172.29.92.0/24 "+network1)
+	mustRemote(t, client, "docker network create --subnet 172.29.93.0/24 "+network2)
 
 	t.Log("Step 1: Create container connected to network1")
 	playbook1 := playbookHeader + `

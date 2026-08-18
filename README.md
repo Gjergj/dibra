@@ -42,7 +42,7 @@ Install the latest `dibra-deploy` release and its systemd unit:
 
 ```bash
 curl -fsSL \
-  https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-deploy.sh \
+  https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra-deploy.sh \
   | sh
 sudo systemctl enable --now dibra-deploy.service
 ```
@@ -91,6 +91,32 @@ Use `dibra -config playbook.yaml --check` for a non-mutating check-mode run and
 `--diff` to request structured differences from modules that implement them.
 Modules that have not implemented Dibra check mode are safely skipped rather
 than executed.
+
+### Handlers
+
+Changed tasks can notify play-level handlers. Notifications are deduplicated
+and run in handler definition order at the end of the play or at an explicit
+`meta: flush_handlers` task:
+
+```yaml
+tasks:
+  - name: Deploy Caddy configuration
+    copy:
+      src: Caddyfile
+      dest: /etc/caddy/Caddyfile
+    notify: restart caddy
+
+handlers:
+  - name: restart caddy
+    systemd_service:
+      name: caddy
+      state: restarted
+```
+
+Handlers support `listen` topics, `changed_when`, loops, static
+`import_tasks`, and dynamic `include_tasks`. Failed hosts skip pending handlers
+unless the play sets `force_handlers: true` or the CLI uses
+`--force-handlers`. See `AGENTS.md` for the complete behavior.
 
 For pull-based local execution, `dibra-deploy` periodically fetches a ZIP
 project from a local task server and applies it without SSH.

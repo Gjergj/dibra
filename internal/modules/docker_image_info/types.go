@@ -39,3 +39,15 @@ type Response struct {
 	Msg     string           `json:"msg,omitempty"`
 	Images  []map[string]any `json:"images"`
 }
+
+func (response Response) MarshalJSON() ([]byte, error) {
+	type responseAlias Response
+	if !response.Failed {
+		return json.Marshal(responseAlias(response))
+	}
+	return json.Marshal(struct {
+		Changed bool   `json:"changed"`
+		Failed  bool   `json:"failed"`
+		Msg     string `json:"msg,omitempty"`
+	}{Changed: response.Changed, Failed: response.Failed, Msg: response.Msg})
+}

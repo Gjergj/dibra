@@ -35,6 +35,9 @@ dibra -config playbook.yaml --check
 # Request structured diffs from modules that implement them
 dibra -config playbook.yaml --diff
 
+# Run already-notified handlers even if a later task fails
+dibra -config playbook.yaml --force-handlers
+
 # Force re-upload agent (even if versions match)
 dibra -config playbook.yaml --force-agent-upload
 
@@ -52,7 +55,7 @@ dibra validate -config playbook.yaml
 sudo dibra-deploy
 
 # Install the released Linux local pull runner and systemd unit
-curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-deploy.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra-deploy.sh | sh
 sudo systemctl enable --now dibra-deploy.service
 
 # dibra-deploy development agent modes
@@ -160,8 +163,8 @@ make release-check      # Validate .goreleaser.yaml
 | Platform | Method |
 |----------|--------|
 | **macOS** | `brew install Gjergj/tap/dibra` |
-| **macOS/Linux** | `curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install.sh \| sh` |
-| **Linux dibra-deploy** | `curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-deploy.sh \| sh` |
+| **macOS/Linux** | `curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra.sh \| sh` |
+| **Linux dibra-deploy** | `curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra-deploy.sh \| sh` |
 | **Linux (deb)** | Download `.deb` from releases, `sudo dpkg -i dibra_*.deb` |
 | **Linux (rpm)** | Download `.rpm` from releases, `sudo rpm -i dibra_*.rpm` |
 | **Windows** | `scoop bucket add dibra https://github.com/Gjergj/scoop-bucket && scoop install dibra` |
@@ -674,7 +677,12 @@ Important behavior:
 - `state: present` may omit `image` when the named container already exists;
   creation still requires an image. Non-positive `healthy_wait_timeout`
   disables the timeout. Check/debug `actions` remain structured dictionaries,
- and unequal published-port ranges fail validation.
+  and unequal published-port ranges fail validation. A healthy-state timeout
+  returns the latest container inspection and starts its error with
+  `Timeout of {seconds} seconds exceeded while waiting for container `.
+  Published-port IPv6 bind addresses require square brackets; malformed
+  bracket syntax, unbracketed IPv6, and hostname bind addresses use the pinned
+  upstream validation messages without a Dibra-specific error prefix.
 - Container images may be names, digests, or full image IDs. Image IDs never
   trigger pulls. Pull policies, registry authentication, image/name/label
   mismatch policies, platform normalization, and image-derived environment,
@@ -683,8 +691,23 @@ Important behavior:
   `Cannot find image with name {reference}, and pull=never`; a missing image ID
   fails with `Cannot find image with ID {id}`.
 - `mounts` supports the current Engine bind, volume, tmpfs, npipe, cluster, and
-  image forms and validates type-specific options. `tmpfs_options` uses the
-  upstream list-of-one-key-dictionaries shape.
+  image forms and validates type-specific options. Bind recursion,
+  propagation, and mountpoint-creation flags, volume labels/driver/options and
+  subpaths, and tmpfs options are preserved in the Engine request and
+  comparison. `tmpfs_options` uses the upstream list-of-one-key-dictionaries
+  shape. Mount labels and volume-driver option values use upstream's Python
+  string conversion, including lowercase top-level booleans. `volume_options`
+  without `volume_driver` are ignored in both the Engine request and
+  comparison, matching upstream preprocessing. `read_only_non_recursive` and
+  `read_only_force_recursive` are alternative runtime behaviors, and Docker
+  rejects enabling both on one mount.
+- Block-I/O device path/rate lists compare as sets of dictionaries. IOPS rates
+  accept both integers and integer strings, matching Ansible's integer
+  coercion. Device requests preserve driver, count, device IDs, nested
+  capabilities, and options.
+- Healthchecks preserve test, interval, timeout, start period, start interval,
+  and retries. Network endpoint links use the nested `networks[].links` API
+  shape and participate in endpoint reconciliation.
 - The `kernel_memory` argument is accepted and validated but a nonzero value
   fails explicitly on the Engine 29.7.2 baseline. Engine API 1.42 removed that
   field, and the pinned upstream test also excludes it on newer API versions.
@@ -870,7 +893,9 @@ contract. Canonical `volume_name` aliases `name`. `recreate` is
 
 On `recreate: never` (the default), a mismatch leaves the existing volume
 unchanged rather than failing. Successful results return the raw Engine
-inspection in `volume`. Check and diff modes are fully implemented.
+inspection in `volume`. Label strings and integers are accepted; booleans and
+floating-point values fail with the pinned upstream label-sanitization error.
+Check and diff modes are fully implemented.
 
 ### docker_prune
 
@@ -1765,7 +1790,9 @@ Important behavior:
 - Outputs support `local`, `tar`, `oci`, `docker`, and `image`. If outputs do
   not retain `name:tag`, the module adds an image output for it. Multiple
   outputs require buildx 0.13.0 or newer; environment/value secrets require
-  buildx 0.6.0 or newer.
+  buildx 0.6.0 or newer. The integration host pins and asserts buildx 0.30.0;
+  required output and multi-platform certification scenarios must fail rather
+  than skip when that pinned baseline rejects them.
 - `docker_cli` selects the executable. The shared CLI connection resolver owns
   host/context exclusivity, API-version environment, TLS flags and certificate
   paths. Successful builds return raw image inspection data, the buildx
@@ -2031,7 +2058,9 @@ diff. Shared API connection arguments apply.
 
 Implements the pinned `community.docker.docker_volume_info` 5.2.2 read-only
 contract. Missing volumes succeed with `exists: false` and `volume: null`.
-Existing results are the complete Engine inspection.
+Existing results are the complete Engine inspection. Canonical `name` accepts
+the upstream `volume_name` alias, and non-not-found inspection failures use
+the upstream `Error inspecting volume: ` prefix.
 
 ```yaml
 - name: Get volume info
@@ -2098,7 +2127,8 @@ null rather than becoming an empty string. A missing named context fails.
 
 Implements the pinned `community.docker.current_container_facts` 5.2.2
 read-only contract. There is no Docker connection. Facts are returned under
-`ansible_facts`.
+`ansible_facts` and are automatically injected into the host variable context,
+including their top-level `ansible_*` names, without requiring `register`.
 
 ```yaml
 - name: Detect the current container
@@ -4577,6 +4607,64 @@ tasks:
 - If inventory file is not found, dibra errors
 - Circular group references are detected and reported
 
+## Handlers
+
+Handlers are tasks that run only after a changed task notifies them. Define
+handlers at play level and use `notify` with one name/topic or a list:
+
+```yaml
+vars:
+  service_name: caddy
+
+tasks:
+  - name: Install Caddy configuration
+    copy:
+      src: Caddyfile
+      dest: /etc/caddy/Caddyfile
+    notify:
+      - restart {{ service_name }}
+      - reload web configuration
+
+  - name: Apply pending restarts before health checks
+    meta: flush_handlers
+
+handlers:
+  - name: restart {{ service_name }}
+    systemd_service:
+      name: "{{ service_name }}"
+      state: restarted
+
+  - name: reload caddy
+    listen: reload web configuration
+    systemd_service:
+      name: caddy
+      state: reloaded
+```
+
+Handler behavior:
+
+- Notifications are queued only when the task's effective result is changed.
+  `changed_when` overrides the module's `changed` value. For a loop, any
+  changed iteration queues the task's notifications.
+- A handler runs once per flush cycle even when notified repeatedly. Handlers
+  run in definition order, not notification order.
+- `listen` accepts one or more non-templated topics. A topic runs every
+  listening handler. Duplicate handler names use the last definition.
+- Pending handlers run automatically after normal tasks. `meta:
+  flush_handlers` runs them immediately; a later change can notify them again.
+- Handler arguments render from the current per-host variable context.
+  Handler names are templated before normal tasks start and therefore cannot
+  use variables registered by those tasks. `listen` topics are never
+  templated.
+- Failed hosts do not flush handlers by default. Set play-level
+  `force_handlers: true` or pass `--force-handlers` to run already-notified
+  handlers after a failure.
+- Static `import_tasks` entries under `handlers` expand into individually
+  notifiable handlers. A named dynamic `include_tasks` handler loads and runs
+  its tasks when notified.
+- Unknown notification targets produce a warning. Roles and handler insertion
+  through roles are not supported yet.
+
 ## when
 
 Conditionally executes a task. The condition is evaluated against the same variable context used for templates (`vars`, `hostvars`, `inventory_hostname`, `group_names`, registered results, etc.). If the condition resolves to false, the task is skipped. If the condition cannot be evaluated, the task fails.
@@ -5125,6 +5213,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_DockerVolumePrune` | Prune filter improvements (Phase 7.2) |
 | `TestPlaybook_Find` | Find module: recursive/non-recursive search, glob/regex patterns, excludes, file_type (file/directory/link/any), age/size filters, hidden files, symlinks, depth limit, mode filtering, checksum algorithms, contains content matching, multiple paths, limit, path/pattern/exclude aliases, template variables, idempotency |
 | `TestPlaybook_Register` | Register keyword: basic shell register, register on failure, overwrite, command module, ping module-specific fields, stdout_lines access, chained registers, file/copy/tempfile module fields, multiple modules, idempotency tracking, template expressions with registered vars, include_tasks/import_tasks boundary, invalid variable names (numeric, hyphen, space), underscore prefix, no side effects without register, rerun idempotency |
+| `TestPlaybook_Handlers` | Handlers: changed notifications, changed_when, loops, deduplication, definition order, listen topics, duplicate names, explicit/automatic flushing, re-notification, variables, handler imports/includes, failure skipping, force_handlers, and idempotent reruns |
 | `TestPlaybook_TemplateModule` | Template module: basic render, dest directory, custom delimiters, trim blocks, idempotency, force flag, validation, newline sequences, register, nested includes, builtin filters (default/upper/lower/replace/join/length/title/trim/tojson/int/float), custom Ansible filters (split, regex_replace/search/findall, basename/dirname, to_yaml/from_json/to_nice_json, quote, ternary, b64encode/b64decode, hash, comment, combine, dict2items/items2dict, flatten, type_debug, splitext), filter chaining, for-loops (loop variables, dict iteration, conditional filtering), complex conditionals (if/elif/else, and/or/not, in, is defined/is not defined), set statements, macros, raw blocks, whitespace control, magic variables (dibra_managed, template_host, template_destpath), complex nested data structures, template inheritance (extends/block) |
 | `TestPlaybook_Inventory` | External YAML inventory: basic inventory loading, idempotency, host output, groups with vars, children group hierarchy, implicit all group, ungrouped hosts, group_vars/host_vars files relative to inventory, deep hierarchy (4 levels), multi-parent groups, host vars override group vars, magic variables (inventory_hostname, group_names), playbook inventory reference, error on both hosts and inventory, play vars + inventory, extra vars + inventory, task vars + inventory, inventory not found error, register with inventory, import_tasks with inventory, SSH key path, port as string coercion, become as string coercion, groups in context |
 

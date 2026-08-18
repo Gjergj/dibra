@@ -22,6 +22,7 @@ type controllerFlags struct {
 	Validate          bool
 	CheckMode         bool
 	DiffMode          bool
+	ForceHandlers     bool
 }
 
 func newControllerFlagSet(options *controllerFlags, errorHandling flag.ErrorHandling, output io.Writer) *flag.FlagSet {
@@ -40,6 +41,7 @@ func newControllerFlagSet(options *controllerFlags, errorHandling flag.ErrorHand
 	flags.BoolVar(&options.Validate, "validate", false, "Validate config and exit (no execution)")
 	flags.BoolVar(&options.CheckMode, "check", false, "Run in check mode without changing targets when supported")
 	flags.BoolVar(&options.DiffMode, "diff", false, "Show structured changes when supported")
+	flags.BoolVar(&options.ForceHandlers, "force-handlers", false, "Run notified handlers even after a task failure")
 	return flags
 }
 

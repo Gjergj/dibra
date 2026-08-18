@@ -11,9 +11,14 @@ The default endpoint and schedule are fixed in this first version:
 - `GET http://localhost:8080/gettasks`
 - the first request is immediate;
 - later requests start 60 seconds after the previous attempt finishes;
-- `200 OK` must contain one ZIP job;
+- `200 OK` must contain one ZIP job and an `X-Dibra-Task-ID` response header;
 - `204 No Content` means that no job is available;
-- every `200` is executed, even when its bytes match a previous response.
+- after processing a `200` response, the daemon sends one JSON outcome to the
+  sibling `POST /gettasks_outcome` endpoint;
+- an outcome has `task_id`, a `status` of `succeeded` or `failed`, an optional
+  `error`, and an optional `reboot_initiated` flag;
+- any 2xx outcome response acknowledges the report; a missing task ID or a
+  non-2xx outcome response is an error.
 
 For development and containerized testing, the endpoint can be overridden with
 `--endpoint`. For example, a Linux container running on Docker Desktop can
@@ -25,6 +30,10 @@ sudo ./dibra-deploy \
   --endpoint http://host.docker.internal:8080/gettasks \
   --verbose
 ```
+
+The repository test host publishes its port 80 as
+`http://localhost:9090`, which allows HTTP-server deployment jobs to be checked
+from the Docker host.
 
 The API on macOS must listen on a non-loopback interface (for example
 `0.0.0.0:8080`) so Docker Desktop can reach it. `host.docker.internal` is the
@@ -61,10 +70,11 @@ installed `dev` agent is not reused. `make run-deploy-docker-host` supplies this
 flag automatically and therefore always installs the agent built from the
 current checkout.
 
-The server is responsible for removing completed jobs from its queue. Version 1
-does not send acknowledgements or results back to the server. Execution and
-error output is written to stdout/stderr and is captured by journald when the
-sample systemd service is used.
+The server is responsible for retaining task state and excluding task IDs after
+their terminal outcome is accepted. If reporting fails, the daemon logs the
+error and the server may return that task again. Execution and error output is
+written to stdout/stderr and is captured by journald when the sample systemd
+service is used.
 
 ## Project archive
 
@@ -101,10 +111,10 @@ not enable or start the service.
 Download and inspect the installer before running it:
 
 ```bash
-curl -fsSLo install-deploy.sh \
-  https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-deploy.sh
-less install-deploy.sh
-sh install-deploy.sh
+curl -fsSLo install-dibra-deploy.sh \
+  https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra-deploy.sh
+less install-dibra-deploy.sh
+sh install-dibra-deploy.sh
 sudo systemctl enable --now dibra-deploy.service
 ```
 
@@ -113,7 +123,7 @@ installing it:
 
 ```bash
 curl -fsSL \
-  https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-deploy.sh \
+  https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra-deploy.sh \
   | sh -s -- --enable
 ```
 
@@ -121,14 +131,14 @@ Pin a release when repeatable installation is required:
 
 ```bash
 curl -fsSL \
-  https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-deploy.sh \
+  https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra-deploy.sh \
   | sh -s -- --version v0.1.0 --enable
 ```
 
 The installer invokes `sudo` when it is not already running as root. Custom
 paths are available through `--install-dir` and `--unit-dir`; the generated
 unit's `ExecStart` is adjusted to the selected binary path. Run
-`sh install-deploy.sh --help` for all options.
+`sh install-dibra-deploy.sh --help` for all options.
 
 The task server must be listening on the configured endpoint before the service
 can receive work. The agent is not installed separately: a released

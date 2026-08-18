@@ -88,7 +88,7 @@ func ParsePortBinding(spec string) (PortBinding, error) {
 		// Find closing bracket
 		closeBracket := strings.Index(spec, "]")
 		if closeBracket < 0 {
-			return result, fmt.Errorf("cannot find closing \"]\" in input %q for opening \"[\" at index 1", spec)
+			return result, fmt.Errorf("Cannot find closing \"]\" in input %q for opening \"[\" at index 1!", spec)
 		}
 		result.HostIP = spec[1:closeBracket]
 		spec = spec[closeBracket+1:]
@@ -122,21 +122,16 @@ func ParsePortBinding(spec string) (PortBinding, error) {
 		// ip:hostPort:containerPort
 		ip := parts[0]
 		if net.ParseIP(ip) == nil {
-			return result, fmt.Errorf("bind addresses for published ports must be IPv4 or IPv6 addresses, not hostnames. Use the dig lookup to resolve hostnames. (Found hostname: %s)", ip)
+			return result, fmt.Errorf("Bind addresses for published ports must be IPv4 or IPv6 addresses, not hostnames. Use the dig lookup to resolve hostnames. (Found hostname: %s)", ip)
 		}
 		result.HostIP = ip
 		result.HostPort = parts[1]
 		result.ContainerPort = parts[2]
 	default:
-		// community.docker also accepts an unbracketed IPv6 host followed by
-		// host and container ports. Parse those two fields from the right.
-		ip := strings.Join(parts[:len(parts)-2], ":")
-		if net.ParseIP(ip) == nil {
-			return result, fmt.Errorf("invalid port description %q - expected a valid IPv6 address followed by host and container ports", spec)
-		}
-		result.HostIP = ip
-		result.HostPort = parts[len(parts)-2]
-		result.ContainerPort = parts[len(parts)-1]
+		return result, fmt.Errorf(
+			"Invalid port description %q - expected 1 to 3 colon-separated parts, but got %d. Maybe you forgot to use square brackets ([...]) around an IPv6 address?",
+			spec, len(parts),
+		)
 	}
 
 	// Validate container port

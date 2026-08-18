@@ -17,6 +17,8 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/gjergjiramku/dibra/internal/execution"
 	"github.com/gjergjiramku/dibra/internal/modules/docker"
+	imagespec "github.com/moby/docker-image-spec/specs-go/v1"
+	"github.com/moby/moby/api/types/blkiodev"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/jsonstream"
@@ -24,6 +26,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type fakeContainerClient struct {
@@ -37,6 +40,7 @@ type fakeContainerClient struct {
 	waitStatus  int64
 	closed      bool
 	pull        client.ImagePullOptions
+	kill        client.ContainerKillOptions
 	create      client.ContainerCreateResult
 	update      client.ContainerUpdateResult
 	afterCreate *container.InspectResponse
@@ -85,6 +89,11 @@ func (clock *advancingClock) Sleep(delay time.Duration) {
 func (fake *fakeContainerClient) ContainerRemove(_ context.Context, _ string, _ client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
 	fake.removed++
 	return client.ContainerRemoveResult{}, fake.removeErr
+}
+
+func (fake *fakeContainerClient) ContainerKill(_ context.Context, _ string, options client.ContainerKillOptions) (client.ContainerKillResult, error) {
+	fake.kill = options
+	return client.ContainerKillResult{}, nil
 }
 
 func (fake *fakeContainerClient) ContainerWait(_ context.Context, _ string, _ client.ContainerWaitOptions) client.ContainerWaitResult {
@@ -216,6 +225,7 @@ func TestBuildContainerConfigMapsCanonicalOptions(t *testing.T) {
 func TestBuildContainerConfigMapsRemainingPinnedOptions(t *testing.T) {
 	falseValue, trueValue := false, true
 	swappiness, oomScore, pids := int64(40), 250, int64(32)
+	deviceCount := 2
 	shm := "32m"
 	request := normalizeDefaults(Request{
 		Name: "web", Image: "alpine:latest", Entrypoint: []string{"/bin/sh", "-c"},
@@ -224,14 +234,18 @@ func TestBuildContainerConfigMapsRemainingPinnedOptions(t *testing.T) {
 		CgroupParent: "dibra.slice", CgroupnsMode: "private", CPUSetCPUs: "0", CPUSetMems: "0",
 		MemorySwappiness: &swappiness, OOMKiller: &trueValue, OOMScoreAdj: &oomScore, PidsLimit: &pids,
 		DeviceCgroupRules: []string{"c 1:3 rwm"}, Devices: []string{"/dev/null:/dev/test-null:r"},
-		DeviceRequests: []DeviceRequest{{Driver: "cdi", DeviceIDs: []string{"vendor.com/device=test"}, Capabilities: [][]string{{"gpu"}}, Options: map[string]string{"mode": "test"}}},
-		DNSServers:     []string{"1.1.1.1"}, DNSOptions: []string{"ndots:1"}, DNSSearchDomains: []string{"example.test"},
+		DeviceReadBPS:   []DeviceRate{{Path: "/dev/random", Rate: "20M"}},
+		DeviceWriteBPS:  []DeviceRate{{Path: "/dev/urandom", Rate: "10K"}},
+		DeviceReadIOPS:  []DeviceIOPS{{Path: "/dev/random", Rate: 30}},
+		DeviceWriteIOPS: []DeviceIOPS{{Path: "/dev/urandom", Rate: 40}},
+		DeviceRequests:  []DeviceRequest{{Driver: "cdi", Count: &deviceCount, DeviceIDs: []string{"vendor.com/device=test"}, Capabilities: [][]string{{"gpu"}}, Options: map[string]string{"mode": "test"}}},
+		DNSServers:      []string{"1.1.1.1"}, DNSOptions: []string{"ndots:1"}, DNSSearchDomains: []string{"example.test"},
 		EtcHosts: map[string]string{"db": "127.0.0.2"}, Groups: []string{"44"}, SecurityOptions: []string{"no-new-privileges:true"},
 		StorageOptions: map[string]string{"size": "12m"}, Sysctls: map[string]string{"net.ipv4.ip_forward": "1"},
 		IPCMode: "private", PIDMode: "host", UTSMode: "host", UsernsMode: "host", Runtime: "runc",
 		LogDriver: "json-file", LogOptions: map[string]string{"max-file": "2"}, ShmSize: &shm,
 		Tmpfs: []string{"/run:rw,noexec"}, VolumeDriver: "local", VolumesFrom: []string{"data:ro"},
-		Mounts:          []Mount{{Type: "volume", Source: "cache", Target: "/cache", NoCopy: &trueValue, Labels: map[string]string{"scope": "test"}, VolumeDriver: "local", VolumeOptions: map[string]string{"type": "tmpfs"}}},
+		Mounts:          []Mount{{Type: "volume", Source: "cache", Target: "/cache", NoCopy: &trueValue, Labels: MountOptionMap{"scope": "test"}, VolumeDriver: "local", VolumeOptions: MountOptionMap{"type": "tmpfs"}}},
 		PublishAllPorts: &trueValue,
 	})
 	config, host, err := buildContainerConfig(request, recordingFileSystem{})
@@ -247,8 +261,36 @@ func TestBuildContainerConfigMapsRemainingPinnedOptions(t *testing.T) {
 	if len(host.Devices) != 1 || len(host.DeviceRequests) != 1 || !reflect.DeepEqual(host.DeviceCgroupRules, []string{"c 1:3 rwm"}) || len(host.DNS) != 1 || !reflect.DeepEqual(host.ExtraHosts, []string{"db:127.0.0.2"}) {
 		t.Fatalf("host device/network options = %#v", host)
 	}
+	if !reflect.DeepEqual(host.BlkioDeviceReadBps, []*blkiodev.ThrottleDevice{{Path: "/dev/random", Rate: 20 * 1024 * 1024}}) ||
+		!reflect.DeepEqual(host.BlkioDeviceWriteBps, []*blkiodev.ThrottleDevice{{Path: "/dev/urandom", Rate: 10 * 1024}}) ||
+		!reflect.DeepEqual(host.BlkioDeviceReadIOps, []*blkiodev.ThrottleDevice{{Path: "/dev/random", Rate: 30}}) ||
+		!reflect.DeepEqual(host.BlkioDeviceWriteIOps, []*blkiodev.ThrottleDevice{{Path: "/dev/urandom", Rate: 40}}) {
+		t.Fatalf("host device limits = %#v", host.Resources)
+	}
+	if !reflect.DeepEqual(host.DeviceRequests, []container.DeviceRequest{{
+		Driver: "cdi", Count: 2, DeviceIDs: []string{"vendor.com/device=test"},
+		Capabilities: [][]string{{"gpu"}}, Options: map[string]string{"mode": "test"},
+	}}) {
+		t.Fatalf("host device requests = %#v", host.DeviceRequests)
+	}
 	if host.LogConfig.Type != "json-file" || host.LogConfig.Config["max-file"] != "2" || host.ShmSize != 32*1024*1024 || host.Tmpfs["/run"] != "rw,noexec" || len(host.Mounts) != 1 || host.Mounts[0].VolumeOptions == nil || host.Mounts[0].VolumeOptions.DriverConfig == nil || !host.PublishAllPorts {
 		t.Fatalf("host storage options = %#v", host)
+	}
+}
+
+func TestDeviceIOPSRateAcceptsPinnedNumericString(t *testing.T) {
+	var value DeviceIOPS
+	if err := json.Unmarshal([]byte(`{"path":"/dev/urandom","rate":"20"}`), &value); err != nil {
+		t.Fatal(err)
+	}
+	if value.Path != "/dev/urandom" || value.Rate != 20 {
+		t.Fatalf("device IOPS = %#v", value)
+	}
+	if err := json.Unmarshal([]byte(`{"path":"/dev/urandom","rate":"invalid"}`), &value); err == nil {
+		t.Fatal("invalid numeric string was accepted")
+	}
+	if err := json.Unmarshal([]byte(`{"path":"/dev/urandom","rate":20,"extra":true}`), &value); err == nil {
+		t.Fatal("unknown nested field was accepted")
 	}
 }
 
@@ -277,6 +319,65 @@ func TestCompareContainerDistinguishesOmittedAndExplicitFalse(t *testing.T) {
 	}
 }
 
+func TestCompareContainerTreatsEngineOmittedOOMKillerFalseAsFalse(t *testing.T) {
+	falseValue := false
+	request := normalizeDefaults(Request{Name: "web", OOMKiller: &falseValue})
+	desiredConfig, desiredHost, err := buildContainerConfig(request, docker.OSFileSystem{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing := container.InspectResponse{
+		Config:     &container.Config{},
+		HostConfig: &container.HostConfig{Resources: container.Resources{OomKillDisable: nil}},
+	}
+	result := compareContainer(request, desiredConfig, desiredHost, existing, docker.NewDiffBuilder())
+	if result.recreate {
+		t.Fatal("engine's omitted false oom_killer value requested recreation")
+	}
+}
+
+func TestCompareContainerUsesInheritedImageLabels(t *testing.T) {
+	request := normalizeDefaults(Request{
+		Name: "web", Labels: map[string]string{"managed": "true"},
+		Comparisons: map[string]string{"labels": "strict"},
+	})
+	desiredConfig, desiredHost, err := buildContainerConfig(request, docker.OSFileSystem{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedConfig, err := expectedConfigWithImageDefaults(request, desiredConfig, image.InspectResponse{
+		Config: &imagespec.DockerOCIImageConfig{
+			ImageConfig: ocispec.ImageConfig{Labels: map[string]string{"inherited": "one"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing := container.InspectResponse{
+		Config: &container.Config{Labels: map[string]string{"inherited": "one", "managed": "true"}},
+		HostConfig: &container.HostConfig{},
+	}
+	result := compareContainer(request, expectedConfig, desiredHost, existing, docker.NewDiffBuilder())
+	if result.recreate {
+		t.Fatal("inherited image label requested recreation with image_label_mismatch=ignore")
+	}
+}
+
+func TestStopContainerForwardsConfiguredKillSignal(t *testing.T) {
+	fake := &fakeContainerClient{inspect: container.InspectResponse{
+		State: &container.State{Status: container.StateRunning, Running: true},
+	}}
+	response := stopContainer(context.Background(), fake, Request{
+		ForceKill: true, KillSignal: "SIGTERM",
+	}, "container-id")
+	if response.Failed || !response.Changed {
+		t.Fatalf("stop response = %#v", response)
+	}
+	if fake.kill.Signal != "SIGTERM" {
+		t.Fatalf("kill signal = %q, want SIGTERM", fake.kill.Signal)
+	}
+}
+
 func TestValidationRejectsUpstreamContractViolations(t *testing.T) {
 	tests := []struct {
 		name string
@@ -294,7 +395,7 @@ func TestValidationRejectsUpstreamContractViolations(t *testing.T) {
 		{"bad-default-ip", Request{Name: "web", DefaultHostIP: stringPointer("host.example")}, "default_host_ip"},
 		{"bad-network-ip", Request{Name: "web", Networks: []Network{{Name: "net", IPv4Address: "fd00::1"}}}, "invalid IPv4"},
 		{"missing-bind-source", Request{Name: "web", Mounts: []Mount{{Type: "bind", Target: "/data"}}}, "source must be specified"},
-		{"mount-option-type", Request{Name: "web", Mounts: []Mount{{Type: "tmpfs", Target: "/data", Propagation: "shared"}}}, "not valid for type"},
+		{"mount-option-type", Request{Name: "web", Mounts: []Mount{{Type: "tmpfs", Target: "/data", Propagation: "shared"}}}, `propagation cannot be specified for mount "/data" of type "tmpfs" (needs type "bind")`},
 		{"duplicate-target", Request{Name: "web", Mounts: []Mount{{Target: "/data"}}, Volumes: []string{"cache:/data"}}, "appears both"},
 		{"bad-port", Request{Name: "web", PublishedPorts: []string{"localhost:80:80"}}, "not hostnames"},
 		{"bad-ulimit", Request{Name: "web", Ulimits: []string{"nofile"}}, "invalid ulimit"},
@@ -303,6 +404,43 @@ func TestValidationRejectsUpstreamContractViolations(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			err := validateRequest(normalizeDefaults(test.req))
 			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validateRequest() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestMountCollisionErrorsMatchPinnedUpstream(t *testing.T) {
+	tests := []struct {
+		name string
+		req  Request
+		want string
+	}{
+		{
+			name: "duplicate mounts",
+			req: Request{Name: "web", Mounts: []Mount{
+				{Type: "bind", Source: "/tmp", Target: "/data"},
+				{Type: "bind", Source: "/etc", Target: "/data"},
+			}},
+			want: `The mount point "/data" appears twice in the mounts option`,
+		},
+		{
+			name: "duplicate volumes",
+			req:  Request{Name: "web", Volumes: []string{"/tmp:/data", "/etc:/data"}},
+			want: `The mount point "/data" appears twice in the volumes option`,
+		},
+		{
+			name: "mount and volume",
+			req: Request{Name: "web",
+				Mounts:  []Mount{{Type: "bind", Source: "/tmp", Target: "/data"}},
+				Volumes: []string{"/etc:/data"},
+			},
+			want: `The mount point "/data" appears both in the volumes and mounts option`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateRequest(normalizeDefaults(test.req)); err == nil || err.Error() != test.want {
 				t.Fatalf("validateRequest() error = %v, want %q", err, test.want)
 			}
 		})
@@ -413,10 +551,9 @@ func TestHealthcheckCLICompatibilityAndStringForm(t *testing.T) {
 }
 
 func TestMountTmpfsOptionsUseCanonicalListOfDictionaries(t *testing.T) {
-	value := "1777"
 	mount, err := buildMount(Mount{
 		Type: "tmpfs", Target: "/cache",
-		TmpfsOptions: []map[string]*string{{"nosuid": nil}, {"mode": &value}},
+		TmpfsOptions: []TmpfsOption{{"nosuid": nil}, {"mode": "1777"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -424,8 +561,107 @@ func TestMountTmpfsOptionsUseCanonicalListOfDictionaries(t *testing.T) {
 	if !reflect.DeepEqual(mount.TmpfsOptions.Options, [][]string{{"nosuid"}, {"mode", "1777"}}) {
 		t.Fatalf("tmpfs options = %#v", mount.TmpfsOptions.Options)
 	}
-	if _, err := buildMount(Mount{Type: "tmpfs", Target: "/cache", TmpfsOptions: []map[string]*string{{"a": nil, "b": nil}}}); err == nil {
-		t.Fatal("multi-key tmpfs option was accepted")
+	if _, err := buildMount(Mount{Type: "tmpfs", Target: "/cache", TmpfsOptions: []TmpfsOption{{"a": nil, "b": nil}}}); err == nil ||
+		err.Error() != `tmpfs_options[1] of mount "/cache" must be a one-element dictionary!` {
+		t.Fatalf("multi-key tmpfs option error = %v", err)
+	}
+	if _, err := buildMount(Mount{Type: "tmpfs", Target: "/cache", TmpfsOptions: []TmpfsOption{{"mode": true}}}); err == nil ||
+		err.Error() != `value True in tmpfs_options[1] of mount "/cache" must be a string or null/none!` {
+		t.Fatalf("non-string tmpfs option error = %v", err)
+	}
+}
+
+func TestMountNestedOptionsMapToEngine(t *testing.T) {
+	bindMount, err := buildMount(Mount{
+		Type: "bind", Source: "/source", Target: "/target", Consistency: "consistent",
+		ReadOnly: boolPointer(true), Propagation: "rshared",
+		NonRecursive: boolPointer(true), CreateMountpoint: boolPointer(true),
+		ReadOnlyNonRecursive: boolPointer(true), ReadOnlyForceRecursive: boolPointer(false),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bindMount.Consistency != mounttypes.ConsistencyFull || !bindMount.ReadOnly || bindMount.BindOptions == nil {
+		t.Fatalf("bind mount = %#v", bindMount)
+	}
+	if bindMount.BindOptions.Propagation != mounttypes.PropagationRShared ||
+		!bindMount.BindOptions.NonRecursive || !bindMount.BindOptions.CreateMountpoint ||
+		!bindMount.BindOptions.ReadOnlyNonRecursive || bindMount.BindOptions.ReadOnlyForceRecursive {
+		t.Fatalf("bind options = %#v", bindMount.BindOptions)
+	}
+	forcedBind, err := buildMount(Mount{
+		Type: "bind", Source: "/source", Target: "/target",
+		ReadOnly: boolPointer(true), ReadOnlyForceRecursive: boolPointer(true),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forcedBind.BindOptions == nil || !forcedBind.BindOptions.ReadOnlyForceRecursive {
+		t.Fatalf("forced-recursive bind options = %#v", forcedBind.BindOptions)
+	}
+
+	volumeMount, err := buildMount(Mount{
+		Type: "volume", Source: "data", Target: "/data",
+		NoCopy: boolPointer(true), Labels: MountOptionMap{"purpose": "parity"},
+		Subpath: "nested", VolumeDriver: "local",
+		VolumeOptions: MountOptionMap{"type": "tmpfs", "device": "tmpfs"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if volumeMount.VolumeOptions == nil || !volumeMount.VolumeOptions.NoCopy ||
+		volumeMount.VolumeOptions.Subpath != "nested" ||
+		!reflect.DeepEqual(volumeMount.VolumeOptions.Labels, map[string]string{"purpose": "parity"}) ||
+		volumeMount.VolumeOptions.DriverConfig == nil ||
+		volumeMount.VolumeOptions.DriverConfig.Name != "local" ||
+		!reflect.DeepEqual(volumeMount.VolumeOptions.DriverConfig.Options, map[string]string{"type": "tmpfs", "device": "tmpfs"}) {
+		t.Fatalf("volume options = %#v", volumeMount.VolumeOptions)
+	}
+
+}
+
+func TestMountOptionDictionariesUseUpstreamStringConversion(t *testing.T) {
+	var value Mount
+	if err := json.Unmarshal([]byte(`{
+		"type":"volume","source":"data","target":"/data","volume_driver":"local",
+		"labels":{"enabled":true,"retries":2,"unset":null},
+		"volume_options":{"flags":["one",true],"config":{"enabled":false}}
+	}`), &value); err != nil {
+		t.Fatal(err)
+	}
+	mount, err := buildMount(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(mount.VolumeOptions.Labels, map[string]string{
+		"enabled": "true", "retries": "2", "unset": "None",
+	}) {
+		t.Fatalf("volume labels = %#v", mount.VolumeOptions.Labels)
+	}
+	if !reflect.DeepEqual(mount.VolumeOptions.DriverConfig.Options, map[string]string{
+		"flags": "['one', True]", "config": "{'enabled': False}",
+	}) {
+		t.Fatalf("volume driver options = %#v", mount.VolumeOptions.DriverConfig.Options)
+	}
+}
+
+func TestOrphanMountVolumeOptionsAreIgnoredLikeUpstream(t *testing.T) {
+	desired := desiredMountComparison([]Mount{{
+		Type: "volume", Source: "data", Target: "/data",
+		VolumeOptions: MountOptionMap{"type": "tmpfs"},
+	}})
+	if _, found := desired[0]["volume_options"]; found {
+		t.Fatalf("orphan volume_options remained in desired comparison: %#v", desired)
+	}
+	mount, err := buildMount(Mount{
+		Type: "volume", Source: "data", Target: "/data",
+		VolumeOptions: MountOptionMap{"type": "tmpfs"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mount.VolumeOptions != nil {
+		t.Fatalf("orphan volume_options reached Engine payload: %#v", mount)
 	}
 }
 
@@ -655,6 +891,23 @@ func TestHealthyWaitRejectsUnexpectedEngineState(t *testing.T) {
 	_, err := waitForHealthy(context.Background(), fake, "container-id", &timeout, clock)
 	if err == nil || !strings.Contains(err.Error(), "unexpected health state") {
 		t.Fatalf("waitForHealthy() error = %v", err)
+	}
+}
+
+func TestHealthyWaitTimeoutMessageMatchesPinnedUpstream(t *testing.T) {
+	clock := &advancingClock{now: time.Date(2026, time.August, 12, 12, 0, 0, 0, time.UTC)}
+	fake := &fakeContainerClient{inspect: container.InspectResponse{
+		ID: "container-id", State: &container.State{Health: &container.Health{Status: "starting"}},
+	}}
+	timeout := 1.0
+	healthy, err := waitForHealthy(context.Background(), fake, "container-id", &timeout, clock)
+	if err == nil || err.Error() != `Timeout of 1.0 seconds exceeded while waiting for container "container-id"` {
+		t.Fatalf("waitForHealthy() error = %v", err)
+	}
+	state := healthy["State"].(map[string]interface{})
+	health := state["Health"].(map[string]interface{})
+	if health["Status"] != "starting" {
+		t.Fatalf("healthy result = %#v", healthy)
 	}
 }
 

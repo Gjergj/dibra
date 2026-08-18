@@ -33,6 +33,7 @@ import (
 	"github.com/gjergjiramku/dibra/internal/modules/docker_stack_task_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_swarm_info"
 	"github.com/gjergjiramku/dibra/internal/modules/docker_volume"
+	"github.com/gjergjiramku/dibra/internal/modules/docker_volume_info"
 )
 
 func TestDefinitionsAreCompleteAndResolvable(t *testing.T) {
@@ -514,6 +515,35 @@ func TestDockerImageBuildCanonicalOptionsDecodeStrictly(t *testing.T) {
 	}
 }
 
+func TestFocusedImageModulesRejectUnsupportedCommonArguments(t *testing.T) {
+	for _, module := range []string{
+		"docker_image_load", "docker_image_export", "docker_image_pull", "docker_image_push",
+		"docker_image_remove", "docker_image_tag", "docker_image_info",
+	} {
+		if _, err := Decode(module, json.RawMessage(`{"cli_context":"desktop-linux"}`)); err == nil {
+			t.Fatalf("%s accepted cli_context", module)
+		}
+		if _, err := Decode(module, json.RawMessage(`{"cli_context":null}`)); err != nil {
+			t.Fatalf("%s rejected an omitted-value cli_context: %v", module, err)
+		}
+	}
+	for argument, value := range map[string]string{
+		"timeout": "30", "debug": "true", "use_ssh_client": "true",
+	} {
+		payload := json.RawMessage(`{"` + argument + `":` + value + `}`)
+		if _, err := Decode("docker_image_build", payload); err == nil {
+			t.Fatalf("docker_image_build accepted %s", argument)
+		}
+		nullPayload := json.RawMessage(`{"` + argument + `":null}`)
+		if _, err := Decode("docker_image_build", nullPayload); err != nil {
+			t.Fatalf("docker_image_build rejected omitted-value %s: %v", argument, err)
+		}
+	}
+	if _, err := Decode("docker_image_build", json.RawMessage(`{"cli_context":"desktop-linux"}`)); err != nil {
+		t.Fatalf("docker_image_build rejected cli_context: %v", err)
+	}
+}
+
 func TestDockerImageInfoAndLoadDecodePinnedContracts(t *testing.T) {
 	infoInvocation, err := Decode("community.docker.docker_image_info", json.RawMessage(`{
 		"name":["alpine","busybox:stable"],
@@ -939,6 +969,15 @@ func TestMilestone6AliasesDecodeToCanonicalFields(t *testing.T) {
 	volume := volumeInvocation.Arguments.(docker_volume.Request)
 	if volume.VolumeName != "data" || volume.Name != "" {
 		t.Fatalf("volume = %#v", volume)
+	}
+
+	volumeInfoInvocation, err := Decode("docker_volume_info", json.RawMessage(`{"volume_name":"data"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	volumeInfo := volumeInfoInvocation.Arguments.(docker_volume_info.Request)
+	if volumeInfo.Name != "data" {
+		t.Fatalf("volume info = %#v", volumeInfo)
 	}
 
 	loginInvocation, err := Decode("docker_login", json.RawMessage(`{

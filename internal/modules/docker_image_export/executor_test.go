@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -98,7 +99,7 @@ func TestExportsNamesIDsAndPlatform(t *testing.T) {
 	fake := &exportClient{
 		images: map[string]client.ImageInspectResult{
 			"alpine:latest": exportInspect("sha256:abc", "alpine:latest"),
-			id:              exportInspect("sha256:def", "example:latest"),
+			id + ":latest":  exportInspect("sha256:def", id+":latest"),
 		},
 		archive: archive,
 	}
@@ -111,11 +112,25 @@ func TestExportsNamesIDsAndPlatform(t *testing.T) {
 	if response.Failed || !response.Changed || len(response.Images) != 2 {
 		t.Fatalf("response = %#v", response)
 	}
-	if strings.Join(fake.saveNames, ",") != "alpine:latest,"+id || fake.saveOptions != 1 {
+	if strings.Join(fake.saveNames, ",") != "alpine:latest,"+id+":latest" || fake.saveOptions != 1 {
 		t.Fatalf("save names/options = %#v/%d", fake.saveNames, fake.saveOptions)
 	}
 	if contents, err := os.ReadFile(path); err != nil || !bytes.Equal(contents, archive) {
 		t.Fatalf("archive = %d bytes, %v", len(contents), err)
+	}
+}
+
+func TestExplicitEmptyTagIsPreserved(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "image.tar")
+	fake := &exportClient{
+		images:  map[string]client.ImageInspectResult{"example:": exportInspect("sha256:abc", "example:")},
+		archive: archiveManifest(t, "abc", []string{"example:"}),
+	}
+	request := Request{Names: []string{"example"}, Path: path}
+	request.SetProvidedArguments([]string{"names", "path", "tag"})
+	response := ExecuteWithDependencies(request, exportDependencies(fake))
+	if response.Failed || !response.Changed || len(fake.saveNames) != 1 || fake.saveNames[0] != "example:" {
+		t.Fatalf("response = %#v; save names = %#v", response, fake.saveNames)
 	}
 }
 
@@ -187,6 +202,21 @@ func TestForceAlwaysPredictsChange(t *testing.T) {
 	}, exportDependencies(fake), execution.State{CheckMode: true})
 	if response.Failed || !response.Changed || response.Msg != "Exporting since force=true" {
 		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestFailedResponseOmitsImages(t *testing.T) {
+	response := Response{Failed: true, Msg: "boom", Images: []map[string]any{}}
+	data, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	if _, found := result["images"]; found {
+		t.Fatalf("failed response contains images: %s", data)
 	}
 }
 

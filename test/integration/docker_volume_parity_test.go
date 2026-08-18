@@ -124,6 +124,18 @@ func TestPlaybook_DockerVolumeParity(t *testing.T) {
 
 	t.Run("labels", func(t *testing.T) {
 		mustRemote(t, client, "docker volume rm -f "+name+" >/dev/null 2>&1 || true")
+		invalidOutput := runPlaybook(t, playbookHeader+`
+  - name: Reject an invalid volume label
+    community.docker.docker_volume:
+      name: `+name+`
+      labels:
+        foo: 1.0
+`)
+		expectedError := "The value 1.0 for 'foo' of labels is not a string or something than can be safely converted to a string!"
+		if !strings.Contains(invalidOutput, expectedError) || volumeExists() {
+			t.Fatalf("invalid label output = %s exists=%t", invalidOutput, volumeExists())
+		}
+
 		created := runVolume("labels-create", `      name: `+name+`
       labels:
         ansible.test.1: hello

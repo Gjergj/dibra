@@ -36,6 +36,19 @@ type Request struct {
 	Path     string     `json:"path"`
 	Force    bool       `json:"force"`
 	Platform string     `json:"platform"`
+
+	providedArguments map[string]bool
+}
+
+func (request *Request) SetProvidedArguments(arguments []string) {
+	request.providedArguments = make(map[string]bool, len(arguments))
+	for _, argument := range arguments {
+		request.providedArguments[argument] = true
+	}
+}
+
+func (request Request) ProvidedArguments() map[string]bool {
+	return request.providedArguments
 }
 
 type Response struct {
@@ -43,4 +56,16 @@ type Response struct {
 	Failed  bool             `json:"failed"`
 	Msg     string           `json:"msg,omitempty"`
 	Images  []map[string]any `json:"images"`
+}
+
+func (response Response) MarshalJSON() ([]byte, error) {
+	type responseAlias Response
+	if !response.Failed {
+		return json.Marshal(responseAlias(response))
+	}
+	return json.Marshal(struct {
+		Changed bool   `json:"changed"`
+		Failed  bool   `json:"failed"`
+		Msg     string `json:"msg,omitempty"`
+	}{Changed: response.Changed, Failed: response.Failed, Msg: response.Msg})
 }

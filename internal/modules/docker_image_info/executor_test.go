@@ -2,6 +2,7 @@ package docker_image_info
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -61,12 +62,17 @@ func infoDependencies(fake *infoClient) docker.Dependencies {
 func TestSelectedImagesPreserveOrderDuplicatesAndSkipMissing(t *testing.T) {
 	alpine := infoInspect("sha256:aaaaaaaaaaaaaaaa", "alpine:latest")
 	busybox := infoInspect("sha256:bbbbbbbbbbbbbbbb", "busybox:v1")
-	fake := &infoClient{images: map[string]client.ImageInspectResult{
-		"alpine:latest":           alpine,
-		"busybox:v1":              busybox,
-		"aaaaaaaaaaaa":            alpine,
-		"sha256:aaaaaaaaaaaaaaaa": alpine,
-	}}
+	fake := &infoClient{
+		images: map[string]client.ImageInspectResult{
+			"sha256:aaaaaaaaaaaaaaaa": alpine,
+			"sha256:bbbbbbbbbbbbbbbb": busybox,
+			"aaaaaaaaaaaa":            alpine,
+		},
+		list: client.ImageListResult{Items: []imagetypes.Summary{
+			{ID: "sha256:aaaaaaaaaaaaaaaa", RepoTags: []string{"alpine:latest"}},
+			{ID: "sha256:bbbbbbbbbbbbbbbb", RepoTags: []string{"busybox:v1"}},
+		}},
+	}
 	response := ExecuteWithDependencies(Request{Name: StringList{
 		"missing", "busybox:v1", "alpine", "aaaaaaaaaaaa", "alpine",
 	}}, infoDependencies(fake))
@@ -82,6 +88,28 @@ func TestSelectedImagesPreserveOrderDuplicatesAndSkipMissing(t *testing.T) {
 	}
 	if response.Images[0]["Architecture"] != "amd64" || response.Images[0]["Os"] != "linux" {
 		t.Fatalf("raw inspection fields missing: %#v", response.Images[0])
+	}
+}
+
+func TestCanonicalFullAndShortIDsAreInspectedWhileInvalidNamesUseLookup(t *testing.T) {
+	canonicalID := "sha256:" + strings.Repeat("a", 64)
+	fullID := strings.Repeat("b", 64)
+	shortID := strings.Repeat("c", 12)
+	image := infoInspect(canonicalID)
+	fake := &infoClient{images: map[string]client.ImageInspectResult{
+		canonicalID: image,
+		fullID:      image,
+		shortID:     image,
+	}}
+	response := ExecuteWithDependencies(Request{Name: StringList{
+		canonicalID, fullID, shortID, "UPPERCASE",
+	}}, infoDependencies(fake))
+	if response.Failed || len(response.Images) != 3 {
+		t.Fatalf("response = %#v", response)
+	}
+	if len(fake.inspected) != 3 || fake.inspected[0] != canonicalID ||
+		fake.inspected[1] != fullID || fake.inspected[2] != shortID {
+		t.Fatalf("inspected = %#v", fake.inspected)
 	}
 }
 
@@ -117,9 +145,14 @@ func TestUnexpectedListAndInspectErrorsFail(t *testing.T) {
 		t.Fatalf("list response = %#v", response)
 	}
 
-	inspectFailure := &infoClient{inspectErrs: map[string]error{"alpine:latest": errors.New("permission denied")}}
+	inspectFailure := &infoClient{
+		list: client.ImageListResult{Items: []imagetypes.Summary{
+			{ID: "sha256:alpine", RepoTags: []string{"alpine:latest"}},
+		}},
+		inspectErrs: map[string]error{"sha256:alpine": errors.New("permission denied")},
+	}
 	response = ExecuteWithDependencies(Request{Name: StringList{"alpine"}}, infoDependencies(inspectFailure))
-	if !response.Failed || !strings.Contains(response.Msg, "inspect image") {
+	if !response.Failed || !strings.Contains(response.Msg, "Error inspecting image alpine:latest") {
 		t.Fatalf("inspect response = %#v", response)
 	}
 }
@@ -130,5 +163,19 @@ func TestStringListAcceptsScalarAndList(t *testing.T) {
 		if err := values.UnmarshalJSON([]byte(input)); err != nil || len(values) != count {
 			t.Fatalf("UnmarshalJSON(%s) = %#v, %v", input, values, err)
 		}
+	}
+}
+
+func TestFailedResponseOmitsImages(t *testing.T) {
+	data, err := json.Marshal(failedResponse("boom"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	if _, found := result["images"]; found {
+		t.Fatalf("failed response contains images: %s", data)
 	}
 }

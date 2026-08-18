@@ -401,6 +401,19 @@ func TestPlaybook_DockerContainerExecParity(t *testing.T) {
 		}
 	})
 
+	t.Run("diff mode executes without diff output", func(t *testing.T) {
+		run := runContainerExecResult(t, client, "diff-mode", `
+      container: `+container+`
+      argv: [/bin/true]
+`, "--diff")
+		if run.failed || run.result["changed"] != true {
+			t.Fatalf("diff mode execution failed: %s\n%#v", run.output, run.result)
+		}
+		if _, found := run.result["diff"]; found {
+			t.Fatalf("unsupported diff mode returned a diff: %#v", run.result["diff"])
+		}
+	})
+
 	t.Run("validation failures", func(t *testing.T) {
 		both := playbookHeader + `
   - name: Both command and argv

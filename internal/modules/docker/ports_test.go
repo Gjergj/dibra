@@ -98,14 +98,10 @@ func TestParsePortBinding(t *testing.T) {
 			},
 		},
 		{
-			name:  "ipv6 without brackets",
-			input: "2001:abcd:ef00::2:1000:2000",
-			expected: PortBinding{
-				HostIP:        "2001:abcd:ef00::2",
-				HostPort:      "1000",
-				ContainerPort: "2000",
-				Protocol:      "tcp",
-			},
+			name:          "ipv6 without brackets",
+			input:         "2001:abcd:ef00::2:1000:2000",
+			expectError:   true,
+			errorContains: "square brackets",
 		},
 		// Error cases
 		{
@@ -130,7 +126,7 @@ func TestParsePortBinding(t *testing.T) {
 			name:          "too many colons",
 			input:         "::1:8080:80:extra",
 			expectError:   true,
-			errorContains: "invalid container port",
+			errorContains: "colon-separated parts",
 		},
 		{
 			name:          "invalid port number",
@@ -180,6 +176,21 @@ func TestParsePortBinding(t *testing.T) {
 			}
 			if result.Protocol != tt.expected.Protocol {
 				t.Errorf("Protocol: got %q, want %q", result.Protocol, tt.expected.Protocol)
+			}
+		})
+	}
+}
+
+func TestPortDescriptionErrorsMatchPinnedUpstream(t *testing.T) {
+	tests := map[string]string{
+		"[::1:2000:3000": `Cannot find closing "]" in input "[::1:2000:3000" for opening "[" at index 1!`,
+		"::1:2000:3000":  `Invalid port description "::1:2000:3000" - expected 1 to 3 colon-separated parts, but got 5. Maybe you forgot to use square brackets ([...]) around an IPv6 address?`,
+		"foo:2000:3000":  `Bind addresses for published ports must be IPv4 or IPv6 addresses, not hostnames. Use the dig lookup to resolve hostnames. (Found hostname: foo)`,
+	}
+	for input, want := range tests {
+		t.Run(input, func(t *testing.T) {
+			if _, err := ParsePortBinding(input); err == nil || err.Error() != want {
+				t.Fatalf("ParsePortBinding(%q) error = %v, want %q", input, err, want)
 			}
 		})
 	}

@@ -351,6 +351,42 @@ func TestRunCheckModeSkipsLegacyModuleBeforeControllerSideEffects(t *testing.T) 
 	}
 }
 
+func TestRunCheckModeSkipsDockerPruneBeforeAgentExecution(t *testing.T) {
+	t.Parallel()
+	temporary := t.TempDir()
+	playbookPath := filepath.Join(temporary, "playbook.yaml")
+	playbook := `tasks:
+  - name: do not prune Docker resources
+    community.docker.docker_prune:
+      containers: true
+      images: true
+      networks: true
+      volumes: true
+`
+	if err := os.WriteFile(playbookPath, []byte(playbook), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	result, err := Run(context.Background(), RunOptions{
+		ConfigPath:     playbookPath,
+		Local:          true,
+		LocalAgentPath: filepath.Join(temporary, "agent-that-must-not-run"),
+		WorkingDir:     temporary,
+		CheckMode:      true,
+		Stdout:         &stdout,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Failed {
+		t.Fatalf("Run() result = %#v", result)
+	}
+	if !strings.Contains(stdout.String(), "SKIPPED") || !strings.Contains(stdout.String(), "does not yet implement check mode") {
+		t.Fatalf("Run() output does not report a safe check-mode skip:\n%s", stdout.String())
+	}
+}
+
 func TestRunLocalRebootGuardsAndResult(t *testing.T) {
 	t.Parallel()
 	temporary := t.TempDir()

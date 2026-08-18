@@ -77,6 +77,10 @@ func ExecuteWithDependencies(req Request, dependencies docker.Dependencies) Resp
 		}
 		inspection, inspectErr := apiClient.ImageInspect(ctx, imageName)
 		if inspectErr != nil {
+			if docker.IsNotFoundError(inspectErr) {
+				result.Images = append(result.Images, nil)
+				continue
+			}
 			result.Failed = true
 			result.Msg = fmt.Sprintf("Error inspecting loaded image %s - %v", imageName, inspectErr)
 			return result

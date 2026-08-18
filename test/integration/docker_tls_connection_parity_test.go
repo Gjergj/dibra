@@ -44,6 +44,7 @@ func TestPlaybook_DockerTLSConnectionParity(t *testing.T) {
 
 	startTLSFixture(t, client)
 	defer stopTLSFixture(t, client)
+	remoteExec(t, client, "rm -f /tmp/.dibra-agent")
 
 	unixInfo := runTLSHostInfo(t, client, "unix", `
       containers: false
@@ -109,6 +110,293 @@ func TestPlaybook_DockerTLSConnectionParity(t *testing.T) {
       tls_hostname: wrong.example
 `)
 		assertSameDaemon(t, unixInfo, insecure)
+	})
+
+	t.Run("container API modules use the TLS frontend", func(t *testing.T) {
+		const containerName = "dibra-tls-container-modules"
+		remoteExec(t, client, "docker rm -f "+containerName+" || true")
+		mustRemote(t, client, "docker run -d --name "+containerName+" alpine:latest sleep 300")
+		defer remoteExec(t, client, "docker rm -f "+containerName+" || true")
+
+		common := map[string]any{
+			"docker_host": tlsHTTPSHost, "api_version": "auto", "timeout": 30,
+			"tls": true, "validate_certs": true, "tls_hostname": tlsServerName,
+			"ca_path": tlsCAPath, "client_cert": tlsClientCertPath, "client_key": tlsClientKeyPath,
+			"debug": true, "use_ssh_client": true,
+		}
+		args := func(specific map[string]any) map[string]any {
+			result := make(map[string]any, len(common)+len(specific))
+			for key, value := range common {
+				result[key] = value
+			}
+			for key, value := range specific {
+				result[key] = value
+			}
+			return result
+		}
+
+		info := runDockerAgentRequestWithEnvironment(t, client,
+			"community.docker.docker_container_info",
+			args(map[string]any{"name": containerName}), "")
+		if info["failed"] == true || info["exists"] != true {
+			t.Fatalf("container_info TLS result = %#v", info)
+		}
+		container, _ := info["container"].(map[string]any)
+		if container["Id"] == nil {
+			t.Fatalf("container_info TLS result missing raw inspect: %#v", info)
+		}
+		wrongHostnameArgs := args(map[string]any{"name": containerName})
+		wrongHostnameArgs["tls_hostname"] = "wrong.example"
+		wrongHostname := runDockerAgentRequestWithEnvironment(t, client,
+			"community.docker.docker_container_info", wrongHostnameArgs, "")
+		if wrongHostname["failed"] != true || !strings.Contains(resultString(wrongHostname, "msg"), "certificate") {
+			t.Fatalf("container_info TLS hostname failure = %#v", wrongHostname)
+		}
+
+		execResult := runDockerAgentRequestWithEnvironment(t, client,
+			"community.docker.docker_container_exec",
+			args(map[string]any{"container": containerName, "argv": []string{"echo", "tls-exec"}}), "")
+		if execResult["failed"] == true || execResult["changed"] != true ||
+			numberValue(execResult["rc"]) != 0 || execResult["stdout"] != "tls-exec" {
+			t.Fatalf("container_exec TLS result = %#v", execResult)
+		}
+
+		copyArgs := args(map[string]any{
+			"container": containerName, "content": "tls-copy",
+			"container_path": "/tmp/tls-copy", "mode": "0644", "mode_parse": "modern",
+		})
+		copyResult := runDockerAgentRequestWithEnvironment(t, client,
+			"community.docker.docker_container_copy_into", copyArgs, "")
+		if copyResult["failed"] == true || copyResult["changed"] != true {
+			t.Fatalf("container_copy_into TLS result = %#v", copyResult)
+		}
+		copyAgain := runDockerAgentRequestWithEnvironment(t, client,
+			"community.docker.docker_container_copy_into", copyArgs, "")
+		if copyAgain["failed"] == true || copyAgain["changed"] != false {
+			t.Fatalf("container_copy_into TLS idempotency = %#v", copyAgain)
+		}
+		if got := remoteExec(t, client, "docker exec "+containerName+" cat /tmp/tls-copy"); got != "tls-copy" {
+			t.Fatalf("TLS copy content = %q", got)
+		}
+
+		tlsEnvironment := "DOCKER_HOST=" + tlsHTTPSHost + " " +
+			"DOCKER_API_VERSION=auto DOCKER_TIMEOUT=30 DOCKER_TLS_VERIFY=true " +
+			"DOCKER_CERT_PATH=" + tlsFixtureDir + "/certs " +
+			"DOCKER_TLS_HOSTNAME=" + tlsServerName
+		envInfo := runDockerAgentRequestWithEnvironment(t, client,
+			"community.docker.docker_container_info",
+			map[string]any{"name": containerName}, tlsEnvironment)
+		if envInfo["failed"] == true || envInfo["exists"] != true {
+			t.Fatalf("container_info TLS environment result = %#v", envInfo)
+		}
+		envExec := runDockerAgentRequestWithEnvironment(t, client,
+			"community.docker.docker_container_exec",
+			map[string]any{"container": containerName, "argv": []string{"true"}}, tlsEnvironment)
+		if envExec["failed"] == true || numberValue(envExec["rc"]) != 0 {
+			t.Fatalf("container_exec TLS environment result = %#v", envExec)
+		}
+		envCopy := runDockerAgentRequestWithEnvironment(t, client,
+			"community.docker.docker_container_copy_into",
+			map[string]any{
+				"container": containerName, "content": "tls-env-copy",
+				"container_path": "/tmp/tls-env-copy", "mode": "0644", "mode_parse": "modern",
+			}, tlsEnvironment)
+		if envCopy["failed"] == true || envCopy["changed"] != true {
+			t.Fatalf("container_copy_into TLS environment result = %#v", envCopy)
+		}
+
+		hostileEnvironment := "DOCKER_HOST=tcp://127.0.0.1:1 DOCKER_TLS=true DOCKER_TLS_VERIFY=true"
+		unixArgs := map[string]any{
+			"docker_host": "unix:///var/run/docker.sock",
+			"tls":         false, "validate_certs": false,
+		}
+		infoOverride := make(map[string]any, len(unixArgs)+1)
+		for key, value := range unixArgs {
+			infoOverride[key] = value
+		}
+		infoOverride["name"] = containerName
+		if response := runDockerAgentRequestWithEnvironment(t, client,
+			"community.docker.docker_container_info", infoOverride, hostileEnvironment); response["failed"] == true || response["exists"] != true {
+			t.Fatalf("container_info explicit connection override = %#v", response)
+		}
+		execOverride := make(map[string]any, len(unixArgs)+2)
+		for key, value := range unixArgs {
+			execOverride[key] = value
+		}
+		execOverride["container"] = containerName
+		execOverride["argv"] = []string{"true"}
+		if response := runDockerAgentRequestWithEnvironment(t, client,
+			"community.docker.docker_container_exec", execOverride, hostileEnvironment); response["failed"] == true || numberValue(response["rc"]) != 0 {
+			t.Fatalf("container_exec explicit connection override = %#v", response)
+		}
+		copyOverride := make(map[string]any, len(unixArgs)+5)
+		for key, value := range unixArgs {
+			copyOverride[key] = value
+		}
+		copyOverride["container"] = containerName
+		copyOverride["content"] = "unix-override"
+		copyOverride["container_path"] = "/tmp/unix-override"
+		copyOverride["mode"] = "0644"
+		copyOverride["mode_parse"] = "modern"
+		if response := runDockerAgentRequestWithEnvironment(t, client,
+			"community.docker.docker_container_copy_into", copyOverride, hostileEnvironment); response["failed"] == true || response["changed"] != true {
+			t.Fatalf("container_copy_into explicit connection override = %#v", response)
+		}
+	})
+
+	t.Run("resource info API modules use the TLS frontend", func(t *testing.T) {
+		const (
+			networkName = "dibra-tls-network-info"
+			volumeName  = "dibra-tls-volume-info"
+		)
+		remoteExec(t, client, "docker network rm "+networkName+" || true")
+		remoteExec(t, client, "docker volume rm -f "+volumeName+" || true")
+		mustRemote(t, client, "docker network create "+networkName)
+		mustRemote(t, client, "docker volume create "+volumeName)
+		defer remoteExec(t, client, "docker network rm "+networkName+" || true")
+		defer remoteExec(t, client, "docker volume rm -f "+volumeName+" || true")
+
+		common := map[string]any{
+			"docker_host": tlsHTTPSHost, "api_version": "auto", "timeout": 30,
+			"tls": true, "validate_certs": true, "tls_hostname": tlsServerName,
+			"ca_path": tlsCAPath, "client_cert": tlsClientCertPath, "client_key": tlsClientKeyPath,
+			"debug": true, "use_ssh_client": true,
+		}
+		arguments := func(name string) map[string]any {
+			result := make(map[string]any, len(common)+1)
+			for key, value := range common {
+				result[key] = value
+			}
+			result["name"] = name
+			return result
+		}
+
+		networkInfo := runDockerAgentRequestWithEnvironment(t, client,
+			"community.docker.docker_network_info", arguments(networkName), "")
+		if networkInfo["failed"] == true || networkInfo["exists"] != true {
+			t.Fatalf("network_info TLS result = %#v", networkInfo)
+		}
+		network, _ := networkInfo["network"].(map[string]any)
+		if network["Name"] != networkName {
+			t.Fatalf("network_info TLS inspection = %#v", network)
+		}
+
+		volumeInfo := runDockerAgentRequestWithEnvironment(t, client,
+			"community.docker.docker_volume_info", arguments(volumeName), "")
+		if volumeInfo["failed"] == true || volumeInfo["exists"] != true {
+			t.Fatalf("volume_info TLS result = %#v", volumeInfo)
+		}
+		volume, _ := volumeInfo["volume"].(map[string]any)
+		if volume["Name"] != volumeName {
+			t.Fatalf("volume_info TLS inspection = %#v", volume)
+		}
+	})
+
+	t.Run("image API modules use the TLS frontend", func(t *testing.T) {
+		const (
+			taggedName   = "alpine:dibra-tls-image"
+			registryName = "dibra-tls-image-registry"
+			pushedName   = "127.0.0.1:5001/dibra-tls-image:v1"
+			archivePath  = "/tmp/dibra-tls-image.tar"
+		)
+		remoteExec(t, client, "docker pull alpine:latest")
+		remoteExec(t, client, "docker rm -f "+registryName+" || true")
+		remoteExec(t, client, "docker image rm -f "+taggedName+" "+pushedName+" || true")
+		remoteExec(t, client, "rm -f "+archivePath)
+		defer remoteExec(t, client, "docker rm -f "+registryName+" || true")
+		defer remoteExec(t, client, "docker image rm -f "+taggedName+" "+pushedName+" || true")
+		defer remoteExec(t, client, "rm -f "+archivePath)
+
+		common := map[string]any{
+			"docker_host": tlsHTTPSHost, "api_version": "auto", "timeout": 30,
+			"tls": true, "validate_certs": true, "tls_hostname": tlsServerName,
+			"ca_path": tlsCAPath, "client_cert": tlsClientCertPath, "client_key": tlsClientKeyPath,
+			"debug": true, "use_ssh_client": true,
+		}
+		args := func(specific map[string]any) map[string]any {
+			result := make(map[string]any, len(common)+len(specific))
+			for key, value := range common {
+				result[key] = value
+			}
+			for key, value := range specific {
+				result[key] = value
+			}
+			return result
+		}
+		run := func(module string, arguments map[string]any) map[string]any {
+			t.Helper()
+			result := runDockerAgentRequestWithEnvironment(t, client, module, arguments, "")
+			if result["failed"] == true {
+				t.Fatalf("%s over TLS failed: %#v", module, result)
+			}
+			return result
+		}
+
+		info := run("community.docker.docker_image_info", args(map[string]any{"name": []string{"alpine:latest"}}))
+		if len(resultList(t, info, "images")) != 1 {
+			t.Fatalf("image_info TLS result = %#v", info)
+		}
+		pull := run("community.docker.docker_image_pull", args(map[string]any{
+			"name": "alpine", "tag": "latest", "pull": "not_present",
+		}))
+		if pull["changed"] != false {
+			t.Fatalf("image_pull TLS result = %#v", pull)
+		}
+		tag := run("community.docker.docker_image_tag", args(map[string]any{
+			"name": "alpine:latest", "repository": []string{taggedName},
+		}))
+		if tag["changed"] != true {
+			t.Fatalf("image_tag TLS result = %#v", tag)
+		}
+		exported := run("community.docker.docker_image_export", args(map[string]any{
+			"names": []string{"alpine:latest"}, "path": archivePath,
+		}))
+		if exported["changed"] != true {
+			t.Fatalf("image_export TLS result = %#v", exported)
+		}
+		loaded := run("community.docker.docker_image_load", args(map[string]any{"path": archivePath}))
+		if loaded["changed"] != true {
+			t.Fatalf("image_load TLS result = %#v", loaded)
+		}
+
+		remoteExec(t, client, "docker run -d --name "+registryName+" -p 5001:5000 registry:2")
+		remoteExec(t, client, "docker tag alpine:latest "+pushedName)
+		pushed := run("community.docker.docker_image_push", args(map[string]any{"name": pushedName}))
+		if pushed["changed"] != true {
+			t.Fatalf("image_push TLS result = %#v", pushed)
+		}
+		removed := run("community.docker.docker_image_remove", args(map[string]any{
+			"name": taggedName, "force": true,
+		}))
+		if removed["changed"] != true {
+			t.Fatalf("image_remove TLS result = %#v", removed)
+		}
+		combined := run("community.docker.docker_image", args(map[string]any{
+			"name": "alpine:latest", "source": "local",
+		}))
+		if combined["changed"] != false {
+			t.Fatalf("docker_image TLS result = %#v", combined)
+		}
+		build := run("community.docker.docker_image_build", map[string]any{
+			"name": "alpine:latest", "path": "/tmp", "rebuild": "never",
+			"docker_host": tlsHTTPSHost, "api_version": "auto",
+			"tls": true, "validate_certs": true, "tls_hostname": tlsServerName,
+			"ca_path": tlsCAPath, "client_cert": tlsClientCertPath, "client_key": tlsClientKeyPath,
+		})
+		if build["changed"] != false {
+			t.Fatalf("docker_image_build TLS result = %#v", build)
+		}
+
+		tlsEnvironment := "DOCKER_HOST=" + tlsHTTPSHost + " " +
+			"DOCKER_API_VERSION=auto DOCKER_TIMEOUT=30 DOCKER_TLS_VERIFY=true " +
+			"DOCKER_CERT_PATH=" + tlsFixtureDir + "/certs " +
+			"DOCKER_TLS_HOSTNAME=" + tlsServerName
+		envInfo := runDockerAgentRequestWithEnvironment(t, client,
+			"community.docker.docker_image_info",
+			map[string]any{"name": []string{"alpine:latest"}}, tlsEnvironment)
+		if envInfo["failed"] == true || len(resultList(t, envInfo, "images")) != 1 {
+			t.Fatalf("image_info TLS environment result = %#v", envInfo)
+		}
 	})
 
 	t.Run("DOCKER_CERT_PATH environment performs a real TLS dial", func(t *testing.T) {
@@ -236,6 +524,36 @@ func runTLSHostInfo(t *testing.T, client *ssh.Client, suffix, arguments string) 
 	return readRemoteJSONMap(t, client, remotePath)
 }
 
+func runDockerAgentRequestWithEnvironment(
+	t *testing.T,
+	client *ssh.Client,
+	module string,
+	args map[string]any,
+	environment string,
+) map[string]any {
+	t.Helper()
+	request, err := json.Marshal(map[string]any{
+		"module": module, "args": args, "check_mode": false, "diff": true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := "printf '%s' '" + string(request) + "' | "
+	if environment != "" {
+		command += "env " + environment + " "
+	}
+	command += "/tmp/.dibra-agent"
+	stdout, stderr, err := client.Run(command)
+	if err != nil {
+		t.Fatalf("%s agent invocation failed: %v\nstdout: %s\nstderr: %s", module, err, stdout, stderr)
+	}
+	var response map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &response); err != nil {
+		t.Fatalf("decode %s response %q: %v", module, stdout, err)
+	}
+	return response
+}
+
 func assertSameDaemon(t *testing.T, unixResult, other map[string]any) {
 	t.Helper()
 	if other["can_talk_to_docker"] != true {
@@ -260,7 +578,8 @@ func sanitizeHostInfo(t *testing.T, raw any) map[string]any {
 	sanitized := make(map[string]any, len(info))
 	for key, value := range info {
 		switch key {
-		case "SystemTime", "NFd", "NGoroutines":
+		case "SystemTime", "NFd", "NGoroutines", "NEventsListener",
+			"Containers", "ContainersPaused", "ContainersRunning", "ContainersStopped", "Images":
 			continue
 		default:
 			sanitized[key] = value
@@ -317,6 +636,11 @@ http {
     default_type application/octet-stream;
     access_log ` + tlsFixtureDir + `/logs/access.log;
 
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        '' close;
+    }
+
     upstream docker_engine {
         server unix:/var/run/docker.sock;
     }
@@ -332,7 +656,9 @@ http {
             proxy_pass http://docker_engine;
             proxy_http_version 1.1;
             proxy_set_header Host $http_host;
-            proxy_set_header Connection "";
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_buffering off;
             client_max_body_size 0;
             chunked_transfer_encoding on;
         }
@@ -344,7 +670,9 @@ http {
             proxy_pass http://docker_engine;
             proxy_http_version 1.1;
             proxy_set_header Host $http_host;
-            proxy_set_header Connection "";
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_buffering off;
             client_max_body_size 0;
             chunked_transfer_encoding on;
         }

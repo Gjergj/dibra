@@ -1,6 +1,10 @@
 package docker_image_tag
 
-import "github.com/gjergjiramku/dibra/internal/modules/docker"
+import (
+	"encoding/json"
+
+	"github.com/gjergjiramku/dibra/internal/modules/docker"
+)
 
 type Request struct {
 	docker.CommonArgs
@@ -47,4 +51,16 @@ type Response struct {
 	Image        map[string]any `json:"image"`
 	TaggedImages []string       `json:"tagged_images"`
 	Diff         Diff           `json:"diff"`
+}
+
+func (response Response) MarshalJSON() ([]byte, error) {
+	type responseAlias Response
+	if !response.Failed {
+		return json.Marshal(responseAlias(response))
+	}
+	return json.Marshal(struct {
+		Changed bool   `json:"changed"`
+		Failed  bool   `json:"failed"`
+		Msg     string `json:"msg,omitempty"`
+	}{Changed: response.Changed, Failed: response.Failed, Msg: response.Msg})
 }

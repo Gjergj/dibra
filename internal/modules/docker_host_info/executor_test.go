@@ -21,10 +21,15 @@ type hostInfoClient struct {
 	info         system.Info
 	infoErr      error
 	diskUsage    client.DiskUsageResult
+	diskUsageErr error
 	containers   []container.Summary
+	containerErr error
 	images       []image.Summary
+	imageErr     error
 	networks     []network.Summary
+	networkErr   error
 	volumes      []volume.Volume
+	volumeErr    error
 	listAll      bool
 	imageFilters client.Filters
 }
@@ -33,21 +38,21 @@ func (fake *hostInfoClient) Info(context.Context, client.InfoOptions) (client.Sy
 	return client.SystemInfoResult{Info: fake.info}, fake.infoErr
 }
 func (fake *hostInfoClient) DiskUsage(context.Context, client.DiskUsageOptions) (client.DiskUsageResult, error) {
-	return fake.diskUsage, nil
+	return fake.diskUsage, fake.diskUsageErr
 }
 func (fake *hostInfoClient) ContainerList(_ context.Context, options client.ContainerListOptions) (client.ContainerListResult, error) {
 	fake.listAll = options.All
-	return client.ContainerListResult{Items: fake.containers}, nil
+	return client.ContainerListResult{Items: fake.containers}, fake.containerErr
 }
 func (fake *hostInfoClient) ImageList(_ context.Context, options client.ImageListOptions) (client.ImageListResult, error) {
 	fake.imageFilters = options.Filters
-	return client.ImageListResult{Items: fake.images}, nil
+	return client.ImageListResult{Items: fake.images}, fake.imageErr
 }
 func (fake *hostInfoClient) NetworkList(context.Context, client.NetworkListOptions) (client.NetworkListResult, error) {
-	return client.NetworkListResult{Items: fake.networks}, nil
+	return client.NetworkListResult{Items: fake.networks}, fake.networkErr
 }
 func (fake *hostInfoClient) VolumeList(context.Context, client.VolumeListOptions) (client.VolumeListResult, error) {
-	return client.VolumeListResult{Items: fake.volumes}, nil
+	return client.VolumeListResult{Items: fake.volumes}, fake.volumeErr
 }
 func (*hostInfoClient) Close() error { return nil }
 
@@ -85,8 +90,37 @@ func TestHostInfoConnectionFailureSetsCanTalkToDockerFalse(t *testing.T) {
 		},
 	}
 	response := ExecuteWithDependencies(Request{}, dependencies)
-	if !response.Failed || response.CanTalkToDocker {
+	if !response.Failed || response.CanTalkToDocker || response.Msg != "An unexpected Docker error occurred: dial unix:///bad.sock" {
 		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestHostInfoErrorsUsePinnedPrefixes(t *testing.T) {
+	infoFailure := &hostInfoClient{infoErr: errors.New("info unavailable")}
+	response := ExecuteWithDependencies(Request{}, hostInfoDependencies(infoFailure))
+	if !response.Failed || response.CanTalkToDocker || response.Msg != "Error inspecting docker host: info unavailable" {
+		t.Fatalf("info response = %#v", response)
+	}
+
+	tests := []struct {
+		name string
+		req  Request
+		fake *hostInfoClient
+		msg  string
+	}{
+		{"disk usage", Request{DiskUsage: true}, &hostInfoClient{diskUsageErr: errors.New("df unavailable")}, "Error inspecting docker host: df unavailable"},
+		{"containers", Request{Containers: true}, &hostInfoClient{containerErr: errors.New("list unavailable")}, "Error inspecting docker host for object 'containers': list unavailable"},
+		{"images", Request{Images: true}, &hostInfoClient{imageErr: errors.New("list unavailable")}, "Error inspecting docker host for object 'images': list unavailable"},
+		{"networks", Request{Networks: true}, &hostInfoClient{networkErr: errors.New("list unavailable")}, "Error inspecting docker host for object 'networks': list unavailable"},
+		{"volumes", Request{Volumes: true}, &hostInfoClient{volumeErr: errors.New("list unavailable")}, "Error inspecting docker host for object 'volumes': list unavailable"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := ExecuteWithDependencies(test.req, hostInfoDependencies(test.fake))
+			if !response.Failed || !response.CanTalkToDocker || response.Msg != test.msg {
+				t.Fatalf("response = %#v", response)
+			}
+		})
 	}
 }
 
