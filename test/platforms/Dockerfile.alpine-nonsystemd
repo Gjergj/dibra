@@ -1,0 +1,43 @@
+FROM alpine:3.22
+
+RUN apk add --no-cache \
+    bash \
+    bzip2 \
+    coreutils \
+    curl \
+    findutils \
+    git \
+    gzip \
+    iproute2 \
+    iptables \
+    openssh-server \
+    procps \
+    shadow \
+    sudo \
+    tar \
+    unzip \
+    util-linux \
+    xz \
+    zip
+
+RUN adduser -D -s /bin/bash testuser && \
+    echo "testuser:testpass" | chpasswd && \
+    echo "root:rootpass" | chpasswd && \
+    addgroup testuser wheel && \
+    mkdir -p /etc/sudoers.d && \
+    printf '%s\n' "testuser ALL=(ALL) ALL" > /etc/sudoers.d/testuser && \
+    chmod 0440 /etc/sudoers.d/testuser
+
+RUN ssh-keygen -A && \
+    mkdir -p /run/sshd && \
+    printf '\n%s\n%s\n' \
+      "PermitRootLogin yes" \
+      "PasswordAuthentication yes" \
+      >> /etc/ssh/sshd_config && \
+    /usr/sbin/sshd -t
+
+EXPOSE 22
+
+STOPSIGNAL SIGTERM
+
+CMD ["/usr/sbin/sshd", "-D", "-e"]

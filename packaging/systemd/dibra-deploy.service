@@ -9,6 +9,7 @@ User=root
 StateDirectory=dibra-deploy
 StateDirectoryMode=0700
 WorkingDirectory=/var/lib/dibra-deploy
+EnvironmentFile=/etc/dibra-deploy/environment
 ExecStart=/usr/local/bin/dibra-deploy
 Restart=on-failure
 RestartSec=5s

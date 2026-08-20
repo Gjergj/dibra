@@ -319,6 +319,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 		hostRuntimeVars[host.Name] = make(map[string]interface{})
 	}
 
+	endPlay := false
 	for _, host := range cfg.Hosts {
 		// Create a context for rendering host connection parameters
 		connectCtx := make(map[string]interface{})
@@ -494,6 +495,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 		}
 		pendingHandlers := make(map[int]struct{})
 		hostFailed := false
+		hostEnded := false
 
 		var flushHandlers = func() bool {
 			if len(pendingHandlers) == 0 {
@@ -509,7 +511,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 				handlerQueue := []config.Task{definition.task}
 				for handlerTaskIndex := 0; handlerTaskIndex < len(handlerQueue); handlerTaskIndex++ {
 					handlerTask := handlerQueue[handlerTaskIndex]
-					if handlerTask.Meta != nil {
+					if handlerTask.Meta != nil && handlerTask.Meta.Action != "noop" {
 						printf("    ✗ meta actions cannot be used from a handler\n")
 						return true
 					}
@@ -553,7 +555,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 							iterationTask.WithSequence = nil
 							iterationTask.LoopControl = nil
 							iterationTask.Vars = mergeTaskVars(handlerTask.Vars, loopVars)
-							result, hasResult := executeTaskOnce(iterationTask, iterationContext, host, client, agentExecutionPath, baseDir, &handlerQueue, handlerTaskIndex, renderImportPath, opts.Verbose, false, globalExecutionState)
+							result, hasResult := executeTaskOnce(iterationTask, iterationContext, host, client, agentExecutionPath, baseDir, &handlerQueue, handlerTaskIndex, renderImportPath, opts.Verbose, false, globalExecutionState, hostRuntimeVars[host.Name])
 							if !hasResult {
 								loopFailed = true
 								break
@@ -586,7 +588,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 						}
 						continue
 					}
-					result, hasResult := executeTaskOnce(handlerTask, handlerContext, host, client, agentExecutionPath, baseDir, &handlerQueue, handlerTaskIndex, renderImportPath, opts.Verbose, false, globalExecutionState)
+					result, hasResult := executeTaskOnce(handlerTask, handlerContext, host, client, agentExecutionPath, baseDir, &handlerQueue, handlerTaskIndex, renderImportPath, opts.Verbose, false, globalExecutionState, hostRuntimeVars[host.Name])
 					if !hasResult {
 						if handlerTask.IncludeTasks != nil || handlerTask.ImportTasks != nil {
 							continue
@@ -597,7 +599,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 						result["failed"] = true
 						result["msg"] = changedErr.Error()
 					}
-					applyGatheredFacts(hostRuntimeVars, host.Name, result)
+					applyTaskFacts(hostRuntimeVars, host.Name, handlerTask, result)
 					if handlerTask.Register != "" {
 						registerResult(hostRuntimeVars, host.Name, handlerTask, result)
 					}
@@ -696,7 +698,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 			hostContext["vars"] = resolved.Namespaces
 			flattened := hostContext
 
-			if task.Meta != nil {
+			if task.Meta != nil && task.Meta.Action != "noop" {
 				shouldRun, whenErr := template.EvaluateWhen(task.When, flattened)
 				if whenErr != nil {
 					printf("    ✗ Failed to evaluate when condition: %v\n", whenErr)
@@ -705,12 +707,29 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 					break
 				}
 				metaResult := map[string]interface{}{"changed": false, "failed": false}
+				endCurrentHost := false
 				if !shouldRun {
 					metaResult["skipped"] = true
 					metaResult["msg"] = "when condition false"
-				} else if task.Meta.Action == "flush_handlers" && flushHandlers() {
-					metaResult["failed"] = true
-					metaResult["msg"] = "a notified handler failed"
+				} else {
+					switch task.Meta.Action {
+					case "flush_handlers":
+						if flushHandlers() {
+							metaResult["failed"] = true
+							metaResult["msg"] = "a notified handler failed"
+						} else {
+							metaResult["msg"] = "triggered running handlers"
+						}
+					case "end_host":
+						metaResult["msg"] = fmt.Sprintf("ending play for %s", host.Name)
+						endCurrentHost = true
+						hostEnded = true
+					case "end_play":
+						metaResult["msg"] = "ending play"
+						endCurrentHost = true
+						hostEnded = true
+						endPlay = true
+					}
 				}
 				if task.Register != "" {
 					registerResult(hostRuntimeVars, host.Name, task, metaResult)
@@ -721,6 +740,9 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 					break
 				}
 				runResult.CompletedTaskCount++
+				if endCurrentHost {
+					break
+				}
 				continue
 			}
 
@@ -779,9 +801,9 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 					iterationTask.LoopControl = nil
 					iterationTask.Vars = mergeTaskVars(task.Vars, loopVars)
 
-					result, hasResult := executeTaskOnce(iterationTask, iterationContext, host, client, agentExecutionPath, baseDir, &taskQueue, taskIdx, renderImportPath, opts.Verbose, false, globalExecutionState)
+					result, hasResult := executeTaskOnce(iterationTask, iterationContext, host, client, agentExecutionPath, baseDir, &taskQueue, taskIdx, renderImportPath, opts.Verbose, false, globalExecutionState, hostRuntimeVars[host.Name])
 					if hasResult {
-						applyGatheredFacts(hostRuntimeVars, host.Name, result)
+						applyTaskFacts(hostRuntimeVars, host.Name, iterationTask, result)
 						if changedErr := applyChangedWhen(iterationTask, result, iterationContext); changedErr != nil {
 							result["failed"] = true
 							result["msg"] = changedErr.Error()
@@ -831,9 +853,9 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 			}
 
 			allowReboot := opts.Local && opts.AllowReboot && taskIdx == len(taskQueue)-1
-			result, hasResult := executeTaskOnce(task, flattened, host, client, agentExecutionPath, baseDir, &taskQueue, taskIdx, renderImportPath, opts.Verbose, allowReboot, globalExecutionState)
+			result, hasResult := executeTaskOnce(task, flattened, host, client, agentExecutionPath, baseDir, &taskQueue, taskIdx, renderImportPath, opts.Verbose, allowReboot, globalExecutionState, hostRuntimeVars[host.Name])
 			if hasResult {
-				applyGatheredFacts(hostRuntimeVars, host.Name, result)
+				applyTaskFacts(hostRuntimeVars, host.Name, task, result)
 			}
 			if hasResult {
 				if changedErr := applyChangedWhen(task, result, flattened); changedErr != nil {
@@ -868,9 +890,12 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 				break
 			}
 		}
-		if (!hostFailed || opts.ForceHandlers || cfg.ForceHandlers) && flushHandlers() {
+		if !hostEnded && (!hostFailed || opts.ForceHandlers || cfg.ForceHandlers) && flushHandlers() {
 			printf("  ✗ Host %s handler failed\n", host.Name)
 			runResult.Failed = true
+		}
+		if endPlay {
+			break
 		}
 	}
 
@@ -1508,6 +1533,16 @@ func registerResult(hostRuntimeVars map[string]map[string]interface{}, hostName 
 	hostRuntimeVars[hostName][task.Register] = normalizeRegisteredResult(result)
 }
 
+func applyTaskFacts(hostRuntimeVars map[string]map[string]interface{}, hostName string, task config.Task, result map[string]interface{}) {
+	// set_fact and include_vars update their controller runtime layer directly.
+	// Their ansible_facts result field is return data, not gathered facts that
+	// should be reinjected under ansible_* names.
+	if task.SetFact != nil || task.IncludeVars != nil {
+		return
+	}
+	applyGatheredFacts(hostRuntimeVars, hostName, result)
+}
+
 func applyGatheredFacts(hostRuntimeVars map[string]map[string]interface{}, hostName string, result map[string]interface{}) {
 	if result == nil {
 		return
@@ -1723,7 +1758,7 @@ func buildHostvarsForTask(hostInfos []vars.HostInfo, resolver vars.Resolver, inv
 	}
 	return hostvars, nil
 }
-func executeTaskOnce(task config.Task, flattened map[string]interface{}, host config.Host, client ExecutionClient, remoteAgentPath string, baseDir string, taskQueue *[]config.Task, taskIdx int, renderImportPath func(string) (string, error), verbose bool, allowReboot bool, globalExecutionState execution.State) (map[string]interface{}, bool) {
+func executeTaskOnce(task config.Task, flattened map[string]interface{}, host config.Host, client ExecutionClient, remoteAgentPath string, baseDir string, taskQueue *[]config.Task, taskIdx int, renderImportPath func(string) (string, error), verbose bool, allowReboot bool, globalExecutionState execution.State, runtimeVars map[string]interface{}) (map[string]interface{}, bool) {
 	if len(task.When) > 0 {
 		shouldRun, err := template.EvaluateWhen(task.When, flattened)
 		if err != nil {
@@ -1744,6 +1779,9 @@ func executeTaskOnce(task config.Task, flattened map[string]interface{}, host co
 	}
 
 	taskExecutionState := execution.ResolveState(globalExecutionState, task.CheckMode, task.Diff)
+	if isControllerPrimitive(task) {
+		return executeControllerPrimitive(task, flattened, runtimeVars, baseDir, verbose, time.Sleep)
+	}
 	if taskExecutionState.CheckMode {
 		if task.Module != nil {
 			definition, registered := registry.Lookup(task.Module.CanonicalName)

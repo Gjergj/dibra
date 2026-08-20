@@ -25,6 +25,8 @@ ExecStart=/usr/local/bin/dibra-deploy
 WantedBy=multi-user.target
 `
 
+const sampleProjectJWT = "header.payload.signature"
+
 func TestInstallDeployInstallsReleaseWithoutEnablingService(t *testing.T) {
 	fixture := newInstallerFixture(t, "v1.2.3", false)
 
@@ -74,11 +76,20 @@ func TestInstallDeployRejectsChecksumMismatch(t *testing.T) {
 	}
 }
 
+func TestInstallDeployRequiresProjectJWT(t *testing.T) {
+	fixture := newInstallerFixture(t, "v1.2.3", false)
+	output, err := fixture.runWithoutToken("--version", "v1.2.3")
+	if err == nil || !strings.Contains(output, "PROJECT_JWT is required") {
+		t.Fatalf("installer accepted a missing token: err=%v output=%s", err, output)
+	}
+}
+
 type installerFixture struct {
 	t              *testing.T
 	root           string
 	installDir     string
 	unitDir        string
+	configDir      string
 	fakeBin        string
 	releaseBaseURL string
 	latestURL      string
@@ -123,6 +134,7 @@ printf '%s\n' "$*" >> "$SYSTEMCTL_LOG"
 		root:           root,
 		installDir:     filepath.Join(root, "installed", "bin"),
 		unitDir:        filepath.Join(root, "installed", "systemd"),
+		configDir:      filepath.Join(root, "installed", "config"),
 		fakeBin:        fakeBin,
 		releaseBaseURL: fileURL(releaseRoot),
 		latestURL:      fileURL(latestPath),
@@ -132,6 +144,14 @@ printf '%s\n' "$*" >> "$SYSTEMCTL_LOG"
 }
 
 func (f *installerFixture) run(args ...string) (string, error) {
+	return f.runWithToken(sampleProjectJWT, args...)
+}
+
+func (f *installerFixture) runWithoutToken(args ...string) (string, error) {
+	return f.runWithToken("", args...)
+}
+
+func (f *installerFixture) runWithToken(token string, args ...string) (string, error) {
 	f.t.Helper()
 	script, err := filepath.Abs("install-dibra-deploy.sh")
 	if err != nil {
@@ -139,6 +159,7 @@ func (f *installerFixture) run(args ...string) (string, error) {
 	}
 	basePath := os.Getenv("PATH")
 	env := environmentWith(map[string]string{
+		"DIBRA_DEPLOY_TOKEN":              "",
 		"DIBRA_DEPLOY_LATEST_RELEASE_URL": f.latestURL,
 		"DIBRA_DEPLOY_NO_SUDO":            "1",
 		"DIBRA_DEPLOY_RELEASE_BASE_URL":   f.releaseBaseURL,
@@ -151,6 +172,10 @@ func (f *installerFixture) run(args ...string) (string, error) {
 		script,
 		"--install-dir", f.installDir,
 		"--unit-dir", f.unitDir,
+		"--config-dir", f.configDir,
+	}
+	if token != "" {
+		installArgs = append(installArgs, token)
 	}
 	installArgs = append(installArgs, args...)
 	cmd := exec.Command("sh", installArgs...)
@@ -244,6 +269,22 @@ func assertInstalledFiles(t *testing.T, fixture *installerFixture) {
 	wantExecStart := "ExecStart=" + binaryPath
 	if !strings.Contains(unit, wantExecStart+"\n") {
 		t.Fatalf("unit does not contain %q:\n%s", wantExecStart, unit)
+	}
+	wantEnvironment := "EnvironmentFile=" + filepath.Join(fixture.configDir, "environment")
+	if !strings.Contains(unit, wantEnvironment+"\n") {
+		t.Fatalf("unit does not contain %q:\n%s", wantEnvironment, unit)
+	}
+	environmentPath := filepath.Join(fixture.configDir, "environment")
+	environmentInfo, err := os.Stat(environmentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if environmentInfo.Mode().Perm() != 0o600 {
+		t.Fatalf("environment mode = %o, want 600", environmentInfo.Mode().Perm())
+	}
+	wantConfig := "DIBRA_DEPLOY_TOKEN=" + sampleProjectJWT + "\nDIBRA_DEPLOY_ENDPOINT=http://localhost:8080/gettasks\n"
+	if config := readFile(t, environmentPath); config != wantConfig {
+		t.Fatalf("environment file = %q, want %q", config, wantConfig)
 	}
 }
 

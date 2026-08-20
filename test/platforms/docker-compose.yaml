@@ -1,0 +1,35 @@
+services:
+  fedora-systemd:
+    profiles: ["fedora-systemd"]
+    build:
+      context: .
+      dockerfile: Dockerfile.fedora-systemd
+    ports:
+      - "${DIBRA_FEDORA_SSH_PORT:-2224}:22"
+    privileged: true
+    cgroup: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /run/lock
+    healthcheck:
+      test: ["CMD-SHELL", "systemctl is-active --quiet sshd"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
+
+  alpine-nonsystemd:
+    profiles: ["alpine-nonsystemd"]
+    build:
+      context: .
+      dockerfile: Dockerfile.alpine-nonsystemd
+    ports:
+      - "${DIBRA_ALPINE_SSH_PORT:-2225}:22"
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x sshd >/dev/null"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 2s

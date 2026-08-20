@@ -74,6 +74,9 @@ func TestPollOnceReportsSuccessfulTaskOutcome(t *testing.T) {
 	archive := deploymentZIP(t, "tasks:\n  - name: ping locally\n    ping:\n")
 	var reported taskOutcome
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if authorization := request.Header.Get("Authorization"); authorization != "Bearer project.jwt.signature" {
+			t.Fatalf("Authorization = %q", authorization)
+		}
 		switch request.Method {
 		case http.MethodGet:
 			return taskResponse(http.StatusOK, archive, "task-123", request), nil
@@ -103,7 +106,7 @@ func TestPollOnceReportsSuccessfulTaskOutcome(t *testing.T) {
 		t.Fatal(err)
 	}
 	daemon := &Daemon{
-		config:    Config{Endpoint: "http://localhost/gettasks", HTTPClient: client, StateDir: stateDir, Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}},
+		config:    Config{Endpoint: "http://localhost/gettasks", Token: "project.jwt.signature", HTTPClient: client, StateDir: stateDir, Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}},
 		agentPath: agentPath,
 	}
 	if rebooted, err := daemon.PollOnce(context.Background()); err != nil || rebooted {

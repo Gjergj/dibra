@@ -1,19 +1,23 @@
 #!/bin/sh
 # Install dibra-deploy and its systemd unit from a GitHub release.
 #
-# Latest release:
-#   curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra-deploy.sh | sh
+# Latest release with a project token:
+#   curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra-deploy.sh | \
+#     sh -s -- 'PROJECT_JWT' --endpoint https://orchestrator.example/gettasks
 #
 # Pinned release, enabled immediately:
 #   curl -fsSL https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra-deploy.sh | \
-#     sh -s -- --version v1.2.3 --enable
+#     sh -s -- 'PROJECT_JWT' --version v1.2.3 --enable
 
 set -eu
 
 REPO="${DIBRA_DEPLOY_REPO:-Gjergj/dibra}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 SYSTEMD_UNIT_DIR="${SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+CONFIG_DIR="${DIBRA_DEPLOY_CONFIG_DIR:-/etc/dibra-deploy}"
 VERSION="${VERSION:-}"
+TOKEN="${DIBRA_DEPLOY_TOKEN:-}"
+ENDPOINT="${DIBRA_DEPLOY_ENDPOINT:-http://localhost:8080/gettasks}"
 ENABLE_SERVICE=0
 RELEASE_BASE_URL="${DIBRA_DEPLOY_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/download}"
 LATEST_RELEASE_URL="${DIBRA_DEPLOY_LATEST_RELEASE_URL:-https://api.github.com/repos/${REPO}/releases/latest}"
@@ -34,12 +38,16 @@ usage() {
 Install dibra-deploy and its systemd service on Linux.
 
 Usage:
-  install-dibra-deploy.sh [options]
+  install-dibra-deploy.sh PROJECT_JWT [options]
 
 Options:
+  --token JWT           Project deployment token (alternative to positional JWT).
+  --endpoint URL        Orchestrator gettasks URL.
   --version VERSION     Install a specific release (for example, v1.2.3).
   --install-dir DIR     Install the binary in DIR (default: /usr/local/bin).
   --unit-dir DIR        Install the unit in DIR (default: /etc/systemd/system).
+  --config-dir DIR      Store the root-only environment file in DIR
+                        (default: /etc/dibra-deploy).
   --enable              Enable and start the service after installation.
   -h, --help            Show this help.
 
@@ -71,6 +79,16 @@ as_root() {
 parse_args() {
     while [ "$#" -gt 0 ]; do
         case "$1" in
+            --token)
+                [ "$#" -ge 2 ] || error "--token requires a value"
+                TOKEN=$2
+                shift 2
+                ;;
+            --endpoint)
+                [ "$#" -ge 2 ] || error "--endpoint requires a value"
+                ENDPOINT=$2
+                shift 2
+                ;;
             --version)
                 [ "$#" -ge 2 ] || error "--version requires a value"
                 VERSION=$2
@@ -86,6 +104,11 @@ parse_args() {
                 SYSTEMD_UNIT_DIR=$2
                 shift 2
                 ;;
+            --config-dir)
+                [ "$#" -ge 2 ] || error "--config-dir requires a value"
+                CONFIG_DIR=$2
+                shift 2
+                ;;
             --enable)
                 ENABLE_SERVICE=1
                 shift
@@ -95,7 +118,12 @@ parse_args() {
                 exit 0
                 ;;
             *)
-                error "unknown option: $1 (use --help for usage)"
+                if [ -z "$TOKEN" ]; then
+                    TOKEN=$1
+                    shift
+                else
+                    error "unknown option: $1 (use --help for usage)"
+                fi
                 ;;
         esac
     done
@@ -150,11 +178,41 @@ validate_paths() {
         /*) ;;
         *) error "--unit-dir must be an absolute path" ;;
     esac
+    case "$CONFIG_DIR" in
+        /*) ;;
+        *) error "--config-dir must be an absolute path" ;;
+    esac
+    case "$INSTALL_DIR$SYSTEMD_UNIT_DIR$CONFIG_DIR" in
+        *[[:space:]]*) error "installation paths cannot contain whitespace" ;;
+    esac
+}
+
+validate_credentials() {
+    [ -n "$TOKEN" ] || error "PROJECT_JWT is required"
+    [ "${#TOKEN}" -le 8192 ] || error "PROJECT_JWT is too long"
+    case "$TOKEN" in
+        *[!A-Za-z0-9._-]*) error "PROJECT_JWT contains invalid characters" ;;
+    esac
+    JWT_HEADER=${TOKEN%%.*}
+    JWT_REMAINDER=${TOKEN#*.}
+    JWT_PAYLOAD=${JWT_REMAINDER%%.*}
+    JWT_SIGNATURE=${JWT_REMAINDER#*.}
+    [ -n "$JWT_HEADER" ] && [ -n "$JWT_PAYLOAD" ] && [ -n "$JWT_SIGNATURE" ] ||
+        error "PROJECT_JWT must be a JWT with three non-empty segments"
+    case "$JWT_SIGNATURE" in *.*) error "PROJECT_JWT must be a JWT with three segments" ;; esac
+    case "$ENDPOINT" in
+        http://?*|https://?*) ;;
+        *) error "--endpoint must be an absolute HTTP(S) URL" ;;
+    esac
+    case "$ENDPOINT" in
+        *[[:space:]\"\'\\]*) error "--endpoint contains unsupported characters" ;;
+    esac
 }
 
 main() {
     parse_args "$@"
     validate_paths
+    validate_credentials
 
     [ "$(uname -s)" = "Linux" ] || error "dibra-deploy is supported only on Linux"
 
@@ -226,7 +284,14 @@ main() {
 
     BINARY_PATH="$INSTALL_DIR/dibra-deploy"
     UNIT_PATH="$SYSTEMD_UNIT_DIR/dibra-deploy.service"
-    awk -v executable="$BINARY_PATH" '
+    CONFIG_PATH="$CONFIG_DIR/environment"
+    awk -v executable="$BINARY_PATH" -v environment="$CONFIG_PATH" '
+        /^\[Service\]$/ {
+            print
+            print "EnvironmentFile=" environment
+            next
+        }
+        /^EnvironmentFile=/ { next }
         /^ExecStart=/ {
             print "ExecStart=" executable
             next
@@ -238,12 +303,26 @@ main() {
         END { exit !found }
     ' "$TMP_DIR/dibra-deploy.service" ||
         error "could not configure ExecStart in the systemd unit"
+    awk -v expected="EnvironmentFile=$CONFIG_PATH" '
+        $0 == expected { found = 1 }
+        END { exit !found }
+    ' "$TMP_DIR/dibra-deploy.service" ||
+        error "could not configure EnvironmentFile in the systemd unit"
+
+    umask 077
+    {
+        printf 'DIBRA_DEPLOY_TOKEN=%s\n' "$TOKEN"
+        printf 'DIBRA_DEPLOY_ENDPOINT=%s\n' "$ENDPOINT"
+    } >"$TMP_DIR/environment"
 
     info "installing $BINARY_PATH"
     as_root install -d -m 0755 "$INSTALL_DIR"
     as_root install -m 0755 "$TMP_DIR/extracted/dibra-deploy" "$BINARY_PATH"
     as_root install -d -m 0755 "$SYSTEMD_UNIT_DIR"
     as_root install -m 0644 "$TMP_DIR/dibra-deploy.service" "$UNIT_PATH"
+    info "installing root-only configuration in $CONFIG_PATH"
+    as_root install -d -m 0700 "$CONFIG_DIR"
+    as_root install -m 0600 "$TMP_DIR/environment" "$CONFIG_PATH"
 
     info "reloading systemd"
     as_root "$SYSTEMCTL" daemon-reload
@@ -257,7 +336,7 @@ main() {
     fi
 
     info "installation complete"
-    info "dibra-deploy will fetch jobs from http://localhost:8080/gettasks"
+    info "dibra-deploy will fetch jobs from $ENDPOINT"
 }
 
 main "$@"

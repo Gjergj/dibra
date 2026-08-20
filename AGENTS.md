@@ -68,6 +68,27 @@ make test-integration
 # Run integration tests (container must be running)
 make test-integration-only
 
+# Run the Ubuntu 22.04 non-Docker core certification lane
+make test-core-integration
+
+# Run core families against an already-running core host
+make test-core-execution-integration-only
+make test-core-files-content-integration-only
+make test-core-system-packages-integration-only
+make test-core-network-vcs-integration-only
+
+# Start/stop the Docker-free managed core host
+make test-core-integration-up
+make test-core-integration-down
+
+# Run the future-platform transport/execution smoke profiles
+make test-platform-fedora-systemd-smoke
+make test-platform-alpine-nonsystemd-smoke
+
+# Validate and regenerate the ansible-core feature parity report
+go run ./cmd/ansible-core-parity-report -upstream-root ../ansible
+go run ./cmd/ansible-core-parity-report -upstream-root ../ansible -check
+
 # Run the exact Engine 29.7.2 docker_container certification lane
 make test-docker-container-integration
 
@@ -361,6 +382,52 @@ Dibra implementation and test. The `-bootstrap-upstream` flag is only for an
 explicit baseline rebuild from the exact pinned upstream checkout; do not use
 it for normal feature updates because it resets audited statuses.
 
+### Ansible-core Parity Inventory
+
+`docs/ansible-core-parity.yaml` is the authoritative feature-level source for
+the pinned `ansible-core` baseline. It contains the 70 public canonical
+builtins (72 module files minus `async_wrapper.py`, with `systemd.py`
+collapsed into `systemd_service`), plus top-level options, return fields, and
+check/diff/idempotency/error contracts. Status is recorded per feature; a
+short-name execution path is not a parity claim. Canonical
+`ansible.builtin.*` names are not accepted yet.
+
+Keep the behavioral reference as a sibling checkout pinned to the audited
+commit:
+
+```bash
+git clone https://github.com/ansible/ansible.git ../ansible
+git -C ../ansible checkout 9cf16a4aca7898481c257f1e17ad28d0b67b1f85
+git -C ../ansible describe --tags --always # 2.22.0.dev0 / 9cf16a4a
+```
+
+Use `../ansible/lib/ansible/modules/` and
+`../ansible/test/integration/targets/` as behavioral references. The checkout
+is GPL-licensed: inspect documentation, implementation, and tests, but
+reimplement behavior cleanly in Go and do not copy upstream source.
+
+After changing an ansible-core contract, update the relevant feature rows and
+run:
+
+```bash
+go run ./cmd/ansible-core-parity-report -upstream-root ../ansible
+go run ./cmd/ansible-core-parity-report -upstream-root ../ansible -check
+```
+
+The first command validates the manifest and regenerates
+`docs/ansible-core-parity.md`; `-check` fails on stale output, invalid local
+paths, duplicate IDs, missing upstream provenance, invalid statuses,
+unsupported recorded status transitions, a `matched` feature without a Dibra
+implementation and test, and a `passed` certification without named upstream
+and Dibra cases plus a real Make lane. The `-bootstrap-upstream` flag is only
+for an explicit baseline rebuild from the exact pinned upstream checkout; do
+not use it for normal feature updates because it resets audited statuses.
+
+The first certified existing-module slice is feature-level coverage for
+`command`, `shell`, `file`, `copy`, `template`, and `lineinfile`. Those
+modules remain `partial` at module level. Core certification runs on the
+Docker-free Ubuntu 22.04 host documented in [`docs/CoreTestLanes.md`](docs/CoreTestLanes.md).
+
 ### Module Invocation State
 
 Every controller-to-agent module request uses the shared envelope in
@@ -385,6 +452,9 @@ the pinned upstream `Capabilities` contract from Dibra's
 `ImplementedCapabilities`. In check mode, the controller and agent skip a
 module before execution unless its Dibra implementation has explicitly opted
 in. The read-only Docker `*_info` modules are the initial safe implementations.
+Controller primitives (`debug`, `fail`, `assert`, `set_fact`, `include_vars`,
+`pause`, `meta`) still run in check mode and never use the agent envelope.
+Legacy builtin modules that have not opted in are skipped.
 
 ### Module Results and Redaction
 
@@ -492,8 +562,10 @@ When connecting as root: sudo wrapper is skipped entirely.
 ```
 dibra/
 ├── cmd/
-│   ├── controller/main.go    # CLI orchestrator
-│   └── agent/main.go         # Remote agent binary
+│   ├── controller/main.go                 # CLI orchestrator
+│   ├── agent/main.go                      # Remote agent binary
+│   ├── parity-report/                     # community.docker feature inventory reporter
+│   └── ansible-core-parity-report/        # ansible-core feature inventory reporter
 ├── internal/
 │   ├── agent/                # Agent resolution (auto-download, build, explicit path)
 │   │   ├── resolver.go       # Core resolution logic (3 modes)
@@ -501,7 +573,9 @@ dibra/
 │   │   ├── download.go       # GitHub Releases download
 │   │   └── extract.go        # tar.gz archive extraction
 │   ├── config/config.go      # YAML playbook parsing (structs shared by YAML)
-│   │   └── import_tasks.go   # import_tasks static expansion
+│   │   ├── import_tasks.go   # import_tasks static expansion
+│   │   └── controller_primitives.go  # debug/fail/assert/set_fact/include_vars/pause
+│   ├── controller/           # Play execution, including controller-side primitives
 │   ├── ssh/client.go         # SSH connection, SCP upload, agent execution
 │   └── modules/
 │       ├── apt/              # Package management
@@ -527,9 +601,15 @@ dibra/
 │       ├── slurp/            # Read file contents from remote hosts (base64)
 │       ├── find/             # Find files/directories matching criteria
        └── docker_container/ # Docker container management
+├── docs/
+│   ├── ansible-core-parity.yaml   # ansible-core feature inventory (edit this)
+│   ├── ansible-core-parity.md     # generated ansible-core parity report
+│   └── CoreTestLanes.md           # Docker-free core certification lanes
 ├── test/
-│   ├── Dockerfile            # Ubuntu 22.04 + systemd + SSH
-│   ├── docker-compose.yaml   # Test container orchestration
+│   ├── Dockerfile            # Ubuntu 22.04 + systemd + SSH (Docker-capable host)
+│   ├── docker-compose.yaml   # Default integration container (SSH on 2222)
+│   ├── core/                 # Ubuntu 22.04 Docker-free core host (SSH on 2223)
+│   ├── platforms/            # Fedora systemd and Alpine non-systemd smoke hosts
 │   └── integration/
 │       └── integration_test.go  # Playbook-based integration tests
 ├── Makefile                  # Build and test commands
@@ -588,6 +668,355 @@ all:
 
 ## Modules
 `WHEN ADDING A NEW COMMAND OR FLAG YOU MUST ALSO ADD IT IN THE SHELL COMPLETIONS`
+
+Controller primitives (`debug`, `fail`, `assert`, `set_fact`, `include_vars`,
+`pause`, and `meta: noop`) run on the controller. They honor `when`,
+`register`, `changed_when`, `notify`, and loops, execute during `--check`, and
+never invoke the agent. Playbooks use the short names below;
+`ansible.builtin.*` FQCN names are not accepted yet.
+
+`meta: flush_handlers`, `meta: end_host`, and `meta: end_play` are controller
+control actions rather than primitives: they honor `when` and `register`, run
+during `--check`, do not loop, and do not notify handlers from their own
+result.
+
+### debug
+
+Prints a message or inspects a variable on the controller. Always reports
+`changed: false` unless `changed_when` overrides it.
+
+```yaml
+# Default message
+- name: Hello
+  debug:
+
+# Templated message
+- name: Notify from controller
+  debug:
+    msg: "hello {{ inventory_hostname }}"
+
+# Inspect a variable or expression
+- name: Show loaded vars
+  debug:
+    var: loaded
+
+# Only print when -v is set
+- name: Verbose-only debug
+  debug:
+    msg: details
+    verbosity: 1
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `msg` | `"Hello world!"` | Value to print. Mutually exclusive with `var`. Any YAML type is rendered and returned. |
+| `var` | | Variable or expression to evaluate. Mutually exclusive with `msg`. The result field uses this expression as the key. |
+| `verbosity` | `0` | Skip unless controller verbosity meets this threshold. `-v` provides verbosity `1`; without `-v` the available verbosity is `0`. |
+
+**Returns**:
+```json
+{
+  "changed": false,
+  "failed": false,
+  "msg": "Hello world!"
+}
+```
+
+When `var` is set, the evaluated value is stored under that expression instead
+of `msg`. When `verbosity` is higher than the current run, the task is skipped
+with `skipped_reason: "Verbosity threshold not met."`
+
+**Notes**:
+- `msg` and `var` cannot both be supplied.
+- Unknown arguments fail at parse time.
+
+### fail
+
+Fails the current host with a message. Always reports `changed: false` and
+`failed: true` when the task runs.
+
+```yaml
+- name: Stop this host
+  fail:
+    msg: expected controller failure
+
+- name: Skip the failure
+  fail:
+    msg: must not fail
+  when: false
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `msg` | `"Failed as requested from task"` | Failure message. Templated like other primitive values. |
+
+**Returns**:
+```json
+{
+  "changed": false,
+  "failed": true,
+  "msg": "Failed as requested from task"
+}
+```
+
+**Notes**:
+- `when: false` skips the task; the host is not failed.
+- Unknown arguments fail at parse time.
+
+### assert
+
+Evaluates one or more conditions against the current variable context. All
+assertions must pass.
+
+```yaml
+- name: Validate runtime state
+  assert:
+    that:
+      - selected == "omega"
+      - loaded.nested.enabled
+    success_msg: controller state is valid
+
+- name: Fail with a custom message
+  assert:
+    that: value == 42
+    fail_msg: invalid
+    quiet: true
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `that` | required | One condition or a list. Same syntax as `when` (string expression, boolean, number, or list). |
+| `fail_msg` | `"Assertion failed"` | Message used when an assertion fails. Alias of `msg`. |
+| `msg` | | Alias of `fail_msg`. Cannot be supplied together with `fail_msg`. |
+| `success_msg` | `"All assertions passed"` | Message used when every assertion passes. |
+| `quiet` | `false` | Hide the success message in controller output. The registered result still includes `msg`. |
+
+**Returns** on success:
+```json
+{
+  "changed": false,
+  "failed": false,
+  "msg": "All assertions passed"
+}
+```
+
+**Returns** on failure:
+```json
+{
+  "changed": false,
+  "failed": true,
+  "evaluated_to": false,
+  "assertion": "value == 42",
+  "msg": "Assertion failed"
+}
+```
+
+**Notes**:
+- `that` is required. A missing `that` fails with `assert: missing required arguments: that`.
+- Failed results include the original assertion that did not pass.
+
+### set_fact
+
+Sets per-host runtime variables for later tasks on the same host.
+
+```yaml
+- name: Set runtime values
+  set_fact:
+    answer: 42
+    copied: "{{ value }}"
+
+- name: Set facts from a loop
+  set_fact:
+    selected: "{{ item }}"
+  loop: "{{ values }}"
+
+- name: Also record facts under ansible_facts
+  set_fact:
+    answer: 42
+    cacheable: true
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `<name>` | required | One or more variable names mapped to values. Names and values are templated. At least one fact is required. |
+| `cacheable` | `false` | When `true`, also merge the facts into the host's `ansible_facts` map. There is no persistent fact cache across playbook runs. |
+
+**Returns**:
+```json
+{
+  "changed": false,
+  "failed": false,
+  "msg": "",
+  "ansible_facts": {"answer": 42},
+  "_ansible_facts_cacheable": false
+}
+```
+
+**Notes**:
+- Facts are written into the host runtime layer immediately. The `ansible_facts` result field is return data and is not reinjected as `ansible_*` names.
+- Variable names must start with a letter or underscore and contain only letters, digits, and underscores.
+- A loop over `set_fact` keeps the last iteration's values.
+- Scalar `set_fact: answer=42` is rejected; use a mapping.
+- Extra vars still override these facts. Task `vars` override them for that task only.
+
+### include_vars
+
+Loads variables from a file or directory on the **controller** (not the managed
+host) into the host runtime layer.
+
+```yaml
+# Free-form file path
+- name: Include free-form vars
+  include_vars: vars/runtime.yml
+
+# Explicit file, wrapped under a name
+- name: Load runtime vars
+  include_vars:
+    file: runtime-vars.yml
+    name: loaded
+
+# Directory, merge into existing maps
+- name: Include directory vars
+  include_vars:
+    dir: vars
+    depth: 1
+    files_matching: '\.ya?ml$'
+    ignore_files: [ignored.yml]
+    extensions: [yaml, yml]
+    ignore_unknown_extensions: true
+    hash_behaviour: merge
+    name: loaded
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `file` | | Vars file to load. Mutually exclusive with `dir`. Free-form `include_vars: path` sets `file`. |
+| `dir` | | Directory to scan. Mutually exclusive with `file`. |
+| `name` | | Wrap the loaded mapping under this variable name. |
+| `depth` | `0` | Maximum relative depth for `dir` (`0` = unlimited). `1` loads only files directly in the directory. |
+| `files_matching` | | Regular expression matched against filenames when using `dir`. |
+| `ignore_files` | `[]` | Filename regular expressions to skip (matched against the end of the name). |
+| `extensions` | `json`, `yaml`, `yml` | Allowed file extensions when using `dir`. A leading `.` is ignored. |
+| `ignore_unknown_extensions` | `false` | Skip unknown extensions instead of failing. |
+| `hash_behaviour` | `replace` | `replace` overwrites existing keys. `merge` deep-merges loaded maps with existing values of the same keys. |
+
+**Returns**:
+```json
+{
+  "changed": false,
+  "failed": false,
+  "msg": "",
+  "ansible_facts": {"included_answer": 42},
+  "ansible_included_var_files": ["/path/to/runtime-vars.yml"]
+}
+```
+
+**Notes**:
+- Relative paths resolve relative to the file that contains the task.
+- Files are parsed as YAML (JSON objects are accepted). Empty files load as `{}`.
+- Directory files are loaded in sorted path order; later files overwrite earlier keys. `hash_behaviour: merge` then deep-merges that combined mapping with existing context values.
+- Exactly one of `file` or `dir` is required.
+- `name` must be a valid variable name. Loaded keys are not reinjected as `ansible_*` names.
+- Unknown arguments fail at parse time.
+
+### pause
+
+Waits on the controller for a timed delay. Prompt-only pauses do not block on
+stdin; they continue immediately.
+
+```yaml
+# Timed pause
+- name: Wait 30 seconds
+  pause:
+    seconds: 30
+
+# Timed pause in minutes (templated)
+- name: Wait
+  pause:
+    minutes: "{{ wait_minutes }}"
+    prompt: wait
+    echo: false
+
+# Non-interactive prompt (does not wait)
+- name: Continue without waiting
+  pause:
+    prompt: Press enter
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `minutes` | | Sleep this many minutes. Mutually exclusive with `seconds`. |
+| `seconds` | | Sleep this many seconds. Mutually exclusive with `minutes`. Values below `1` are clamped to `1`. |
+| `prompt` | `""` | Recorded on the result when non-empty. Does not wait for keyboard input. |
+| `echo` | `true` | Returned on the result. There is no interactive input to hide. |
+
+**Returns** (timed):
+```json
+{
+  "changed": false,
+  "failed": false,
+  "msg": "",
+  "rc": 0,
+  "stdout": "Paused for 30.00 seconds",
+  "stderr": "",
+  "start": "2026-08-19 08:14:00.000000",
+  "stop": "2026-08-19 08:14:30.000000",
+  "delta": 30,
+  "echo": true,
+  "user_input": ""
+}
+```
+
+**Returns** (no duration):
+```json
+{
+  "changed": false,
+  "failed": false,
+  "msg": "stdin is not interactive; continuing without waiting",
+  "stdout": "Paused for 0.0 minutes",
+  "delta": 0,
+  "user_input": ""
+}
+```
+
+**Notes**:
+- `minutes` and `seconds` cannot both be supplied.
+- `delta` is elapsed whole seconds. `user_input` is always empty.
+- Unknown arguments fail at parse time.
+
+### meta
+
+Controller control actions. `flush_handlers`, `end_host`, and `end_play` are
+scalar actions handled by the runner. `noop` is a controller primitive.
+
+```yaml
+- name: Run pending handlers now
+  meta: flush_handlers
+
+- name: No-op (can loop)
+  meta: noop
+  loop: [first, second]
+
+- name: Stop remaining tasks on this host
+  meta: end_host
+
+- name: Stop the play for every remaining host
+  meta: end_play
+```
+
+| Action | Description |
+|--------|-------------|
+| `flush_handlers` | Run already-notified handlers immediately. A later change can notify them again. |
+| `noop` | Succeeds unchanged with `msg: "noop"`. Honors loops, `when`, `register`, `changed_when`, and `notify`. |
+| `end_host` | Skip remaining tasks on this host. Pending handlers for the host are **not** flushed. Result `msg` is `ending play for <host>`. |
+| `end_play` | Skip remaining tasks on this host and do not start later hosts. Pending handlers are **not** flushed. Result `msg` is `ending play`. |
+
+**Notes**:
+- `when: false` skips the action.
+- `flush_handlers`, `end_host`, and `end_play` do not loop.
+- Handlers may use `meta: noop`. Other `meta` actions from a handler fail with `meta actions cannot be used from a handler`.
+- Unsupported Ansible actions such as `reset_connection` fail at parse time.
+
 ### ping
 
 A trivial test module to verify SSH connectivity. Returns "pong" on success.
@@ -4652,6 +5081,8 @@ Handler behavior:
   listening handler. Duplicate handler names use the last definition.
 - Pending handlers run automatically after normal tasks. `meta:
   flush_handlers` runs them immediately; a later change can notify them again.
+  `meta: end_host` and `meta: end_play` skip remaining tasks and do **not**
+  flush pending handlers. See `meta` under Modules for the full action list.
 - Handler arguments render from the current per-host variable context.
   Handler names are templated before normal tasks start and therefore cannot
   use variables registered by those tasks. `listen` topics are never
@@ -4659,6 +5090,9 @@ Handler behavior:
 - Failed hosts do not flush handlers by default. Set play-level
   `force_handlers: true` or pass `--force-handlers` to run already-notified
   handlers after a failure.
+- Handlers may run controller primitives (`debug`, `fail`, `assert`,
+  `set_fact`, `include_vars`, `pause`, `meta: noop`). Other `meta` actions
+  cannot be used from a handler.
 - Static `import_tasks` entries under `handlers` expand into individually
   notifiable handlers. A named dynamic `include_tasks` handler loads and runs
   its tasks when notified.
@@ -4972,15 +5406,16 @@ Included task file example:
 
 ## Variable System
 
-Dibra implements a variable system with five precedence layers, template interpolation, and magic variables. For full documentation see `docs/Variables.md`.
+Dibra implements a variable system with six precedence layers, template interpolation, and magic variables. For full documentation see `docs/Variables.md`.
 
 ### Precedence (Low → High)
 
 1. `group_vars/<group>.{yml,yaml,json}` — auto-loaded by group membership
 2. `host_vars/<host>.{yml,yaml,json}` — auto-loaded by host name
 3. Playbook `vars` + `vars_files` — merged, then applied as one layer
-4. Task `vars` — scoped to a single task
-5. Extra vars (`-e` / `--extra-vars`) — CLI flags, always win
+4. Runtime vars — `register` results, `set_fact`, `include_vars`, and gathered `ansible_*` facts for the current host
+5. Task `vars` — scoped to a single task
+6. Extra vars (`-e` / `--extra-vars`) — CLI flags, always win
 
 ### Merge Strategy
 
@@ -5014,6 +5449,7 @@ All layers are accessible under `vars.*` even after flattening:
 - `vars.group` — group vars
 - `vars.host` — host vars
 - `vars.play` — play + vars_files
+- `vars.runtime` — register, `set_fact`, `include_vars`, and gathered facts
 - `vars.task` — task vars
 - `vars.extra` — extra vars
 
@@ -5127,6 +5563,11 @@ Integration tests run against a Docker container with Ubuntu 22.04 + systemd + S
 All integration invocations must use `-count=1`; these tests depend on external
 container state and must never reuse Go's successful-result cache.
 
+The default `full` profile and the explicit `docker` profile require Docker
+Engine 29.7.2, Compose 5.4.0, and buildx 0.30.0 on the managed host. Ansible-core
+certification uses a separate Docker-free host; see
+[`docs/CoreTestLanes.md`](docs/CoreTestLanes.md).
+
 ```bash
 # Full test cycle: start container → run tests → stop container
 make test-integration
@@ -5160,6 +5601,31 @@ systemctl status ssh
 systemctl list-units --type=service
 ```
 
+### Core Certification Host
+
+`test/core/docker-compose.yaml` is an Ubuntu 22.04 systemd/SSH host **without**
+Docker Engine, Compose, or buildx on the managed node. SSH is on port 2223
+(`root:rootpass`, `testuser` with sudo). A sidecar `httpbin` serves URI tests.
+See [`docs/CoreTestLanes.md`](docs/CoreTestLanes.md).
+
+```bash
+make test-core-integration-up
+make test-core-integration-only
+make test-core-execution-integration-only
+make test-core-files-content-integration-only
+make test-core-system-packages-integration-only
+make test-core-network-vcs-integration-only
+make test-core-integration-down
+```
+
+Opt-in transport/execution smokes (not certification) are Fedora systemd on
+port 2224 and Alpine without systemd on port 2225:
+
+```bash
+make test-platform-fedora-systemd-smoke
+make test-platform-alpine-nonsystemd-smoke
+```
+
 ### Test Coverage
 
 DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
@@ -5180,6 +5646,7 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_Service` | Service Module Start service + idempotency |
 | `TestPlaybook_Group` | Group Module |
 | `TestPlaybook_Lineinfile` | Lineinfile Module: line add, replace, remove, backrefs, firstmatch |
+| `TestPlaybook_*CoreParity` | First ansible-core certification slice for `command`, `shell`, `file`, `copy`, `template`, and `lineinfile` on the Docker-free core host |
 | `TestPlaybook_Blockinfile` | Blockinfile Module: block insert, update, remove, markers, insertafter/before |
 | `TestPlaybook_Replace` | Replace Module: regex replace, before/after, backrefs, backup, validate |
 | `TestPlaybook_Iptables` | Iptables Module: rules, chains, tables, NAT, policies, flush |

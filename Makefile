@@ -1,4 +1,22 @@
-.PHONY: build build-dev test test lint test-integration test-integration-up test-integration-down test-docker-container-integration test-docker-container-integration-only test-docker-image-integration test-docker-image-integration-only test-docker-resource-integration test-docker-resource-integration-only test-docker-compose-integration test-docker-compose-integration-only test-docker-swarm-integration test-docker-swarm-integration-only test-deploy-integration test-deploy-integration-only test-deploy-integration-up test-deploy-integration-down run-deploy-docker-host run-deploy-docker-host-down test-deploy-docker-host test-deploy-docker-host-down clean snapshot release-dry release-minor release-patch install
+.PHONY: build build-dev test test lint test-integration test-integration-up test-integration-down \
+	test-core-integration test-core-integration-only test-core-integration-up test-core-integration-down \
+	test-core-execution-integration test-core-execution-integration-only \
+	test-core-files-content-integration test-core-files-content-integration-only \
+	test-core-system-packages-integration test-core-system-packages-integration-only \
+	test-core-network-vcs-integration test-core-network-vcs-integration-only \
+	test-platform-fedora-systemd-up test-platform-fedora-systemd-down \
+	test-platform-fedora-systemd-smoke test-platform-fedora-systemd-smoke-only \
+	test-platform-alpine-nonsystemd-up test-platform-alpine-nonsystemd-down \
+	test-platform-alpine-nonsystemd-smoke test-platform-alpine-nonsystemd-smoke-only \
+	test-docker-container-integration test-docker-container-integration-only \
+	test-docker-image-integration test-docker-image-integration-only \
+	test-docker-resource-integration test-docker-resource-integration-only \
+	test-docker-compose-integration test-docker-compose-integration-only \
+	test-docker-swarm-integration test-docker-swarm-integration-only \
+	test-deploy-integration test-deploy-integration-only test-deploy-integration-up \
+	test-deploy-integration-down run-deploy-docker-host run-deploy-docker-host-down \
+	test-deploy-docker-host test-deploy-docker-host-down clean snapshot release-dry \
+	release-minor release-patch install
 
 # Version info for local builds
 VERSION ?= dev
@@ -11,6 +29,33 @@ LDFLAGS := -s -w \
 
 # Endpoint used by the Docker-host debugging target.
 DEPLOY_ENDPOINT ?= http://host.docker.internal:8080/gettasks
+
+FULL_INTEGRATION_ENV := env DIBRA_INTEGRATION_PROFILE=full
+DOCKER_INTEGRATION_ENV := env DIBRA_INTEGRATION_PROFILE=docker
+
+CORE_INTEGRATION_PORT ?= 2223
+CORE_INTEGRATION_ENV := env DIBRA_INTEGRATION_PROFILE=core \
+	DIBRA_INTEGRATION_HOST=127.0.0.1 \
+	DIBRA_INTEGRATION_PORT=$(CORE_INTEGRATION_PORT) \
+	DIBRA_INTEGRATION_USER=root \
+	DIBRA_INTEGRATION_PASSWORD=rootpass \
+	DIBRA_INTEGRATION_PLAYBOOK_HOST=127.0.0.1
+
+FEDORA_SYSTEMD_INTEGRATION_PORT ?= 2224
+FEDORA_SYSTEMD_INTEGRATION_ENV := env DIBRA_INTEGRATION_PROFILE=core \
+	DIBRA_INTEGRATION_HOST=127.0.0.1 \
+	DIBRA_INTEGRATION_PORT=$(FEDORA_SYSTEMD_INTEGRATION_PORT) \
+	DIBRA_INTEGRATION_USER=root \
+	DIBRA_INTEGRATION_PASSWORD=rootpass \
+	DIBRA_INTEGRATION_PLAYBOOK_HOST=127.0.0.1
+
+ALPINE_NONSYSTEMD_INTEGRATION_PORT ?= 2225
+ALPINE_NONSYSTEMD_INTEGRATION_ENV := env DIBRA_INTEGRATION_PROFILE=core \
+	DIBRA_INTEGRATION_HOST=127.0.0.1 \
+	DIBRA_INTEGRATION_PORT=$(ALPINE_NONSYSTEMD_INTEGRATION_PORT) \
+	DIBRA_INTEGRATION_USER=root \
+	DIBRA_INTEGRATION_PASSWORD=rootpass \
+	DIBRA_INTEGRATION_PLAYBOOK_HOST=127.0.0.1
 
 # Basic build (no version injection)
 build:
@@ -51,14 +96,104 @@ test-integration-down:
 # Run integration tests (requires container to be running)
 test-integration: test-integration-up
 	@echo "Running integration tests..."
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration/... || (make test-integration-down && exit 1)
-	go test -tags=integration -count=1 -v -timeout 10m ./test/deploy_integration/... || (make test-integration-down && exit 1)
+	$(FULL_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration/... || (make test-integration-down && exit 1)
+	$(FULL_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 10m ./test/deploy_integration/... || (make test-integration-down && exit 1)
 	make test-integration-down
 
 # Run integration tests without managing container
 test-integration-only:
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration/...
-	go test -tags=integration -count=1 -v -timeout 10m ./test/deploy_integration/...
+	$(FULL_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration/...
+	$(FULL_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 10m ./test/deploy_integration/...
+
+CORE_EXECUTION_INTEGRATION_PATTERN := TestPlaybook_(Command.*|Shell.*|Script.*|Ping.*)
+CORE_FILES_CONTENT_INTEGRATION_PATTERN := TestPlaybook_(File.*|Copy.*|TemplateModule|Lineinfile_.*|Blockinfile_.*|Replace_.*|Fetch.*|Slurp.*|Find.*|Stat.*|Tempfile.*|Unarchive.*)
+CORE_SYSTEM_PACKAGES_INTEGRATION_PATTERN := TestPlaybook_(Apt.*|Group.*|User.*|Service.*|Systemd.*|Cron.*|Reboot.*)|TestGatherFacts.*|TestPlaybookGatherFacts.*
+CORE_NETWORK_VCS_INTEGRATION_PATTERN := TestPlaybook_(URI.*|Git.*|Iptables.*)
+
+CORE_EXECUTION_INTEGRATION_RUN := ^($(CORE_EXECUTION_INTEGRATION_PATTERN))
+CORE_FILES_CONTENT_INTEGRATION_RUN := ^($(CORE_FILES_CONTENT_INTEGRATION_PATTERN))
+CORE_SYSTEM_PACKAGES_INTEGRATION_RUN := ^($(CORE_SYSTEM_PACKAGES_INTEGRATION_PATTERN))
+CORE_NETWORK_VCS_INTEGRATION_RUN := ^($(CORE_NETWORK_VCS_INTEGRATION_PATTERN))
+CORE_CERTIFICATION_INTEGRATION_RUN := ^($(CORE_EXECUTION_INTEGRATION_PATTERN)|$(CORE_FILES_CONTENT_INTEGRATION_PATTERN)|$(CORE_SYSTEM_PACKAGES_INTEGRATION_PATTERN)|$(CORE_NETWORK_VCS_INTEGRATION_PATTERN))
+PLATFORM_SMOKE_INTEGRATION_RUN := ^(TestPlaybook_(PingBasic|CommandBasic|ShellBasic|ScriptBasic))
+
+# Start the Ubuntu 22.04 core-only host. It has SSH/systemd but no Docker
+# Engine, Docker CLI, Compose plugin, or buildx plugin.
+test-core-integration-up:
+	DIBRA_CORE_SSH_PORT="$(CORE_INTEGRATION_PORT)" docker compose -p dibra-core -f test/core/docker-compose.yaml up -d --build --wait --wait-timeout 180
+
+test-core-integration-down:
+	DIBRA_CORE_SSH_PORT="$(CORE_INTEGRATION_PORT)" docker compose -p dibra-core -f test/core/docker-compose.yaml down -v
+
+test-core-execution-integration: test-core-integration-up
+	@echo "Running core execution-family integration tests..."
+	$(CORE_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 30m ./test/integration -run '$(CORE_EXECUTION_INTEGRATION_RUN)$$' || (make test-core-integration-down && exit 1)
+	make test-core-integration-down
+
+test-core-execution-integration-only:
+	$(CORE_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 30m ./test/integration -run '$(CORE_EXECUTION_INTEGRATION_RUN)$$'
+
+test-core-files-content-integration: test-core-integration-up
+	@echo "Running core files/content-family integration tests..."
+	$(CORE_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(CORE_FILES_CONTENT_INTEGRATION_RUN)$$' || (make test-core-integration-down && exit 1)
+	make test-core-integration-down
+
+test-core-files-content-integration-only:
+	$(CORE_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(CORE_FILES_CONTENT_INTEGRATION_RUN)$$'
+
+test-core-system-packages-integration: test-core-integration-up
+	@echo "Running core system/packages-family integration tests..."
+	$(CORE_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(CORE_SYSTEM_PACKAGES_INTEGRATION_RUN)$$' || (make test-core-integration-down && exit 1)
+	make test-core-integration-down
+
+test-core-system-packages-integration-only:
+	$(CORE_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(CORE_SYSTEM_PACKAGES_INTEGRATION_RUN)$$'
+
+test-core-network-vcs-integration: test-core-integration-up
+	@echo "Running core network/VCS-family integration tests..."
+	$(CORE_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(CORE_NETWORK_VCS_INTEGRATION_RUN)$$' || (make test-core-integration-down && exit 1)
+	make test-core-integration-down
+
+test-core-network-vcs-integration-only:
+	$(CORE_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(CORE_NETWORK_VCS_INTEGRATION_RUN)$$'
+
+# Run all four Ubuntu core certification families without starting any future
+# platform profile.
+test-core-integration: test-core-integration-up
+	@echo "Running Ubuntu 22.04 core certification tests..."
+	$(CORE_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 120m ./test/integration -run '$(CORE_CERTIFICATION_INTEGRATION_RUN)$$' || (make test-core-integration-down && exit 1)
+	make test-core-integration-down
+
+test-core-integration-only:
+	$(CORE_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 120m ./test/integration -run '$(CORE_CERTIFICATION_INTEGRATION_RUN)$$'
+
+# Fedora 43/systemd and Alpine 3.22/non-systemd are explicit smoke profiles,
+# not core parity certification lanes.
+test-platform-fedora-systemd-up:
+	DIBRA_FEDORA_SSH_PORT="$(FEDORA_SYSTEMD_INTEGRATION_PORT)" docker compose -p dibra-fedora-systemd -f test/platforms/docker-compose.yaml --profile fedora-systemd up -d --build --wait --wait-timeout 180 fedora-systemd
+
+test-platform-fedora-systemd-down:
+	DIBRA_FEDORA_SSH_PORT="$(FEDORA_SYSTEMD_INTEGRATION_PORT)" docker compose -p dibra-fedora-systemd -f test/platforms/docker-compose.yaml --profile fedora-systemd down -v
+
+test-platform-fedora-systemd-smoke: test-platform-fedora-systemd-up
+	$(FEDORA_SYSTEMD_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 20m ./test/integration -run '$(PLATFORM_SMOKE_INTEGRATION_RUN)$$' || (make test-platform-fedora-systemd-down && exit 1)
+	make test-platform-fedora-systemd-down
+
+test-platform-fedora-systemd-smoke-only:
+	$(FEDORA_SYSTEMD_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 20m ./test/integration -run '$(PLATFORM_SMOKE_INTEGRATION_RUN)$$'
+
+test-platform-alpine-nonsystemd-up:
+	DIBRA_ALPINE_SSH_PORT="$(ALPINE_NONSYSTEMD_INTEGRATION_PORT)" docker compose -p dibra-alpine-nonsystemd -f test/platforms/docker-compose.yaml --profile alpine-nonsystemd up -d --build --wait --wait-timeout 180 alpine-nonsystemd
+
+test-platform-alpine-nonsystemd-down:
+	DIBRA_ALPINE_SSH_PORT="$(ALPINE_NONSYSTEMD_INTEGRATION_PORT)" docker compose -p dibra-alpine-nonsystemd -f test/platforms/docker-compose.yaml --profile alpine-nonsystemd down -v
+
+test-platform-alpine-nonsystemd-smoke: test-platform-alpine-nonsystemd-up
+	$(ALPINE_NONSYSTEMD_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 20m ./test/integration -run '$(PLATFORM_SMOKE_INTEGRATION_RUN)$$' || (make test-platform-alpine-nonsystemd-down && exit 1)
+	make test-platform-alpine-nonsystemd-down
+
+test-platform-alpine-nonsystemd-smoke-only:
+	$(ALPINE_NONSYSTEMD_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 20m ./test/integration -run '$(PLATFORM_SMOKE_INTEGRATION_RUN)$$'
 
 # Run dibra-deploy in Linux against an API on the Docker host.
 # make run-deploy-docker-host \
@@ -132,50 +267,50 @@ DOCKER_RESOURCE_INTEGRATION_RUN := ^(TestPlaybook_DockerNetworkUpstreamSubstring
 # Run the pinned Docker Engine 29.7.2 docker_container certification lane.
 test-docker-container-integration: test-integration-up
 	@echo "Running docker_container integration tests..."
-	go test -tags=integration -count=1 -v -timeout 30m ./test/integration -run '$(DOCKER_CONTAINER_INTEGRATION_RUN)$$' || (make test-integration-down && exit 1)
+	$(DOCKER_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 30m ./test/integration -run '$(DOCKER_CONTAINER_INTEGRATION_RUN)$$' || (make test-integration-down && exit 1)
 	make test-integration-down
 
 # Run the certification lane against an already-running integration host.
 test-docker-container-integration-only:
-	go test -tags=integration -count=1 -v -timeout 30m ./test/integration -run '$(DOCKER_CONTAINER_INTEGRATION_RUN)$$'
+	$(DOCKER_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 30m ./test/integration -run '$(DOCKER_CONTAINER_INTEGRATION_RUN)$$'
 
 # Run the pinned Docker Engine 29.7.2 image-family certification lane.
 test-docker-image-integration: test-integration-up
 	@echo "Running Docker image-family integration tests..."
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_IMAGE_INTEGRATION_RUN)$$' || (make test-integration-down && exit 1)
+	$(DOCKER_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_IMAGE_INTEGRATION_RUN)$$' || (make test-integration-down && exit 1)
 	make test-integration-down
 
 # Run the image-family lane against an already-running integration host.
 test-docker-image-integration-only:
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_IMAGE_INTEGRATION_RUN)$$'
+	$(DOCKER_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_IMAGE_INTEGRATION_RUN)$$'
 
 # Run the Engine 29.7.2 resource/info certification lane (network, volume, login, prune, host/context/plugin/facts).
 test-docker-resource-integration: test-integration-up
 	@echo "Running Docker resource-family integration tests..."
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_RESOURCE_INTEGRATION_RUN)$$' || (make test-integration-down && exit 1)
+	$(DOCKER_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_RESOURCE_INTEGRATION_RUN)$$' || (make test-integration-down && exit 1)
 	make test-integration-down
 
 # Run that lane with the integration container already running.
 test-docker-resource-integration-only:
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_RESOURCE_INTEGRATION_RUN)$$'
+	$(DOCKER_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '$(DOCKER_RESOURCE_INTEGRATION_RUN)$$'
 
 # Run the pinned Compose 5.4.0 docker_compose_v2 certification lane.
 test-docker-compose-integration: test-integration-up
 	@echo "Running docker_compose_v2 integration tests..."
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerComposeLifecycle|TestPlaybook_DockerComposeV2Parity|TestPlaybook_DockerComposeV2Examples|TestPlaybook_DockerComposeV2ExecParity|TestPlaybook_DockerComposeV2PullParity|TestPlaybook_DockerComposeV2RunParity)$$' || (make test-integration-down && exit 1)
+	$(DOCKER_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerComposeLifecycle|TestPlaybook_DockerComposeV2Parity|TestPlaybook_DockerComposeV2Examples|TestPlaybook_DockerComposeV2ExecParity|TestPlaybook_DockerComposeV2PullParity|TestPlaybook_DockerComposeV2RunParity)$$' || (make test-integration-down && exit 1)
 	make test-integration-down
 
 test-docker-compose-integration-only:
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerComposeLifecycle|TestPlaybook_DockerComposeV2Parity|TestPlaybook_DockerComposeV2Examples|TestPlaybook_DockerComposeV2ExecParity|TestPlaybook_DockerComposeV2PullParity|TestPlaybook_DockerComposeV2RunParity)$$'
+	$(DOCKER_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerComposeLifecycle|TestPlaybook_DockerComposeV2Parity|TestPlaybook_DockerComposeV2Examples|TestPlaybook_DockerComposeV2ExecParity|TestPlaybook_DockerComposeV2PullParity|TestPlaybook_DockerComposeV2RunParity)$$'
 
 # Run the Engine 29.7.2 Swarm node/service/config/secret certification lane.
 test-docker-swarm-integration: test-integration-up
 	@echo "Running Docker Swarm node/service/config/secret/stack-family integration tests..."
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerSwarmParity|TestPlaybook_DockerSwarmInfoParity|TestPlaybook_DockerSwarmLifecycle|TestPlaybook_DockerSwarmService|TestPlaybook_DockerSwarmServiceParity|TestPlaybook_DockerSwarmServiceInfo|TestPlaybook_DockerSwarmServiceInfoParity|TestPlaybook_DockerNode|TestPlaybook_DockerNodeLabelsToRemove|TestPlaybook_DockerNodeInfo|TestPlaybook_DockerNodeParity|TestPlaybook_DockerNodeInfoParity|TestPlaybook_DockerConfigLifecycle|TestPlaybook_DockerConfigHashIdempotency|TestPlaybook_DockerConfigParity|TestPlaybook_DockerSecretLifecycle|TestPlaybook_DockerSecretHashIdempotency|TestPlaybook_DockerSecretParity|TestPlaybook_DockerStackLifecycle|TestPlaybook_DockerStackParity|TestPlaybook_DockerStackInfoParity|TestPlaybook_DockerStackTaskInfoParity)$$' || (make test-integration-down && exit 1)
+	$(DOCKER_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerSwarmParity|TestPlaybook_DockerSwarmInfoParity|TestPlaybook_DockerSwarmLifecycle|TestPlaybook_DockerSwarmService|TestPlaybook_DockerSwarmServiceParity|TestPlaybook_DockerSwarmServiceInfo|TestPlaybook_DockerSwarmServiceInfoParity|TestPlaybook_DockerNode|TestPlaybook_DockerNodeLabelsToRemove|TestPlaybook_DockerNodeInfo|TestPlaybook_DockerNodeParity|TestPlaybook_DockerNodeInfoParity|TestPlaybook_DockerConfigLifecycle|TestPlaybook_DockerConfigHashIdempotency|TestPlaybook_DockerConfigParity|TestPlaybook_DockerSecretLifecycle|TestPlaybook_DockerSecretHashIdempotency|TestPlaybook_DockerSecretParity|TestPlaybook_DockerStackLifecycle|TestPlaybook_DockerStackParity|TestPlaybook_DockerStackInfoParity|TestPlaybook_DockerStackTaskInfoParity)$$' || (make test-integration-down && exit 1)
 	make test-integration-down
 
 test-docker-swarm-integration-only:
-	go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerSwarmParity|TestPlaybook_DockerSwarmInfoParity|TestPlaybook_DockerSwarmLifecycle|TestPlaybook_DockerSwarmService|TestPlaybook_DockerSwarmServiceParity|TestPlaybook_DockerSwarmServiceInfo|TestPlaybook_DockerSwarmServiceInfoParity|TestPlaybook_DockerNode|TestPlaybook_DockerNodeLabelsToRemove|TestPlaybook_DockerNodeInfo|TestPlaybook_DockerNodeParity|TestPlaybook_DockerNodeInfoParity|TestPlaybook_DockerConfigLifecycle|TestPlaybook_DockerConfigHashIdempotency|TestPlaybook_DockerConfigParity|TestPlaybook_DockerSecretLifecycle|TestPlaybook_DockerSecretHashIdempotency|TestPlaybook_DockerSecretParity|TestPlaybook_DockerStackLifecycle|TestPlaybook_DockerStackParity|TestPlaybook_DockerStackInfoParity|TestPlaybook_DockerStackTaskInfoParity)$$'
+	$(DOCKER_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 60m ./test/integration -run '^(TestPlaybook_DockerSwarmParity|TestPlaybook_DockerSwarmInfoParity|TestPlaybook_DockerSwarmLifecycle|TestPlaybook_DockerSwarmService|TestPlaybook_DockerSwarmServiceParity|TestPlaybook_DockerSwarmServiceInfo|TestPlaybook_DockerSwarmServiceInfoParity|TestPlaybook_DockerNode|TestPlaybook_DockerNodeLabelsToRemove|TestPlaybook_DockerNodeInfo|TestPlaybook_DockerNodeParity|TestPlaybook_DockerNodeInfoParity|TestPlaybook_DockerConfigLifecycle|TestPlaybook_DockerConfigHashIdempotency|TestPlaybook_DockerConfigParity|TestPlaybook_DockerSecretLifecycle|TestPlaybook_DockerSecretHashIdempotency|TestPlaybook_DockerSecretParity|TestPlaybook_DockerStackLifecycle|TestPlaybook_DockerStackParity|TestPlaybook_DockerStackInfoParity|TestPlaybook_DockerStackTaskInfoParity)$$'
 
 
 ### dibra-deploy specific integration tests (also inlcuded in test-integration) ###

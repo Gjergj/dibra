@@ -36,15 +36,16 @@ dibra -config playbook.yaml --extra-vars @production.yml
 
 ## Variable Sources and Precedence
 
-Variables come from five sources, listed from **lowest to highest** precedence:
+Variables come from six sources, listed from **lowest to highest** precedence:
 
 | Priority | Source | Description |
 |----------|--------|-------------|
 | 1 (lowest) | `group_vars/<group>.yml` | Auto-loaded for each group a host belongs to |
 | 2 | `host_vars/<host>.yml` | Auto-loaded for each host by name |
 | 3 | Play `vars` + `vars_files` | Defined at playbook root |
-| 4 | Task `vars` | Defined per-task, scoped to that task only |
-| 5 (highest) | Extra vars (`-e`) | CLI flags, always win |
+| 4 | Runtime vars | `register` results, `set_fact`, `include_vars`, and gathered `ansible_*` facts for the current host |
+| 5 | Task `vars` | Defined per-task, scoped to that task only |
+| 6 (highest) | Extra vars (`-e`) | CLI flags, always win |
 
 When the same key exists at multiple levels, the higher-precedence source wins.
 
@@ -92,6 +93,17 @@ vars_files:
 
 Play vars and vars_files are merged together (vars_files values overlay play vars), then applied as a single layer. Paths in `vars_files` are resolved relative to the playbook directory.
 
+### Runtime Vars
+
+Per-host values written during execution. They persist for later tasks on the same host:
+
+- `register` results
+- `set_fact` keys
+- `include_vars` loaded keys
+- gathered facts (`ansible_*` names from `gather_facts` / `service_facts`)
+
+Task `vars` override them for that task only. Extra vars still win.
+
 ### Task Vars
 
 Scoped to a single task:
@@ -106,7 +118,7 @@ tasks:
       dest: /tmp/debug.txt
 ```
 
-Task vars override play vars for that task only.
+Task vars override runtime vars for that task only.
 
 ### Extra Vars
 
@@ -197,8 +209,10 @@ All variable layers are always visible under `vars.*`, regardless of which layer
 | Namespace | Source |
 |-----------|--------|
 | `vars.group` | Group vars (merged across all groups) |
+| `vars.group` | Group vars |
 | `vars.host` | Host vars |
 | `vars.play` | Play vars + vars_files |
+| `vars.runtime` | Register, `set_fact`, `include_vars`, and gathered facts |
 | `vars.task` | Task vars |
 | `vars.extra` | Extra vars |
 

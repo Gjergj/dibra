@@ -9,6 +9,8 @@ as the regular controller, and does not use SSH.
 The default endpoint and schedule are fixed in this first version:
 
 - `GET http://localhost:8080/gettasks`
+- both task fetch and outcome requests send the project JWT as an
+  `Authorization: Bearer` header;
 - the first request is immediate;
 - later requests start 60 seconds after the previous attempt finishes;
 - `200 OK` must contain one ZIP job and an `X-Dibra-Task-ID` response header;
@@ -30,6 +32,9 @@ sudo ./dibra-deploy \
   --endpoint http://host.docker.internal:8080/gettasks \
   --verbose
 ```
+
+Set `DIBRA_DEPLOY_TOKEN` to the project JWT and, alternatively,
+`DIBRA_DEPLOY_ENDPOINT` to configure the endpoint without a command-line flag.
 
 The repository test host publishes its port 80 as
 `http://localhost:9090`, which allows HTTP-server deployment jobs to be checked
@@ -114,7 +119,8 @@ Download and inspect the installer before running it:
 curl -fsSLo install-dibra-deploy.sh \
   https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra-deploy.sh
 less install-dibra-deploy.sh
-sh install-dibra-deploy.sh
+sh install-dibra-deploy.sh 'PROJECT_JWT' \
+  --endpoint 'https://orchestrator.example/gettasks'
 sudo systemctl enable --now dibra-deploy.service
 ```
 
@@ -124,7 +130,7 @@ installing it:
 ```bash
 curl -fsSL \
   https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra-deploy.sh \
-  | sh -s -- --enable
+  | sh -s -- 'PROJECT_JWT' --endpoint 'https://orchestrator.example/gettasks' --enable
 ```
 
 Pin a release when repeatable installation is required:
@@ -132,12 +138,15 @@ Pin a release when repeatable installation is required:
 ```bash
 curl -fsSL \
   https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra-deploy.sh \
-  | sh -s -- --version v0.1.0 --enable
+  | sh -s -- 'PROJECT_JWT' --endpoint 'https://orchestrator.example/gettasks' \
+      --version v0.1.0 --enable
 ```
 
-The installer invokes `sudo` when it is not already running as root. Custom
-paths are available through `--install-dir` and `--unit-dir`; the generated
-unit's `ExecStart` is adjusted to the selected binary path. Run
+The installer invokes `sudo` when it is not already running as root. It stores
+the token and endpoint in `/etc/dibra-deploy/environment` with mode `0600` and
+configures systemd to read it. Custom paths are available through
+`--install-dir`, `--unit-dir`, and `--config-dir`; the generated unit's
+`ExecStart` and `EnvironmentFile` are adjusted to the selected paths. Run
 `sh install-dibra-deploy.sh --help` for all options.
 
 The task server must be listening on the configured endpoint before the service
@@ -159,6 +168,11 @@ To install a downloaded release archive manually:
 
 ```bash
 sudo install -m 0755 dibra-deploy /usr/local/bin/dibra-deploy
+sudo install -d -m 0700 /etc/dibra-deploy
+sudo sh -c 'umask 077; printf "%s\n" \
+  "DIBRA_DEPLOY_TOKEN=PROJECT_JWT" \
+  "DIBRA_DEPLOY_ENDPOINT=https://orchestrator.example/gettasks" \
+  > /etc/dibra-deploy/environment'
 sudo install -m 0644 dibra-deploy.service \
   /etc/systemd/system/dibra-deploy.service
 sudo systemctl daemon-reload

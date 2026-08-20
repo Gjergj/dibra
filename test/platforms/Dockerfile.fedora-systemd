@@ -1,0 +1,63 @@
+FROM fedora:43
+
+ENV container=docker
+
+RUN dnf -y install \
+    bash \
+    bzip2 \
+    curl \
+    findutils \
+    git \
+    gzip \
+    iproute \
+    iptables \
+    openssh-server \
+    passwd \
+    procps-ng \
+    shadow-utils \
+    sudo \
+    systemd \
+    tar \
+    unzip \
+    util-linux \
+    which \
+    xz \
+    zip \
+    && dnf clean all
+
+RUN (cd /lib/systemd/system/sysinit.target.wants/ && \
+      for unit in *; do \
+        [ "$unit" = "systemd-tmpfiles-setup.service" ] || rm -f "$unit"; \
+      done) && \
+    rm -f /lib/systemd/system/multi-user.target.wants/* && \
+    rm -f /etc/systemd/system/*.wants/* && \
+    rm -f /lib/systemd/system/local-fs.target.wants/* && \
+    rm -f /lib/systemd/system/sockets.target.wants/*udev* && \
+    rm -f /lib/systemd/system/sockets.target.wants/*initctl* && \
+    rm -f /lib/systemd/system/basic.target.wants/*
+
+RUN useradd -m -s /bin/bash testuser && \
+    echo "testpass" | passwd --stdin testuser && \
+    echo "rootpass" | passwd --stdin root && \
+    usermod -aG wheel testuser && \
+    printf '%s\n' "testuser ALL=(ALL) ALL" > /etc/sudoers.d/testuser && \
+    chmod 0440 /etc/sudoers.d/testuser
+
+RUN ssh-keygen -A && \
+    mkdir -p /etc/ssh/sshd_config.d /run/sshd && \
+    printf '%s\n' \
+      "PermitRootLogin yes" \
+      "PasswordAuthentication yes" \
+      "UsePAM yes" \
+      > /etc/ssh/sshd_config.d/99-dibra-integration.conf && \
+    systemctl enable sshd.service && \
+    ln -sf /usr/lib/systemd/system/systemd-user-sessions.service \
+      /etc/systemd/system/multi-user.target.wants/systemd-user-sessions.service
+
+VOLUME ["/sys/fs/cgroup"]
+
+EXPOSE 22
+
+STOPSIGNAL SIGRTMIN+3
+
+CMD ["/usr/sbin/init"]

@@ -43,12 +43,14 @@ Install the latest `dibra-deploy` release and its systemd unit:
 ```bash
 curl -fsSL \
   https://raw.githubusercontent.com/Gjergj/dibra/main/scripts/install-dibra-deploy.sh \
-  | sh
+  | sh -s -- 'PROJECT_JWT' --endpoint 'https://orchestrator.example/gettasks'
 sudo systemctl enable --now dibra-deploy.service
 ```
 
-The installer verifies the release checksum and does not start the service by
-default. Pass `--enable` to install and start in one command. See
+The CustomerAdmin receives the project JWT and endpoint in the installation
+command returned by the orchestrator project API. The installer stores them in
+a root-only environment file, verifies the release checksum, and does not start
+the service by default. Pass `--enable` to install and start in one command. See
 [`docs/DibraDeploy.md`](docs/DibraDeploy.md) for pinned releases, manual
 installation, the ZIP contract, and service operation.
 
@@ -91,6 +93,21 @@ Use `dibra -config playbook.yaml --check` for a non-mutating check-mode run and
 `--diff` to request structured differences from modules that implement them.
 Modules that have not implemented Dibra check mode are safely skipped rather
 than executed.
+
+### Core integration certification
+
+Run the non-Docker Ubuntu 22.04 certification lane without installing Docker
+Engine, Compose, or buildx in the managed host:
+
+```bash
+make test-core-integration
+```
+
+Family targets are available for execution, files/content, system/packages,
+and network/VCS, with matching `-only` forms for an already-running host. The
+Fedora systemd and Alpine non-systemd definitions are currently smoke profiles,
+not parity claims. See [`docs/CoreTestLanes.md`](docs/CoreTestLanes.md) for the
+commands, supported tests, ports, and integration-profile environment.
 
 ### Handlers
 

@@ -129,17 +129,7 @@ func TestPlaybook_Slurp(t *testing.T) {
 		remoteExec(t, client, "echo 'secret' > "+testDir+"/unreadable.txt")
 		remoteExec(t, client, "chmod 000 "+testDir+"/unreadable.txt")
 
-		playbook := `
-hosts:
-  - name: testhost
-    host: localhost
-    port: 2222
-    user: testuser
-    password: testpass
-    become: true
-    become_password: testpass
-
-tasks:
+		playbook := testUserPlaybookHeader(true) + `
   - name: Create unreadable file owned by root
     copy:
       content: "secret data"
@@ -264,22 +254,12 @@ tasks:
 	t.Run("template variable in path", func(t *testing.T) {
 		remoteExec(t, client, "echo -n 'templated' > "+testDir+"/template.txt")
 
-		playbook := `
-hosts:
-  - name: testhost
-    host: localhost
-    port: 2222
-    user: root
-    password: rootpass
-    become: true
-
-vars:
-  slurp_dir: ` + testDir + `
-
-tasks:
+		playbook := playbookHeader + `
   - name: Slurp using variable path
     slurp:
       src: "{{ slurp_dir }}/template.txt"
+    vars:
+      slurp_dir: ` + testDir + `
 `
 		output := runPlaybook(t, playbook)
 		if strings.Contains(output, "FAILED") {

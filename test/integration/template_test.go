@@ -134,6 +134,112 @@ func TestPlaybook_TemplateModule(t *testing.T) {
 	remoteExec(t, client, "rm -f /tmp/dibra-template-*.txt /tmp/dibra-template-dir/basic.j2")
 	remoteExec(t, client, "rm -rf /tmp/dibra-template-dir")
 
+	t.Run("CoreParity", func(t *testing.T) {
+		const basicDest = "/tmp/dibra-template-core-parity-basic.txt"
+		const customDest = "/tmp/dibra-template-core-parity-custom.txt"
+		const validateDest = "/tmp/dibra-template-core-parity-validate.txt"
+		const invalidDest = "/tmp/dibra-template-core-parity-invalid.txt"
+		const destDir = "/tmp/dibra-template-core-parity-directory"
+		remoteExec(t, client, "rm -f "+basicDest+" "+customDest+" "+validateDest+" "+invalidDest)
+		remoteExec(t, client, "rm -rf "+destDir+" && mkdir -p "+destDir)
+
+		parityPlaybook := playbookHeader + `
+  - name: Render basic template for core parity
+    template:
+      src: ` + basicTemplate + `
+      dest: ` + basicDest + `
+      mode: "0640"
+      owner: nobody
+      group: nogroup
+    vars:
+      name: parity
+
+  - name: Render custom delimiters for core parity
+    template:
+      src: ` + customTemplate + `
+      dest: ` + customDest + `
+      variable_start_string: "[["
+      variable_end_string: "]]"
+    vars:
+      value: exact
+
+  - name: Validate rendered template for core parity
+    template:
+      src: ` + basicTemplate + `
+      dest: ` + validateDest + `
+      validate: "/bin/sh -c 'test -s %s'"
+    vars:
+      name: validated
+
+  - name: Render template into destination directory for core parity
+    template:
+      src: ` + basicTemplate + `
+      dest: ` + destDir + `
+    vars:
+      name: directory
+`
+		first := runPlaybook(t, parityPlaybook)
+		if strings.Contains(first, "FAILED") || !strings.Contains(first, "CHANGED") {
+			t.Fatalf("first template parity run failed: %s", first)
+		}
+		second := runPlaybook(t, parityPlaybook)
+		if strings.Contains(second, "FAILED") || strings.Contains(second, "CHANGED") {
+			t.Fatalf("second template parity run was not idempotent: %s", second)
+		}
+		if got := remoteFileContent(t, client, basicDest); got != "Hello parity" {
+			t.Fatalf("basic rendered content = %q", got)
+		}
+		if got := remoteFileContent(t, client, customDest); got != "Before exact After" {
+			t.Fatalf("custom delimiter content = %q", got)
+		}
+		if got := remoteFileMode(t, client, basicDest); got != "640" {
+			t.Fatalf("basic template mode = %s", got)
+		}
+		if got := remoteFileOwner(t, client, basicDest); got != "nobody" {
+			t.Fatalf("basic template owner = %s", got)
+		}
+		if got := remoteFileGroup(t, client, basicDest); got != "nogroup" {
+			t.Fatalf("basic template group = %s", got)
+		}
+		if got := remoteFileContent(t, client, destDir+"/basic.j2"); got != "Hello directory" {
+			t.Fatalf("directory destination content = %q", got)
+		}
+
+		result := runCoreParityModule(t, client, "template", map[string]any{
+			"src":     basicTemplate,
+			"dest":    basicDest,
+			"content": "Hello parity",
+			"mode":    "0640",
+			"owner":   "nobody",
+			"group":   "nogroup",
+			"force":   true,
+		})
+		assertCoreParitySuccess(t, result)
+		if coreParityBool(t, result, "changed") ||
+			coreParityString(t, result, "checksum") == "" ||
+			coreParityString(t, result, "dest") != basicDest ||
+			coreParityString(t, result, "src") != basicTemplate ||
+			coreParityString(t, result, "mode") != "0640" ||
+			coreParityString(t, result, "owner") != "nobody" ||
+			coreParityString(t, result, "group") != "nogroup" ||
+			coreParityInt(t, result, "size") != len("Hello parity") {
+			t.Fatalf("template result fields = %#v", result)
+		}
+
+		failure := runPlaybook(t, playbookHeader+`
+  - name: Reject invalid rendered template for core parity
+    template:
+      src: `+basicTemplate+`
+      dest: `+invalidDest+`
+      validate: "/bin/false %s"
+    vars:
+      name: rejected
+`)
+		if !strings.Contains(failure, "FAILED") || remoteFileExists(t, client, invalidDest) {
+			t.Fatalf("template validation failure did not preserve destination: %s", failure)
+		}
+	})
+
 	t.Run("BasicRender", func(t *testing.T) {
 		output := runPlaybook(t, playbookBasic)
 		if strings.Contains(output, "FAILED") {

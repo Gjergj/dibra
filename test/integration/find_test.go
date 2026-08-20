@@ -728,25 +728,15 @@ func TestPlaybook_Find(t *testing.T) {
 
 	// template variable test - uses runPlaybook (tests controller)
 	t.Run("template variable in path", func(t *testing.T) {
-		playbook := `
-hosts:
-  - name: testhost
-    host: localhost
-    port: 2222
-    user: root
-    password: rootpass
-    become: true
-
-vars:
-  find_dir: ` + testDir + `/a
-
-tasks:
+		playbook := playbookHeader + `
   - name: Find using variable path
     find:
       paths:
         - "{{ find_dir }}"
       patterns:
         - "*.txt"
+    vars:
+      find_dir: ` + testDir + `/a
 `
 		output := runPlaybook(t, playbook)
 		if strings.Contains(output, "FAILED") {
@@ -914,15 +904,7 @@ tasks:
 		remoteExec(t, client, "touch "+permDir+"/unreadable/file.txt")
 		remoteExec(t, client, "chmod 000 "+permDir+"/unreadable")
 
-		playbook := `
-hosts:
-  - name: testhost
-    host: localhost
-    port: 2222
-    user: testuser
-    password: testpass
-
-tasks:
+		playbook := testUserPlaybookHeader(false) + `
   - name: Find with permission issue
     find:
       paths:

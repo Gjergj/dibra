@@ -345,17 +345,75 @@ func MakeTargetContent(makefile, target string) string {
 		return ""
 	}
 	variablePattern := regexp.MustCompile(`\$\(([^)]+)\)`)
-	for _, match := range variablePattern.FindAllStringSubmatch(content.String(), -1) {
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, match[1]+" :=") || strings.HasPrefix(trimmed, match[1]+" =") {
-				content.WriteString(line)
-				content.WriteByte('\n')
+	includedVariables := make(map[string]bool)
+	for {
+		added := false
+		for _, match := range variablePattern.FindAllStringSubmatch(content.String(), -1) {
+			name := match[1]
+			if includedVariables[name] {
+				continue
+			}
+			includedVariables[name] = true
+			for _, line := range lines {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, name+" :=") || strings.HasPrefix(trimmed, name+" =") {
+					content.WriteString(line)
+					content.WriteByte('\n')
+					added = true
+					break
+				}
+			}
+		}
+		if !added {
+			break
+		}
+	}
+	return content.String()
+}
+
+func certificationLaneContainsTest(content, topLevel string) bool {
+	assignments := make(map[string]string)
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		for _, separator := range []string{" := ", " = "} {
+			name, value, found := strings.Cut(trimmed, separator)
+			if found && name != "" {
+				assignments[name] = value
 				break
 			}
 		}
 	}
-	return content.String()
+	variablePattern := regexp.MustCompile(`\$\(([^)]+)\)`)
+	expanded := content
+	for range 20 {
+		next := variablePattern.ReplaceAllStringFunc(expanded, func(reference string) string {
+			match := variablePattern.FindStringSubmatch(reference)
+			if value, ok := assignments[match[1]]; ok {
+				return value
+			}
+			return reference
+		})
+		if next == expanded {
+			break
+		}
+		expanded = next
+	}
+	if strings.Contains(expanded, topLevel) {
+		return true
+	}
+	for _, runPattern := range []*regexp.Regexp{
+		regexp.MustCompile(`-run\s+'([^']+)'`),
+		regexp.MustCompile(`-run\s+"([^"]+)"`),
+	} {
+		for _, match := range runPattern.FindAllStringSubmatch(expanded, -1) {
+			pattern := strings.ReplaceAll(match[1], "$$", "$")
+			compiled, err := regexp.Compile(pattern)
+			if err == nil && compiled.MatchString(topLevel) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func ValidateCertificationLanes(root, label string, lanes, dibraCases []string) []string {
@@ -387,7 +445,7 @@ func ValidateCertificationLanes(root, label string, lanes, dibraCases []string) 
 		topLevel, _, _ := strings.Cut(selector, "/")
 		foundInLane := false
 		for _, content := range laneContents {
-			if strings.Contains(content, topLevel) {
+			if certificationLaneContainsTest(content, topLevel) {
 				foundInLane = true
 				break
 			}

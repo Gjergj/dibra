@@ -23,39 +23,48 @@ func getProjectRoot() string {
 }
 
 const (
-	testHost                 = "127.0.0.1"
-	testPort                 = 2222
-	testUser                 = "root"
-	testPassword             = "rootpass"
 	testDockerEngineVersion  = "29.7.2"
 	testDockerComposeVersion = docker.SupportedComposeVersion
 	testDockerBuildxVersion  = "0.30.0"
 )
 
+var (
+	integrationTestConfig = defaultIntegrationConfig()
+	playbookHeader        = integrationTestConfig.playbookHeader()
+)
+
 func TestMain(m *testing.M) {
+	config, err := loadIntegrationConfig(os.Getenv)
+	if err != nil {
+		println("Invalid integration configuration:", err.Error())
+		os.Exit(1)
+	}
+	integrationTestConfig = config
+	playbookHeader = config.playbookHeader()
+
 	if err := waitForSSH(30 * time.Second); err != nil {
 		println("SSH not available:", err.Error())
 		os.Exit(1)
 	}
-	if err := requireDockerEngineVersion(); err != nil {
-		println("Docker Engine baseline unavailable:", err.Error())
-		os.Exit(1)
-	}
-	if err := requireDockerComposeVersion(); err != nil {
-		println("Docker Compose baseline unavailable:", err.Error())
-		os.Exit(1)
-	}
-	if err := requireDockerBuildxVersion(); err != nil {
-		println("Docker buildx baseline unavailable:", err.Error())
-		os.Exit(1)
+	if config.Profile.requiresDockerBaselines() {
+		if err := requireDockerEngineVersion(); err != nil {
+			println("Docker Engine baseline unavailable:", err.Error())
+			os.Exit(1)
+		}
+		if err := requireDockerComposeVersion(); err != nil {
+			println("Docker Compose baseline unavailable:", err.Error())
+			os.Exit(1)
+		}
+		if err := requireDockerBuildxVersion(); err != nil {
+			println("Docker buildx baseline unavailable:", err.Error())
+			os.Exit(1)
+		}
 	}
 	os.Exit(m.Run())
 }
 
 func requireDockerEngineVersion() error {
-	client, err := ssh.Connect(ssh.Config{
-		Host: testHost, Port: testPort, User: testUser, Password: testPassword,
-	})
+	client, err := ssh.Connect(integrationSSHConfig())
 	if err != nil {
 		return err
 	}
@@ -71,9 +80,7 @@ func requireDockerEngineVersion() error {
 }
 
 func requireDockerComposeVersion() error {
-	client, err := ssh.Connect(ssh.Config{
-		Host: testHost, Port: testPort, User: testUser, Password: testPassword,
-	})
+	client, err := ssh.Connect(integrationSSHConfig())
 	if err != nil {
 		return err
 	}
@@ -95,9 +102,7 @@ func requireDockerComposeVersion() error {
 }
 
 func requireDockerBuildxVersion() error {
-	client, err := ssh.Connect(ssh.Config{
-		Host: testHost, Port: testPort, User: testUser, Password: testPassword,
-	})
+	client, err := ssh.Connect(integrationSSHConfig())
 	if err != nil {
 		return err
 	}
@@ -121,12 +126,7 @@ func waitForSSH(timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for time.Now().Before(deadline) {
-		client, err := ssh.Connect(ssh.Config{
-			Host:     testHost,
-			Port:     testPort,
-			User:     testUser,
-			Password: testPassword,
-		})
+		client, err := ssh.Connect(integrationSSHConfig())
 		if err == nil {
 			client.Close()
 			return nil
@@ -141,12 +141,7 @@ func waitForSSH(timeout time.Duration) error {
 }
 
 func getClient(t *testing.T) *ssh.Client {
-	client, err := ssh.Connect(ssh.Config{
-		Host:     testHost,
-		Port:     testPort,
-		User:     testUser,
-		Password: testPassword,
-	})
+	client, err := ssh.Connect(integrationSSHConfig())
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
@@ -236,14 +231,19 @@ func remoteIsFile(t *testing.T, client *ssh.Client, path string) bool {
 	return err == nil
 }
 
-const playbookHeader = `
-hosts:
-  - name: testhost
-    host: localhost
-    port: 2222
-    user: root
-    password: rootpass
-    become: true
+func integrationSSHConfig() ssh.Config {
+	return ssh.Config{
+		Host:     integrationTestConfig.Host,
+		Port:     integrationTestConfig.Port,
+		User:     integrationTestConfig.User,
+		Password: integrationTestConfig.Password,
+	}
+}
 
-tasks:
-`
+func testUserPlaybookHeader(become bool) string {
+	becomePassword := ""
+	if become {
+		becomePassword = "testpass"
+	}
+	return integrationTestConfig.playbookHeaderFor("testuser", "testpass", become, becomePassword)
+}

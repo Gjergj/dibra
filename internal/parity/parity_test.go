@@ -100,6 +100,26 @@ func TestValidatePassedCertificationAcceptsRealSelectorsAndLane(t *testing.T) {
 	}
 }
 
+func TestValidateCertificationLanesAcceptsNestedFamilyRegex(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFixture(t, root, "Makefile", `CORE_PATTERN := TestCoreCase.*
+CORE_RUN := ^($(CORE_PATTERN))
+test-core-family:
+	go test -run '$(CORE_RUN)$$'
+`)
+	problems := ValidateCertificationLanes(
+		root,
+		"feature example",
+		[]string{"test-core-family"},
+		[]string{"test/integration/core_test.go::TestCoreCaseParity"},
+	)
+	if len(problems) != 0 {
+		t.Fatalf("problems = %#v", problems)
+	}
+}
+
 func TestPythonRawStringSupportsRawAndPlainTripleQuotes(t *testing.T) {
 	t.Parallel()
 

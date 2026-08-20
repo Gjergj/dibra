@@ -39,6 +39,7 @@ type taskOutcome struct {
 
 type Config struct {
 	Endpoint         string
+	Token            string
 	PollInterval     time.Duration
 	StateDir         string
 	HTTPClient       *http.Client
@@ -138,6 +139,7 @@ func (d *Daemon) PollOnce(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("create task request: %w", err)
 	}
+	setBearerToken(request, d.config.Token)
 	response, err := d.config.HTTPClient.Do(request)
 	if err != nil {
 		return false, fmt.Errorf("fetch tasks: %w", err)
@@ -223,6 +225,7 @@ func (d *Daemon) reportTaskOutcome(ctx context.Context, taskID string, rebooted 
 		return fmt.Errorf("create outcome request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
+	setBearerToken(request, d.config.Token)
 	response, err := d.config.HTTPClient.Do(request)
 	if err != nil {
 		return fmt.Errorf("send outcome: %w", err)
@@ -234,6 +237,12 @@ func (d *Daemon) reportTaskOutcome(ctx context.Context, taskID string, rebooted 
 	}
 	fmt.Fprintf(d.config.Stdout, "dibra-deploy: reported task %s outcome: %s\n", taskID, status)
 	return nil
+}
+
+func setBearerToken(request *http.Request, token string) {
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
 }
 
 func deriveOutcomeEndpoint(taskEndpoint string) (string, error) {

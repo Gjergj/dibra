@@ -79,8 +79,10 @@ func (p *MetaParams) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind != yaml.ScalarNode || node.Tag == "!!null" {
 		return fmt.Errorf("meta must be a scalar action")
 	}
-	if node.Value != "flush_handlers" {
-		return fmt.Errorf("unsupported meta action %q (only flush_handlers is supported)", node.Value)
+	switch node.Value {
+	case "flush_handlers", "noop", "end_host", "end_play":
+	default:
+		return fmt.Errorf("unsupported meta action %q (supported: flush_handlers, noop, end_host, end_play)", node.Value)
 	}
 	p.Action = node.Value
 	return nil
@@ -195,6 +197,12 @@ type Task struct {
 	Listen         StringList             `json:"listen,omitempty" yaml:"listen,omitempty"`
 	ChangedWhen    When                   `json:"changed_when,omitempty" yaml:"changed_when,omitempty"`
 	Meta           *MetaParams            `json:"meta,omitempty" yaml:"meta,omitempty"`
+	Debug          *DebugParams           `json:"debug,omitempty" yaml:"debug,omitempty"`
+	Fail           *FailParams            `json:"fail,omitempty" yaml:"fail,omitempty"`
+	Assert         *AssertParams          `json:"assert,omitempty" yaml:"assert,omitempty"`
+	SetFact        *SetFactParams         `json:"set_fact,omitempty" yaml:"set_fact,omitempty"`
+	IncludeVars    *IncludeVarsParams     `json:"include_vars,omitempty" yaml:"include_vars,omitempty"`
+	Pause          *PauseParams           `json:"pause,omitempty" yaml:"pause,omitempty"`
 	Template       *TemplateParams        `json:"template,omitempty" yaml:"template,omitempty"`
 	Apt            *AptParams             `json:"apt,omitempty" yaml:"apt,omitempty"`
 	AptKey         *AptKeyParams          `json:"apt_key,omitempty" yaml:"apt_key,omitempty"`
@@ -815,6 +823,30 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 				case "reboot":
 					if t.Reboot == nil {
 						t.Reboot = &RebootParams{}
+					}
+				case "debug":
+					if t.Debug == nil {
+						t.Debug = &DebugParams{}
+					}
+				case "fail":
+					if t.Fail == nil {
+						t.Fail = &FailParams{}
+					}
+				case "assert":
+					if t.Assert == nil {
+						t.Assert = &AssertParams{}
+					}
+				case "set_fact":
+					if t.SetFact == nil {
+						t.SetFact = &SetFactParams{Facts: map[string]interface{}{}}
+					}
+				case "include_vars":
+					if t.IncludeVars == nil {
+						t.IncludeVars = &IncludeVarsParams{}
+					}
+				case "pause":
+					if t.Pause == nil {
+						t.Pause = &PauseParams{}
 					}
 				}
 			}

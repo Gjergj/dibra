@@ -24,6 +24,7 @@ func NewRootCommand() *cobra.Command {
 	var agentBuild bool
 	var forceAgentUpload bool
 	var endpoint string
+	var token string
 	var verbose bool
 
 	command := &cobra.Command{
@@ -51,6 +52,7 @@ func NewRootCommand() *cobra.Command {
 			}
 			daemon, err := deploy.New(deploy.Config{
 				Endpoint:         endpoint,
+				Token:            token,
 				AgentMode:        mode,
 				AgentPath:        agentPath,
 				Version:          version.Version,
@@ -67,10 +69,18 @@ func NewRootCommand() *cobra.Command {
 	command.Flags().StringVar(&agentPath, "agent-path", "", "Path to a pre-built agent binary")
 	command.Flags().BoolVar(&agentBuild, "agent-build", false, "Build the agent from source (requires Go)")
 	command.Flags().BoolVar(&forceAgentUpload, "force-agent-upload", false, "Force replacement of the local runtime agent")
-	command.Flags().StringVar(&endpoint, "endpoint", deploy.DefaultEndpoint, "Task server endpoint")
+	command.Flags().StringVar(&endpoint, "endpoint", envOrDefault("DIBRA_DEPLOY_ENDPOINT", deploy.DefaultEndpoint), "Task server endpoint")
+	token = os.Getenv("DIBRA_DEPLOY_TOKEN")
 	command.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose task output")
 	command.AddCommand(newCompletionCommand(command))
 	return command
+}
+
+func envOrDefault(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func newCompletionCommand(root *cobra.Command) *cobra.Command {

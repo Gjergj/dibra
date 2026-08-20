@@ -72,7 +72,7 @@ handlers:
 		"unsupported meta": `
 tasks:
   - name: unsupported meta
-    meta: end_play
+    meta: reset_connection
 `,
 	}
 	for name, data := range tests {
