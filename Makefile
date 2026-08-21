@@ -196,6 +196,7 @@ test-platform-alpine-nonsystemd-smoke-only:
 	$(ALPINE_NONSYSTEMD_INTEGRATION_ENV) go test -tags=integration -count=1 -v -timeout 20m ./test/integration -run '$(PLATFORM_SMOKE_INTEGRATION_RUN)$$'
 
 # Run dibra-deploy in Linux against an API on the Docker host.
+# Set DIBRA_DEPLOY_TOKEN in the environment or in the ignored .env.deploy file.
 # make run-deploy-docker-host \
 #   DEPLOY_ENDPOINT=http://host.docker.internal:9000/gettasks
 run-deploy-docker-host:

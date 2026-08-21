@@ -36,6 +36,21 @@ sudo ./dibra-deploy \
 Set `DIBRA_DEPLOY_TOKEN` to the project JWT and, alternatively,
 `DIBRA_DEPLOY_ENDPOINT` to configure the endpoint without a command-line flag.
 
+The repository's Docker-host development target accepts the project token from
+the shell environment:
+
+```bash
+export DIBRA_DEPLOY_TOKEN='PROJECT_JWT'
+make run-deploy-docker-host
+unset DIBRA_DEPLOY_TOKEN
+```
+
+Alternatively, copy `.env.deploy.example` to the Git-ignored `.env.deploy` file
+in the repository root and set `DIBRA_DEPLOY_TOKEN` there. The development
+script forwards the token only to the `dibra-deploy` process inside the test
+container. `DEPLOY_ENDPOINT` defaults to
+`http://host.docker.internal:8080/gettasks` and may be set in the same file.
+
 The repository test host publishes its port 80 as
 `http://localhost:9090`, which allows HTTP-server deployment jobs to be checked
 from the Docker host.

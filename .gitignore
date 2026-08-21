@@ -23,5 +23,6 @@ dist/
 Thumbs.db
 
 # Local config (if any)
+.env.deploy
 *.local.yaml
 samples/yaml/playbook.yaml

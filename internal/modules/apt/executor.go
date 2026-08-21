@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -12,6 +13,10 @@ import (
 const (
 	aptGetCmd    = "/usr/bin/apt-get"
 	dpkgQueryCmd = "/usr/bin/dpkg-query"
+
+	aptListsPath              = "/var/lib/apt/lists"
+	aptUpdateSuccessStampPath = "/var/lib/apt/periodic/update-success-stamp"
+	aptPkgCachePath           = "/var/cache/apt/pkgcache.bin"
 )
 
 var envVars = []string{
@@ -58,15 +63,8 @@ func Execute(req Request) Response {
 }
 
 func updateCache(cacheValidTime int) Response {
-	if cacheValidTime > 0 {
-		listDir := "/var/lib/apt/lists"
-		info, err := os.Stat(listDir)
-		if err == nil {
-			age := time.Since(info.ModTime())
-			if age.Seconds() < float64(cacheValidTime) {
-				return Response{Changed: false, Msg: "cache is still valid"}
-			}
-		}
+	if cacheValidTime > 0 && aptCacheIsFresh(cacheValidTime) {
+		return Response{Changed: false, Msg: "cache is still valid"}
 	}
 
 	rc, stdout, stderr := runAptGet("update")
@@ -79,8 +77,74 @@ func updateCache(cacheValidTime int) Response {
 			Msg:    "failed to update cache",
 		}
 	}
+	_ = touchFile(aptUpdateSuccessStampPath)
 
 	return Response{Changed: true, RC: rc, Stdout: stdout, Stderr: stderr}
+}
+
+func touchFile(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	now := time.Now()
+	return os.Chtimes(path, now, now)
+}
+
+func aptCacheIsFresh(validSeconds int) bool {
+	mtime, ok := newestAptCacheMtime(aptUpdateSuccessStampPath, aptPkgCachePath, aptListsPath)
+	if !ok {
+		return false
+	}
+	return time.Since(mtime) < time.Duration(validSeconds)*time.Second
+}
+
+func newestAptCacheMtime(stampPath, pkgCachePath, listsDir string) (time.Time, bool) {
+	var newest time.Time
+	found := false
+	consider := func(info os.FileInfo) {
+		if info == nil {
+			return
+		}
+		if !found || info.ModTime().After(newest) {
+			newest = info.ModTime()
+			found = true
+		}
+	}
+
+	for _, path := range []string{stampPath, pkgCachePath, listsDir} {
+		if path == "" {
+			continue
+		}
+		info, err := os.Stat(path)
+		if err == nil {
+			consider(info)
+		}
+	}
+	if listsDir == "" {
+		return newest, found
+	}
+	entries, err := os.ReadDir(listsDir)
+	if err != nil {
+		return newest, found
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Name() == "lock" {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		consider(info)
+	}
+	return newest, found
 }
 
 func handlePackages(req Request) Response {

@@ -985,9 +985,9 @@ func TestWorkflow_WebServerSetup(t *testing.T) {
 
 	// Idempotency check
 	output = runPlaybook(t, playbook)
-	changedCount := strings.Count(output, "CHANGED")
+	changedCount := strings.Count(output, "✓ CHANGED")
 	if changedCount > 0 {
-		t.Errorf("Expected idempotent run, got %d changes", changedCount)
+		t.Errorf("Expected idempotent run, got %d changes:\n%s", changedCount, output)
 	}
 
 	// Cleanup (keep nginx installed for future test runs)

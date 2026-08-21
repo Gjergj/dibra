@@ -85,7 +85,7 @@ func installHarness() error {
 	}
 	defer client.Close()
 	_, _ = runRemote(client, "systemctl stop dibra-deploy.service dibra-task-server-it.service >/dev/null 2>&1 || true; pkill -f '^/usr/local/bin/dibra-task-server-it' >/dev/null 2>&1 || true")
-	if _, err := runRemote(client, "mkdir -p /usr/local/bin /etc/systemd/system/dibra-deploy.service.d "+remoteQueue); err != nil {
+	if _, err := runRemote(client, "mkdir -p /usr/local/bin /etc/dibra-deploy /etc/systemd/system/dibra-deploy.service.d "+remoteQueue); err != nil {
 		return err
 	}
 
@@ -122,11 +122,13 @@ func installHarness() error {
 		"integration.conf":             "[Service]\nExecStart=\nExecStart=/usr/local/bin/dibra-deploy --agent-path /usr/local/bin/dibra-agent --verbose\n",
 		"dibra-task-server-it.service": "[Unit]\nDescription=Dibra deploy integration task server\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=/usr/local/bin/dibra-task-server-it --queue-dir " + remoteQueue + " --log-file " + requestLog + "\nRestart=on-failure\n\n[Install]\nWantedBy=multi-user.target\n",
 		"dibra-fake-reboot":            "#!/bin/sh\nprintf fake-reboot > " + remoteRoot + "/fake-reboot.txt\n",
+		"environment":                  "DIBRA_DEPLOY_TOKEN=\nDIBRA_DEPLOY_ENDPOINT=http://localhost:8080/gettasks\n",
 	}
 	remoteGenerated := map[string]string{
 		"integration.conf":             "/etc/systemd/system/dibra-deploy.service.d/integration.conf",
 		"dibra-task-server-it.service": "/etc/systemd/system/dibra-task-server-it.service",
 		"dibra-fake-reboot":            "/usr/local/bin/dibra-fake-reboot",
+		"environment":                  "/etc/dibra-deploy/environment",
 	}
 	for name, contents := range generatedFiles {
 		localPath := filepath.Join(buildDir, name)
@@ -141,7 +143,7 @@ func installHarness() error {
 	if err := client.UploadFile(servicePath, "/etc/systemd/system/dibra-deploy.service"); err != nil {
 		return fmt.Errorf("upload sample service: %w", err)
 	}
-	if _, err := runRemote(client, "chmod 0755 /usr/local/bin/dibra-deploy /usr/local/bin/dibra-agent /usr/local/bin/dibra-task-server-it /usr/local/bin/dibra-fake-reboot && chmod 0644 /etc/systemd/system/dibra-deploy.service /etc/systemd/system/dibra-deploy.service.d/integration.conf /etc/systemd/system/dibra-task-server-it.service && systemctl daemon-reload && systemctl enable dibra-deploy.service >/dev/null && systemctl start dibra-task-server-it.service"); err != nil {
+	if _, err := runRemote(client, "chmod 0755 /usr/local/bin/dibra-deploy /usr/local/bin/dibra-agent /usr/local/bin/dibra-task-server-it /usr/local/bin/dibra-fake-reboot && chmod 0644 /etc/systemd/system/dibra-deploy.service /etc/systemd/system/dibra-deploy.service.d/integration.conf /etc/systemd/system/dibra-task-server-it.service && chmod 0700 /etc/dibra-deploy && chmod 0600 /etc/dibra-deploy/environment && systemctl daemon-reload && systemctl enable dibra-deploy.service >/dev/null && systemctl start dibra-task-server-it.service"); err != nil {
 		return err
 	}
 	deadline := time.Now().Add(15 * time.Second)
@@ -164,7 +166,7 @@ func uninstallHarness() error {
 		"systemctl disable dibra-deploy.service >/dev/null 2>&1 || true; " +
 		"rm -f /etc/systemd/system/dibra-deploy.service /etc/systemd/system/dibra-task-server-it.service /etc/systemd/system/dibra-deploy.service.d/integration.conf; " +
 		"rm -f /usr/local/bin/dibra-deploy /usr/local/bin/dibra-agent /usr/local/bin/dibra-task-server-it /usr/local/bin/dibra-fake-reboot; " +
-		"rm -rf /etc/systemd/system/dibra-deploy.service.d " + remoteRoot + " /var/lib/dibra-deploy; " +
+		"rm -rf /etc/systemd/system/dibra-deploy.service.d /etc/dibra-deploy " + remoteRoot + " /var/lib/dibra-deploy; " +
 		"systemctl daemon-reload"
 	_, err = runRemote(client, command)
 	return err

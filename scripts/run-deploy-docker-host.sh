@@ -7,6 +7,14 @@ set -Eeuo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPOSITORY_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd)
 COMPOSE_FILE="$REPOSITORY_ROOT/test/docker-compose.yaml"
+DIBRA_DEPLOY_ENV_FILE=${DIBRA_DEPLOY_ENV_FILE:-"$REPOSITORY_ROOT/.env.deploy"}
+if [[ -z "${DIBRA_DEPLOY_TOKEN:-}" && -f "$DIBRA_DEPLOY_ENV_FILE" ]]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "$DIBRA_DEPLOY_ENV_FILE"
+    set +a
+fi
+DIBRA_DEPLOY_TOKEN=${DIBRA_DEPLOY_TOKEN:-}
 DEPLOY_ENDPOINT=${DEPLOY_ENDPOINT:-http://host.docker.internal:8080/gettasks}
 DIBRA_VERSION=${DIBRA_VERSION:-dev}
 DIBRA_COMMIT=${DIBRA_COMMIT:-}
@@ -101,6 +109,10 @@ build_linux_binary() {
 main() {
     local go_arch
 
+    [[ -n "$DIBRA_DEPLOY_TOKEN" ]] || error \
+        "DIBRA_DEPLOY_TOKEN is required; export it or set it in $DIBRA_DEPLOY_ENV_FILE"
+    [[ "$DIBRA_DEPLOY_TOKEN" != *[[:space:]]* ]] || error \
+        "DIBRA_DEPLOY_TOKEN must not contain whitespace"
     require_command docker
     require_command go
     require_command git
@@ -128,7 +140,8 @@ main() {
 
     info "polling $DEPLOY_ENDPOINT; press Ctrl-C to stop dibra-deploy"
     info "the container will remain running for inspection"
-    compose exec testhost /usr/local/bin/dibra-deploy \
+    compose exec -e DIBRA_DEPLOY_TOKEN="$DIBRA_DEPLOY_TOKEN" testhost \
+        /usr/local/bin/dibra-deploy \
         --agent-path /usr/local/bin/dibra-agent \
         --endpoint "$DEPLOY_ENDPOINT" \
         --force-agent-upload \
