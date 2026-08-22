@@ -5070,15 +5070,64 @@ handlers:
       state: reloaded
 ```
 
+A typical web-server layout keeps start/enable as tasks and restart/reload as handlers:
+
+```yaml
+tasks:
+  - name: Install nginx
+    apt:
+      name: nginx
+      state: present
+
+  - name: Start and enable nginx
+    systemd_service:
+      name: nginx
+      state: started
+      enabled: true
+
+  - name: Deploy nginx configuration
+    template:
+      src: nginx.conf.j2
+      dest: /etc/nginx/nginx.conf
+    notify:
+      - Validate nginx config
+      - Reload nginx
+
+  - name: Apply config before health checks
+    meta: flush_handlers
+
+  - name: Verify nginx is serving
+    uri:
+      url: http://127.0.0.1/
+      status_code:
+        - 200
+
+handlers:
+  - name: Validate nginx config
+    command:
+      cmd: nginx -t
+    changed_when: false
+
+  - name: Reload nginx
+    systemd_service:
+      name: nginx
+      state: reloaded
+```
+
 Handler behavior:
 
 - Notifications are queued only when the task's effective result is changed.
-  `changed_when` overrides the module's `changed` value. For a loop, any
-  changed iteration queues the task's notifications.
+  `changed_when` overrides the module's `changed` value. Notify names are
+  case-sensitive. For a loop, if **any** iteration is changed, **every**
+  loop item's notify targets are queued, not only the changed items.
 - A handler runs once per flush cycle even when notified repeatedly. Handlers
-  run in definition order, not notification order.
+  run in definition order, not notification order. A changed handler may
+  `notify` another handler; that target runs in the same flush if it has not
+  already run.
 - `listen` accepts one or more non-templated topics. A topic runs every
   listening handler. Duplicate handler names use the last definition.
+  Handlers may also use `when`; a false condition skips that handler without
+  failing the flush.
 - Pending handlers run automatically after normal tasks. `meta:
   flush_handlers` runs them immediately; a later change can notify them again.
   `meta: end_host` and `meta: end_play` skip remaining tasks and do **not**
@@ -5091,8 +5140,12 @@ Handler behavior:
   `force_handlers: true` or pass `--force-handlers` to run already-notified
   handlers after a failure.
 - Handlers may run controller primitives (`debug`, `fail`, `assert`,
-  `set_fact`, `include_vars`, `pause`, `meta: noop`). Other `meta` actions
-  cannot be used from a handler.
+  `set_fact`, `include_vars`, `pause`, `meta: noop`). `meta: flush_handlers`
+  cannot be used as a handler; other `meta` actions from a handler fail with
+  `meta actions cannot be used from a handler`.
+- Keep `state: started` / `enabled: true` as regular tasks so a later run
+  still heals a crashed service. Use handlers for `restarted` / `reloaded`
+  after a package or config change.
 - Static `import_tasks` entries under `handlers` expand into individually
   notifiable handlers. A named dynamic `include_tasks` handler loads and runs
   its tasks when notified.
@@ -5680,7 +5733,8 @@ DO NOT ADD EACH INTEGRATION TEST HERE, JUST THE MAIN LEVEL
 | `TestPlaybook_DockerVolumePrune` | Prune filter improvements (Phase 7.2) |
 | `TestPlaybook_Find` | Find module: recursive/non-recursive search, glob/regex patterns, excludes, file_type (file/directory/link/any), age/size filters, hidden files, symlinks, depth limit, mode filtering, checksum algorithms, contains content matching, multiple paths, limit, path/pattern/exclude aliases, template variables, idempotency |
 | `TestPlaybook_Register` | Register keyword: basic shell register, register on failure, overwrite, command module, ping module-specific fields, stdout_lines access, chained registers, file/copy/tempfile module fields, multiple modules, idempotency tracking, template expressions with registered vars, include_tasks/import_tasks boundary, invalid variable names (numeric, hyphen, space), underscore prefix, no side effects without register, rerun idempotency |
-| `TestPlaybook_Handlers` | Handlers: changed notifications, changed_when, loops, deduplication, definition order, listen topics, duplicate names, explicit/automatic flushing, re-notification, variables, handler imports/includes, failure skipping, force_handlers, and idempotent reruns |
+| `TestPlaybook_Handlers` | Handlers: changed notifications, changed_when, loops (any change notifies every templated handler), deduplication, definition order, listen topics, duplicate names, explicit/automatic flushing, re-notification, variables, handler imports/includes, handler-to-handler notify, handler `when`, case-sensitive names, failure skipping, play-level and CLI `force_handlers`, illegal `meta: flush_handlers` handlers, and idempotent reruns |
+| `TestPlaybook_HandlersNotifyServiceRestarts` | Article samples: nginx template restart, multi-file reload-once, definition-order validate/reload/verify, `listen` fan-out, `flush_handlers` before a health check, start-as-task/restart-as-handler, Apache-style index+lineinfile reload, and looped configs with one service restart |
 | `TestPlaybook_TemplateModule` | Template module: basic render, dest directory, custom delimiters, trim blocks, idempotency, force flag, validation, newline sequences, register, nested includes, builtin filters (default/upper/lower/replace/join/length/title/trim/tojson/int/float), custom Ansible filters (split, regex_replace/search/findall, basename/dirname, to_yaml/from_json/to_nice_json, quote, ternary, b64encode/b64decode, hash, comment, combine, dict2items/items2dict, flatten, type_debug, splitext), filter chaining, for-loops (loop variables, dict iteration, conditional filtering), complex conditionals (if/elif/else, and/or/not, in, is defined/is not defined), set statements, macros, raw blocks, whitespace control, magic variables (dibra_managed, template_host, template_destpath), complex nested data structures, template inheritance (extends/block) |
 | `TestPlaybook_Inventory` | External YAML inventory: basic inventory loading, idempotency, host output, groups with vars, children group hierarchy, implicit all group, ungrouped hosts, group_vars/host_vars files relative to inventory, deep hierarchy (4 levels), multi-parent groups, host vars override group vars, magic variables (inventory_hostname, group_names), playbook inventory reference, error on both hosts and inventory, play vars + inventory, extra vars + inventory, task vars + inventory, inventory not found error, register with inventory, import_tasks with inventory, SSH key path, port as string coercion, become as string coercion, groups in context |
 

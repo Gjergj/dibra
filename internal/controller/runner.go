@@ -498,115 +498,133 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 		hostEnded := false
 
 		var flushHandlers = func() bool {
-			if len(pendingHandlers) == 0 {
-				return false
-			}
-			scheduled := pendingHandlers
-			pendingHandlers = make(map[int]struct{})
-			for definitionIndex, definition := range handlerDefinitions.definitions {
-				if _, ok := scheduled[definitionIndex]; !ok {
-					continue
-				}
-				printf("  Handler: %s\n", definition.name)
-				handlerQueue := []config.Task{definition.task}
-				for handlerTaskIndex := 0; handlerTaskIndex < len(handlerQueue); handlerTaskIndex++ {
-					handlerTask := handlerQueue[handlerTaskIndex]
-					if handlerTask.Meta != nil && handlerTask.Meta.Action != "noop" {
-						printf("    ✗ meta actions cannot be used from a handler\n")
-						return true
+			ran := map[int]struct{}{}
+			for len(pendingHandlers) > 0 {
+				scheduled := pendingHandlers
+				pendingHandlers = make(map[int]struct{})
+				for definitionIndex, definition := range handlerDefinitions.definitions {
+					if _, ok := scheduled[definitionIndex]; !ok {
+						continue
 					}
-					handlerContext, contextErr := buildTaskContext(handlerTask)
-					if contextErr != nil {
-						printf("    ✗ Failed to resolve handler variables: %v\n", contextErr)
-						return true
+					if _, already := ran[definitionIndex]; already {
+						continue
 					}
-					if handlerTask.Register != "" {
-						if registerErr := validateVarName(handlerTask.Register); registerErr != nil {
-							printf("    ✗ %v\n", registerErr)
+					ran[definitionIndex] = struct{}{}
+					printf("  Handler: %s\n", definition.name)
+					handlerQueue := []config.Task{definition.task}
+					for handlerTaskIndex := 0; handlerTaskIndex < len(handlerQueue); handlerTaskIndex++ {
+						handlerTask := handlerQueue[handlerTaskIndex]
+						if handlerTask.Meta != nil && handlerTask.Meta.Action == "flush_handlers" {
+							printf("    ✗ flush_handlers cannot be used as a handler\n")
 							return true
 						}
-					}
-					loopSpec, loopErr := resolveLoopSpec(handlerTask, handlerContext)
-					if loopErr != nil {
-						printf("    ✗ Failed to resolve handler loop: %v\n", loopErr)
-						return true
-					}
-					if loopSpec != nil {
-						if handlerTask.IncludeTasks != nil {
-							if includeErr := includeTasksForLoop(handlerTask, loopSpec, handlerContext, baseDir, &handlerQueue, handlerTaskIndex, renderImportPath); includeErr != nil {
-								printf("    ✗ handler include_tasks: %v\n", includeErr)
+						if handlerTask.Meta != nil && handlerTask.Meta.Action != "noop" {
+							printf("    ✗ meta actions cannot be used from a handler\n")
+							return true
+						}
+						handlerContext, contextErr := buildTaskContext(handlerTask)
+						if contextErr != nil {
+							printf("    ✗ Failed to resolve handler variables: %v\n", contextErr)
+							return true
+						}
+						if handlerTask.Register != "" {
+							if registerErr := validateVarName(handlerTask.Register); registerErr != nil {
+								printf("    ✗ %v\n", registerErr)
+								return true
+							}
+						}
+						loopSpec, loopErr := resolveLoopSpec(handlerTask, handlerContext)
+						if loopErr != nil {
+							printf("    ✗ Failed to resolve handler loop: %v\n", loopErr)
+							return true
+						}
+						if loopSpec != nil {
+							if handlerTask.IncludeTasks != nil {
+								if includeErr := includeTasksForLoop(handlerTask, loopSpec, handlerContext, baseDir, &handlerQueue, handlerTaskIndex, renderImportPath); includeErr != nil {
+									printf("    ✗ handler include_tasks: %v\n", includeErr)
+									return true
+								}
+								continue
+							}
+							loopResults := []interface{}{}
+							loopChanged := false
+							loopFailed := false
+							loopSkippedAll := len(loopSpec.Items) == 0
+							iterationContexts := make([]map[string]interface{}, 0, len(loopSpec.Items))
+							for itemIndex, item := range loopSpec.Items {
+								loopInfo := buildLoopInfo(loopSpec.Items, itemIndex, loopSpec.Extended)
+								loopVars := buildLoopVars(loopSpec, item, itemIndex, loopInfo)
+								iterationContext := mergeContext(handlerContext, loopVars)
+								iterationContexts = append(iterationContexts, iterationContext)
+								iterationTask := handlerTask
+								iterationTask.Loop = nil
+								iterationTask.WithItems = nil
+								iterationTask.WithList = nil
+								iterationTask.WithDict = nil
+								iterationTask.WithSequence = nil
+								iterationTask.LoopControl = nil
+								iterationTask.Vars = mergeTaskVars(handlerTask.Vars, loopVars)
+								result, hasResult := executeTaskOnce(iterationTask, iterationContext, host, client, agentExecutionPath, baseDir, &handlerQueue, handlerTaskIndex, renderImportPath, opts.Verbose, false, globalExecutionState, hostRuntimeVars[host.Name])
+								if !hasResult {
+									loopFailed = true
+									break
+								}
+								if changedErr := applyChangedWhen(iterationTask, result, iterationContext); changedErr != nil {
+									result["failed"] = true
+									result["msg"] = changedErr.Error()
+								}
+								result = attachLoopResult(result, loopSpec, item, itemIndex, loopInfo)
+								result = normalizeRegisteredResult(result)
+								loopResults = append(loopResults, result)
+								if changed, _ := result["changed"].(bool); changed {
+									loopChanged = true
+								}
+								if failed, _ := result["failed"].(bool); failed {
+									loopFailed = true
+								}
+								if skipped, _ := result["skipped"].(bool); !skipped {
+									loopSkippedAll = false
+								}
+							}
+							if handlerTask.Register != "" {
+								registerResult(hostRuntimeVars, host.Name, handlerTask, map[string]interface{}{
+									"changed": loopChanged, "failed": loopFailed,
+									"skipped": loopSkippedAll, "results": loopResults,
+								})
+							}
+							if loopFailed {
+								return true
+							}
+							if notifyErr := queueNotificationsForChangedLoop(handlerTask, iterationContexts, loopChanged, loopFailed, handlerDefinitions, pendingHandlers, printf); notifyErr != nil {
+								printf("    ✗ %v\n", notifyErr)
 								return true
 							}
 							continue
 						}
-						loopResults := []interface{}{}
-						loopChanged := false
-						loopFailed := false
-						loopSkippedAll := len(loopSpec.Items) == 0
-						for itemIndex, item := range loopSpec.Items {
-							loopInfo := buildLoopInfo(loopSpec.Items, itemIndex, loopSpec.Extended)
-							loopVars := buildLoopVars(loopSpec, item, itemIndex, loopInfo)
-							iterationContext := mergeContext(handlerContext, loopVars)
-							iterationTask := handlerTask
-							iterationTask.Loop = nil
-							iterationTask.WithItems = nil
-							iterationTask.WithList = nil
-							iterationTask.WithDict = nil
-							iterationTask.WithSequence = nil
-							iterationTask.LoopControl = nil
-							iterationTask.Vars = mergeTaskVars(handlerTask.Vars, loopVars)
-							result, hasResult := executeTaskOnce(iterationTask, iterationContext, host, client, agentExecutionPath, baseDir, &handlerQueue, handlerTaskIndex, renderImportPath, opts.Verbose, false, globalExecutionState, hostRuntimeVars[host.Name])
-							if !hasResult {
-								loopFailed = true
-								break
+						result, hasResult := executeTaskOnce(handlerTask, handlerContext, host, client, agentExecutionPath, baseDir, &handlerQueue, handlerTaskIndex, renderImportPath, opts.Verbose, false, globalExecutionState, hostRuntimeVars[host.Name])
+						if !hasResult {
+							if handlerTask.IncludeTasks != nil || handlerTask.ImportTasks != nil {
+								continue
 							}
-							if changedErr := applyChangedWhen(iterationTask, result, iterationContext); changedErr != nil {
-								result["failed"] = true
-								result["msg"] = changedErr.Error()
-							}
-							result = attachLoopResult(result, loopSpec, item, itemIndex, loopInfo)
-							result = normalizeRegisteredResult(result)
-							loopResults = append(loopResults, result)
-							if changed, _ := result["changed"].(bool); changed {
-								loopChanged = true
-							}
-							if failed, _ := result["failed"].(bool); failed {
-								loopFailed = true
-							}
-							if skipped, _ := result["skipped"].(bool); !skipped {
-								loopSkippedAll = false
-							}
-						}
-						if handlerTask.Register != "" {
-							registerResult(hostRuntimeVars, host.Name, handlerTask, map[string]interface{}{
-								"changed": loopChanged, "failed": loopFailed,
-								"skipped": loopSkippedAll, "results": loopResults,
-							})
-						}
-						if loopFailed {
 							return true
 						}
-						continue
-					}
-					result, hasResult := executeTaskOnce(handlerTask, handlerContext, host, client, agentExecutionPath, baseDir, &handlerQueue, handlerTaskIndex, renderImportPath, opts.Verbose, false, globalExecutionState, hostRuntimeVars[host.Name])
-					if !hasResult {
-						if handlerTask.IncludeTasks != nil || handlerTask.ImportTasks != nil {
-							continue
+						if changedErr := applyChangedWhen(handlerTask, result, handlerContext); changedErr != nil {
+							result["failed"] = true
+							result["msg"] = changedErr.Error()
 						}
-						return true
+						applyTaskFacts(hostRuntimeVars, host.Name, handlerTask, result)
+						if handlerTask.Register != "" {
+							registerResult(hostRuntimeVars, host.Name, handlerTask, result)
+						}
+						if failed, _ := result["failed"].(bool); failed {
+							return true
+						}
+						if notifyErr := queueTaskNotifications(handlerTask, result, handlerContext, handlerDefinitions, pendingHandlers, printf); notifyErr != nil {
+							printf("    ✗ %v\n", notifyErr)
+							return true
+						}
+						runResult.CompletedTaskCount++
 					}
-					if changedErr := applyChangedWhen(handlerTask, result, handlerContext); changedErr != nil {
-						result["failed"] = true
-						result["msg"] = changedErr.Error()
-					}
-					applyTaskFacts(hostRuntimeVars, host.Name, handlerTask, result)
-					if handlerTask.Register != "" {
-						registerResult(hostRuntimeVars, host.Name, handlerTask, result)
-					}
-					if failed, _ := result["failed"].(bool); failed {
-						return true
-					}
-					runResult.CompletedTaskCount++
 				}
 			}
 			return false
@@ -808,10 +826,6 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 							result["failed"] = true
 							result["msg"] = changedErr.Error()
 						}
-						if notifyErr := queueTaskNotifications(iterationTask, result, iterationContext, handlerDefinitions, pendingHandlers, printf); notifyErr != nil {
-							result["failed"] = true
-							result["msg"] = notifyErr.Error()
-						}
 						result = attachLoopResult(result, loopSpec, item, idx, loopInfo)
 						result = normalizeRegisteredResult(result)
 						loopResults = append(loopResults, result)
@@ -842,6 +856,21 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 						"skipped": loopSkippedAll,
 						"results": loopResults,
 					})
+				}
+				iterationContexts := make([]map[string]interface{}, 0, len(loopSpec.Items))
+				for idx, item := range loopSpec.Items {
+					loopInfo := buildLoopInfo(loopSpec.Items, idx, loopSpec.Extended)
+					loopVars := buildLoopVars(loopSpec, item, idx, loopInfo)
+					iterationContexts = append(iterationContexts, mergeContext(flattened, loopVars))
+				}
+				if notifyErr := queueNotificationsForChangedLoop(task, iterationContexts, loopChanged, loopFailed, handlerDefinitions, pendingHandlers, printf); notifyErr != nil {
+					printf("    ✗ %v\n", notifyErr)
+					runResult.Failed = true
+					hostFailed = true
+					if opts.Local {
+						break
+					}
+					continue
 				}
 				if loopFailed {
 					printf("  ✗ Host %s failed; stopping remaining tasks\n", host.Name)

@@ -125,3 +125,31 @@ func queueTaskNotifications(
 	}
 	return nil
 }
+
+func queueNotificationsForChangedLoop(
+	task config.Task,
+	iterationContexts []map[string]interface{},
+	loopChanged bool,
+	loopFailed bool,
+	index handlerIndex,
+	pending map[int]struct{},
+	warn func(string, ...interface{}),
+) error {
+	if !loopChanged || loopFailed || len(task.Notify) == 0 {
+		return nil
+	}
+	cleared := task
+	cleared.Loop = nil
+	cleared.WithItems = nil
+	cleared.WithList = nil
+	cleared.WithDict = nil
+	cleared.WithSequence = nil
+	cleared.LoopControl = nil
+	changed := map[string]interface{}{"changed": true, "failed": false}
+	for _, iterationContext := range iterationContexts {
+		if err := queueTaskNotifications(cleared, changed, iterationContext, index, pending, warn); err != nil {
+			return err
+		}
+	}
+	return nil
+}

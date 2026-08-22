@@ -121,3 +121,37 @@ func TestQueueTaskNotificationsRendersAndDeduplicatesTargets(t *testing.T) {
 		t.Fatalf("failed task notified handlers: %#v", pending)
 	}
 }
+
+func TestQueueNotificationsForChangedLoopNotifiesEveryItem(t *testing.T) {
+	index, err := buildHandlerIndex([]config.Task{
+		{Name: "Restart memcached"},
+		{Name: "Restart apache"},
+	}, func(task config.Task) (string, error) {
+		return task.Name, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := config.Task{Notify: config.StringList{"Restart {{ item }}"}}
+	pending := map[int]struct{}{}
+	if err := queueNotificationsForChangedLoop(task, []map[string]interface{}{
+		{"item": "memcached"},
+		{"item": "apache"},
+	}, true, false, index, pending, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 2 {
+		t.Fatalf("pending = %#v, want both loop handlers", pending)
+	}
+
+	pending = map[int]struct{}{}
+	if err := queueNotificationsForChangedLoop(task, []map[string]interface{}{
+		{"item": "memcached"},
+		{"item": "apache"},
+	}, false, false, index, pending, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("unchanged loop notified handlers: %#v", pending)
+	}
+}

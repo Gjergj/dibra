@@ -168,6 +168,122 @@ handlers:
 	}
 }
 
+func TestRunLoopChangeNotifiesEveryTemplatedHandler(t *testing.T) {
+	temporary := t.TempDir()
+	capturedPath := filepath.Join(temporary, "requests.jsonl")
+	agentPath := writeHandlerTestAgent(t, temporary, capturedPath)
+	playbookPath := filepath.Join(temporary, "playbook.yaml")
+	if err := os.WriteFile(playbookPath, []byte(`
+tasks:
+  - name: Template services
+    ping:
+    loop:
+      - memcached
+      - apache
+    changed_when: item == "memcached"
+    notify: Restart {{ item }}
+handlers:
+  - name: Restart memcached
+    command:
+      cmd: restart-memcached
+  - name: Restart apache
+    command:
+      cmd: restart-apache
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Run(context.Background(), RunOptions{
+		ConfigPath: playbookPath, Local: true, LocalAgentPath: agentPath, WorkingDir: temporary,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Failed {
+		t.Fatalf("Run() result = %#v", result)
+	}
+	requests := readHandlerTestRequests(t, capturedPath)
+	got := make([]string, 0, len(requests))
+	for _, request := range requests {
+		if request.Module != "command" {
+			continue
+		}
+		var args map[string]interface{}
+		if err := json.Unmarshal(request.Args, &args); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, fmt.Sprint(args["cmd"]))
+	}
+	if strings.Join(got, "|") != "restart-memcached|restart-apache" {
+		t.Fatalf("handler commands = %#v, want both loop handlers", got)
+	}
+}
+
+func TestRunHandlerCanNotifyAnotherHandler(t *testing.T) {
+	temporary := t.TempDir()
+	capturedPath := filepath.Join(temporary, "requests.jsonl")
+	agentPath := writeHandlerTestAgent(t, temporary, capturedPath)
+	playbookPath := filepath.Join(temporary, "playbook.yaml")
+	if err := os.WriteFile(playbookPath, []byte(`
+tasks:
+  - name: notify first handler
+    ping:
+    notify: first
+handlers:
+  - name: first
+    ping:
+    notify: second
+  - name: second
+    command:
+      cmd: from-first
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Run(context.Background(), RunOptions{
+		ConfigPath: playbookPath, Local: true, LocalAgentPath: agentPath, WorkingDir: temporary,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Failed {
+		t.Fatalf("Run() result = %#v", result)
+	}
+	requests := readHandlerTestRequests(t, capturedPath)
+	if len(requests) != 3 || requests[0].Module != "ping" || requests[1].Module != "ping" || requests[2].Module != "command" {
+		t.Fatalf("requests = %#v", requests)
+	}
+}
+
+func TestRunRejectsFlushHandlersAsHandler(t *testing.T) {
+	temporary := t.TempDir()
+	capturedPath := filepath.Join(temporary, "requests.jsonl")
+	agentPath := writeHandlerTestAgent(t, temporary, capturedPath)
+	playbookPath := filepath.Join(temporary, "playbook.yaml")
+	if err := os.WriteFile(playbookPath, []byte(`
+tasks:
+  - name: notify meta handler
+    ping:
+    notify: bad flush
+handlers:
+  - name: bad flush
+    meta: flush_handlers
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout strings.Builder
+	result, err := Run(context.Background(), RunOptions{
+		ConfigPath: playbookPath, Local: true, LocalAgentPath: agentPath, WorkingDir: temporary, Stdout: &stdout,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Failed {
+		t.Fatal("expected flush_handlers-as-handler to fail")
+	}
+	if !strings.Contains(stdout.String(), "flush_handlers cannot be used as a handler") {
+		t.Fatalf("output = %s", stdout.String())
+	}
+}
+
 func writeHandlerTestAgent(t *testing.T, directory, capturedPath string) string {
 	t.Helper()
 	agentPath := filepath.Join(directory, "agent")
